@@ -697,8 +697,8 @@ class ContentValidationServiceTest {
         }
 
         @Test
-        @DisplayName("Should NOT evict public-content caches when no channels are archived")
-        void validateChannels_noArchives_doesNotEvictCaches() throws Exception {
+        @DisplayName("A run that archives no channels announces its metadata refresh once")
+        void validateChannels_noArchives_announcesTheRefreshOnce() throws Exception {
             Channel channel = createChannel("UCabc", "Test Channel", null);
             when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(channel));
             when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
@@ -711,6 +711,58 @@ class ContentValidationServiceTest {
 
             service.validateChannels("MANUAL", "test-user", "Test User", 100);
 
+            verify(publicContentCacheService, times(1)).evictPublicContentCaches(); // the refresh, no archive announce
+        }
+
+        @Test
+        @DisplayName("A completed full run (manual, async) announces its metadata refresh")
+        void validateAllContentAsync_refreshed_announcesOnce() throws Exception {
+            ValidationRun run = new ValidationRun("MANUAL", "test-user", "Test User");
+            when(validationRunRepository.findById("run-1")).thenReturn(Optional.of(run));
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt()))
+                    .thenReturn(List.of(createChannel("UCabc", "Test Channel", null)));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
+            result.addValid("UCabc", new ChannelDetailsDto());
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.validateAllContentAsync("run-1", "MANUAL", "test-user", "Test User", 30);
+
+            assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
+            verify(publicContentCacheService, times(1)).evictPublicContentCaches();
+        }
+
+        @Test
+        @DisplayName("A completed full run (sync) announces its metadata refresh")
+        void validateAllContent_refreshed_announcesOnce() throws Exception {
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt()))
+                    .thenReturn(List.of(createChannel("UCabc", "Test Channel", null)));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
+            result.addValid("UCabc", new ChannelDetailsDto());
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            ValidationRun run = service.validateAllContent("MANUAL", "test-user", "Test User", 30);
+
+            assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
+            verify(publicContentCacheService, times(1)).evictPublicContentCaches();
+        }
+
+        @Test
+        @DisplayName("A completed run that checked nothing announces nothing")
+        void validateChannels_nothingChecked_doesNotEvict() throws Exception {
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            ValidationRun run = service.validateChannels("MANUAL", "test-user", "Test User", 100);
+
+            assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
             verify(publicContentCacheService, never()).evictPublicContentCaches();
         }
 
@@ -734,8 +786,8 @@ class ContentValidationServiceTest {
         }
 
         @Test
-        @DisplayName("Should NOT evict public-content caches when no playlists are archived")
-        void validatePlaylists_noArchives_doesNotEvictCaches() throws Exception {
+        @DisplayName("A run that archives no playlists announces its metadata refresh once")
+        void validatePlaylists_noArchives_announcesTheRefreshOnce() throws Exception {
             Playlist playlist = createPlaylist("PLxyz", "Test Playlist", null);
             when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(List.of(playlist));
             when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(Collections.emptyList());
@@ -748,7 +800,7 @@ class ContentValidationServiceTest {
 
             service.validatePlaylists("MANUAL", "test-user", "Test User", 100);
 
-            verify(publicContentCacheService, never()).evictPublicContentCaches();
+            verify(publicContentCacheService, times(1)).evictPublicContentCaches(); // the refresh, no archive announce
         }
 
         // --- validateVideos ---
@@ -771,8 +823,8 @@ class ContentValidationServiceTest {
         }
 
         @Test
-        @DisplayName("Should NOT evict public-content caches when no videos are archived")
-        void validateVideos_noArchives_doesNotEvictCaches() throws Exception {
+        @DisplayName("A run that archives no videos announces its metadata refresh once")
+        void validateVideos_noArchives_announcesTheRefreshOnce() throws Exception {
             Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
@@ -785,7 +837,7 @@ class ContentValidationServiceTest {
 
             service.validateVideos("MANUAL", "test-user", "Test User", 100);
 
-            verify(publicContentCacheService, never()).evictPublicContentCaches();
+            verify(publicContentCacheService, times(1)).evictPublicContentCaches(); // the refresh, no archive announce
         }
 
         @Test

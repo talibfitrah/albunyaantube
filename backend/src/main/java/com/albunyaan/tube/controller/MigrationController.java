@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.util.ThumbnailRepairMigration;
 import com.albunyaan.tube.util.UserBackfillMigration;
 import org.slf4j.Logger;
@@ -33,6 +34,7 @@ public class MigrationController {
 
     private final UserBackfillMigration migration;
     private final ThumbnailRepairMigration thumbnailRepair;
+    private final PublicContentCacheService publicContentCacheService;
 
     @Value("${app.migrations.user-backfill.enabled:false}")
     private boolean backfillEnabled;
@@ -41,9 +43,11 @@ public class MigrationController {
     private boolean thumbnailRepairEnabled;
 
     public MigrationController(UserBackfillMigration migration,
-                               ThumbnailRepairMigration thumbnailRepair) {
+                               ThumbnailRepairMigration thumbnailRepair,
+                               PublicContentCacheService publicContentCacheService) {
         this.migration = migration;
         this.thumbnailRepair = thumbnailRepair;
+        this.publicContentCacheService = publicContentCacheService;
     }
 
     /**
@@ -162,6 +166,11 @@ public class MigrationController {
 
         try {
             ThumbnailRepairMigration.RunSummary summary = thumbnailRepair.run(actor.getUid());
+            try {
+                publicContentCacheService.evictPublicContentCaches(); // it rewrote avatars, thumbnails and counts
+            } catch (Exception e) {
+                logger.warn("Cache eviction failed after thumbnail repair", e);
+            }
             logger.info(
                 "Migration thumbnail-repair triggered by uid={} channelsRepaired={} playlistsRepaired={} failures={}",
                 actor.getUid(), summary.channelsRepaired(), summary.playlistsRepaired(), summary.failures());
