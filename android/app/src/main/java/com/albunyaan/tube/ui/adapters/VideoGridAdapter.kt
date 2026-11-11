@@ -7,13 +7,14 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
+import com.albunyaan.tube.util.DurationFormat
+import androidx.core.view.isVisible
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemVideoGridBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import com.google.android.material.chip.Chip
-import java.util.Locale
 
 class VideoGridAdapter(
     private val onVideoClick: (ContentItem.Video) -> Unit
@@ -43,7 +44,9 @@ class VideoGridAdapter(
             binding.videoTitle.text = video.title
 
             // Format duration (HH:mm:ss or mm:ss)
-            binding.videoDuration.text = formatDuration(video.durationSeconds)
+            val badge = DurationFormat.badge(video.durationSeconds)
+            binding.videoDuration.text = badge ?: ""
+            binding.videoDuration.isVisible = badge != null
 
             // Format metadata (views + time ago) using app's per-app locale
             val appLocale = LocaleManager.getCurrentLocale(context)
@@ -79,19 +82,6 @@ class VideoGridAdapter(
             }
         }
 
-        /**
-         * Format duration in seconds to HH:mm:ss (if >= 1 hour) or mm:ss (if < 1 hour)
-         */
-        private fun formatDuration(totalSeconds: Int): String {
-            val hours = totalSeconds / 3600
-            val mins = (totalSeconds % 3600) / 60
-            val secs = totalSeconds % 60
-            return if (hours > 0) {
-                String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
-            } else {
-                String.format(Locale.US, "%d:%02d", mins, secs)
-            }
-        }
 
 
         private fun safeQuantityForPlural(count: Long): Int {

@@ -44,6 +44,17 @@ class HomeFeaturedA11yTest {
         )
     }
 
+    @Test fun `unknown duration leaves no Duration field`() {
+        assertEquals(
+            "Tafsir • 1K views • 3 days ago",
+            HomeFeaturedAdapter.videoDescription(res(), "Tafsir", null, "1K views", "3 days ago"),
+        )
+        assertEquals(
+            "Tafsir • 1K views",
+            HomeFeaturedAdapter.videoDescription(res(), "Tafsir", null, "1K views", null),
+        )
+    }
+
     @Test fun `Home uses the shared age ladder, so 400 days is 1 year ago`() {
         assertEquals(
             "1K views • 1 year ago • Tafsir",

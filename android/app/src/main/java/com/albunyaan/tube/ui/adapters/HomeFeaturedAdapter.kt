@@ -7,6 +7,8 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
+import com.albunyaan.tube.util.DurationFormat
+import androidx.core.view.isVisible
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemHomeChannelBinding
 import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
@@ -14,7 +16,6 @@ import com.albunyaan.tube.databinding.ItemHomeVideoBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnail
-import java.util.Locale
 
 /**
  * Horizontal adapter for displaying mixed content types (videos, playlists, channels)
@@ -180,42 +181,37 @@ class HomeFeaturedAdapter(
                 video.category,
             )
 
-            binding.videoDuration.text = formatDuration(video.durationSeconds)
+            val badge = DurationFormat.badge(video.durationSeconds)
+            binding.videoDuration.text = badge ?: ""
+            binding.videoDuration.isVisible = badge != null
 
             binding.videoThumbnail.loadThumbnail(video)
 
             val uploadedAgo = UploadAge.format(context.resources, video.uploadedDaysAgo)
             val viewsText = context.getString(R.string.video_views_format, formattedViews)
-            val duration = formatDuration(video.durationSeconds)
             binding.root.contentDescription =
-                videoDescription(context.resources, video.title, duration, viewsText, uploadedAgo)
+                videoDescription(context.resources, video.title, badge, viewsText, uploadedAgo)
 
             binding.root.setOnClickListener {
                 onItemClick(video)
             }
         }
 
-        private fun formatDuration(totalSeconds: Int): String {
-            val hours = totalSeconds / 3600
-            val mins = (totalSeconds % 3600) / 60
-            val secs = totalSeconds % 60
-            return if (hours > 0) {
-                String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
-            } else {
-                String.format(Locale.US, "%d:%02d", mins, secs)
-            }
-        }
     }
 
     companion object {
-        /** a11y_video_item, or its age-less sibling when the age is unknown (no empty trailing field). */
+        /**
+         * a11y_video_item, or its age-less sibling when the age is unknown (no empty trailing field).
+         * Unknown duration drops the "Duration:" field; the fields are then joined like the visible meta line.
+         */
         internal fun videoDescription(
             res: android.content.res.Resources,
             title: String,
-            duration: String,
+            duration: String?,
             views: String,
             age: String?,
-        ): String = if (age != null) res.getString(R.string.a11y_video_item, title, duration, views, age)
+        ): String = if (duration == null) UploadAge.joinMeta(title, views, age)
+            else if (age != null) res.getString(R.string.a11y_video_item, title, duration, views, age)
             else res.getString(R.string.a11y_video_item_no_age, title, duration, views)
 
         /** Views • age • category — the same age ladder as every other list. */

@@ -7,6 +7,8 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
+import com.albunyaan.tube.util.DurationFormat
+import androidx.core.view.isVisible
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
@@ -18,7 +20,6 @@ import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import com.albunyaan.tube.util.ThumbnailUrlHelper
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
-import java.util.Locale
 
 /**
  * Vertical list adapter for displaying mixed content types (videos, playlists, channels)
@@ -166,7 +167,9 @@ class FeaturedListAdapter(
             val context = binding.root.context
             val res = context.resources
             binding.videoTitle.text = video.title
-            binding.videoDuration.text = formatDuration(video.durationSeconds)
+            val badge = DurationFormat.badge(video.durationSeconds)
+            binding.videoDuration.text = badge ?: ""
+            binding.videoDuration.isVisible = badge != null
 
             // Format metadata using app's per-app locale
             val appLocale = LocaleManager.getCurrentLocale(context)
@@ -200,16 +203,6 @@ class FeaturedListAdapter(
             }
         }
 
-        private fun formatDuration(totalSeconds: Int): String {
-            val hours = totalSeconds / 3600
-            val mins = (totalSeconds % 3600) / 60
-            val secs = totalSeconds % 60
-            return if (hours > 0) {
-                String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
-            } else {
-                String.format(Locale.US, "%d:%02d", mins, secs)
-            }
-        }
 
 
         private fun safeQuantityForPlural(count: Long): Int {

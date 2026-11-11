@@ -8,6 +8,8 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import coil.ImageLoader
 import com.albunyaan.tube.R
+import com.albunyaan.tube.util.DurationFormat
+import androidx.core.view.isVisible
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
@@ -17,7 +19,6 @@ import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
-import java.util.Locale
 
 /**
  * Search results adapter using the same layouts as FeaturedListAdapter
@@ -168,7 +169,9 @@ class SearchResultsAdapter(
 
         fun bind(video: ContentItem.Video) {
             binding.videoTitle.text = video.title
-            binding.videoDuration.text = formatDuration(video.durationSeconds)
+            val badge = DurationFormat.badge(video.durationSeconds)
+            binding.videoDuration.text = badge ?: ""
+            binding.videoDuration.isVisible = badge != null
 
             val context = binding.root.context
             val res = context.resources
@@ -209,16 +212,6 @@ class SearchResultsAdapter(
             }
         }
 
-        private fun formatDuration(totalSeconds: Int): String {
-            val hours = totalSeconds / 3600
-            val mins = (totalSeconds % 3600) / 60
-            val secs = totalSeconds % 60
-            return if (hours > 0) {
-                String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
-            } else {
-                String.format(Locale.US, "%d:%02d", mins, secs)
-            }
-        }
 
     }
 
