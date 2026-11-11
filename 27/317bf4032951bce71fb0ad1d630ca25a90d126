@@ -1,0 +1,49 @@
+backend/src/main/java/com/albunyaan/tube/service/VideoValidationService.java
+  s_8a936fc306f37b::t_abba17b7c0019c 43,50-51,58
+  s_8a936fc306f37b::t_7008f42c3a9096 187-190
+backend/src/test/java/com/albunyaan/tube/service/ImportExportServiceTest.java
+  s_8a936fc306f37b::t_7253201a2fcbc2 72-102
+  s_8a936fc306f37b::t_4d61a3c8ff0547 38,40,331,390,477
+backend/src/test/java/com/albunyaan/tube/service/VideoValidationServiceTest.java
+  s_8a936fc306f37b::t_4d61a3c8ff0547 65
+  s_8a936fc306f37b::t_7253201a2fcbc2 55-57,110-142
+  s_8a936fc306f37b::t_eea4bb331851b2 143
+backend/src/main/java/com/albunyaan/tube/service/ImportExportService.java
+  s_8a936fc306f37b::t_7008f42c3a9096 407-408
+  s_8a936fc306f37b::t_abba17b7c0019c 53,62-63,72
+  s_8a936fc306f37b::t_daa6077db85631 405-406
+backend/src/test/java/com/albunyaan/tube/controller/ImportExportControllerTest.java
+  s_8a936fc306f37b::t_4d61a3c8ff0547 59
+  s_8a936fc306f37b::t_f7c204b53ea898 17
+backend/src/test/java/com/albunyaan/tube/service/SimpleImportServiceTest.java
+  s_8a936fc306f37b::t_4d61a3c8ff0547 70-71
+  s_8a936fc306f37b::t_f7c204b53ea898 58-60
+  s_8a936fc306f37b::t_7253201a2fcbc2 106-138
+backend/src/main/java/com/albunyaan/tube/service/ContentImportService.java
+  s_8a936fc306f37b::t_7008f42c3a9096 194-198
+  s_8a936fc306f37b::t_abba17b7c0019c 67,76-77
+  s_8a936fc306f37b::t_4d61a3c8ff0547 86
+backend/src/test/java/com/albunyaan/tube/service/ContentImportServiceTest.java
+  s_8a936fc306f37b::t_f7c204b53ea898 66-68
+  s_8a936fc306f37b::t_1c1f6e716feef0 135-165
+  s_8a936fc306f37b::t_4d61a3c8ff0547 80-81,793
+backend/src/main/java/com/albunyaan/tube/service/SimpleImportService.java
+  s_8a936fc306f37b::t_7008f42c3a9096 158-163
+  s_8a936fc306f37b::t_abba17b7c0019c 61,80-81,88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "27317bf4032951bce71fb0ad1d630ca25a90d126",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
