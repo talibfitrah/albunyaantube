@@ -1220,7 +1220,6 @@ class GlobalStreamResolverTest {
             cursor: String?,
             pageSize: Int,
             filters: FilterState,
-            query: String?,
         ): CursorResponse = throw UnsupportedOperationException("not used in resolver gate tests")
 
         override suspend fun fetchHomeFeed(

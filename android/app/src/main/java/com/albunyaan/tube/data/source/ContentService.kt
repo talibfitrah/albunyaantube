@@ -30,8 +30,7 @@ interface ContentService {
         type: ContentType,
         cursor: String?,
         pageSize: Int,
-        filters: FilterState,
-        query: String? = null
+        filters: FilterState
     ): CursorResponse
 
     suspend fun fetchHomeFeed(

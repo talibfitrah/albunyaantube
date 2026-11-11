@@ -21,8 +21,7 @@ interface ContentApi {
         @Query("category") category: String?,
         @Query("length") length: String?,
         @Query("date") date: String?,
-        @Query("sort") sort: String?,
-        @Query("q") query: String? = null
+        @Query("sort") sort: String?
     ): CursorPage
 
     @GET("api/v1/categories")

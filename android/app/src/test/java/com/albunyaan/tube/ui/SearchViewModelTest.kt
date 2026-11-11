@@ -56,7 +56,7 @@ class SearchViewModelTest {
         }
 
         override suspend fun fetchContent(
-            type: ContentType, cursor: String?, pageSize: Int, filters: FilterState, query: String?
+            type: ContentType, cursor: String?, pageSize: Int, filters: FilterState
         ): CursorResponse = throw UnsupportedOperationException()
 
         override suspend fun fetchHomeFeed(

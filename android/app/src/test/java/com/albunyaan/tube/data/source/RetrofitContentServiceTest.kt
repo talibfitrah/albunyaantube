@@ -295,13 +295,13 @@ class RetrofitContentServiceTest {
     @Test
     fun `content waits out Retry-After on a 503 and tries once more`() = runTest {
         val page = CursorPage(emptyList(), PageInfo(hasNext = false))
-        whenever(api.fetchContent(eq("VIDEOS"), isNull(), eq(20), isNull(), isNull(), isNull(), isNull(), eq("quran")))
+        whenever(api.fetchContent(eq("VIDEOS"), isNull(), eq(20), isNull(), isNull(), isNull(), isNull()))
             .thenThrow(HttpException(unavailable<CursorPage>("5")))
             .thenReturn(page)
 
-        service.fetchContent(ContentType.VIDEOS, null, 20, FilterState(), "quran")
+        service.fetchContent(ContentType.VIDEOS, null, 20, FilterState())
 
         assertEquals(5_000L, testScheduler.currentTime)
-        verify(api, times(2)).fetchContent(eq("VIDEOS"), isNull(), eq(20), isNull(), isNull(), isNull(), isNull(), eq("quran"))
+        verify(api, times(2)).fetchContent(eq("VIDEOS"), isNull(), eq(20), isNull(), isNull(), isNull(), isNull())
     }
 }

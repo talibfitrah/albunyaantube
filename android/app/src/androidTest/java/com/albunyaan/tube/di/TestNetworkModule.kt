@@ -50,7 +50,7 @@ import javax.inject.Singleton
 )
 object TestNetworkModule {
 
-    /** Shared so a test can script search and content answers; call resetSearch / resetContent in @After. */
+    /** Shared so a test can script search answers; call resetSearch in @After. */
     val fakeContentApi = FakeContentApi()
 
     @Provides
@@ -114,17 +114,6 @@ class FakeContentApi : ContentApi {
         onSearch = noResults
     }
 
-    private val emptyPage: suspend (String?) -> CursorPage =
-        { CursorPage(data = emptyList(), pageInfo = PageInfo(hasNext = false, nextCursor = null)) }
-
-    /** What /v1/content answers, by its `q`; a test sets it and calls [resetContent] in @After. */
-    @Volatile
-    var onContent = emptyPage
-
-    fun resetContent() {
-        onContent = emptyPage
-    }
-
     override suspend fun fetchContent(
         type: String?,
         cursor: String?,
@@ -132,9 +121,8 @@ class FakeContentApi : ContentApi {
         category: String?,
         length: String?,
         date: String?,
-        sort: String?,
-        query: String?
-    ): CursorPage = onContent(query)
+        sort: String?
+    ): CursorPage = CursorPage(data = emptyList(), pageInfo = PageInfo(hasNext = false, nextCursor = null))
 
     override suspend fun fetchCategories(): List<CategoryResponse> {
         return emptyList()

@@ -1,11 +1,8 @@
 package com.albunyaan.tube.ui
 
 import android.os.Bundle
-import android.text.Editable
-import android.text.TextWatcher
 import android.util.Log
 import android.view.View
-import android.view.inputmethod.EditorInfo
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -65,37 +62,14 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
 
         setupRecyclerView()
         setupSwipeRefresh()
-        setupSearch()
+        setupSearchButton()
         observeFilters()
         observeViewModel()
         setupCategoriesFab()
     }
 
-    private fun setupSearch() {
-        val editText = binding?.searchEditText ?: return
-        val clearBtn = binding?.searchClearButton ?: return
-
-        editText.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                val query = s?.toString() ?: ""
-                clearBtn.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
-                autofillHelper.reset()
-                viewModel.setSearchQuery(query, ContentListViewModel.TYPING_DEBOUNCE_MS) // the ViewModel debounces: this keystroke drops the old load at once
-            }
-        })
-
-        editText.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                val query = editText.text?.toString() ?: ""
-                autofillHelper.reset()
-                viewModel.setSearchQuery(query)
-                true
-            } else false
-        }
-
-        clearBtn.setOnClickListener { editText.text?.clear() } // the watcher above brings the full list back, once
+    private fun setupSearchButton() {
+        binding?.searchButton?.setOnClickListener { findNavController().navigate(R.id.searchFragment) }
     }
 
     private fun observeFilters() {
@@ -204,12 +178,11 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
                     }
                     is ContentListViewModel.ContentState.Success -> {
                         val channels = state.items.filterIsInstance<ContentItem.Channel>()
-                        Log.d(TAG, "Channels loaded: ${channels.size} items, hasMore=${state.hasMoreData}, search=${state.isSearchActive}")
+                        Log.d(TAG, "Channels loaded: ${channels.size} items, hasMore=${state.hasMoreData}")
                         binding?.let { binding ->
                             binding.listSkeleton.root.visibility = View.GONE
                             binding.swipeRefresh.visibility = View.VISIBLE
                             binding.swipeRefresh.isRefreshing = false
-                            binding.swipeRefresh.isEnabled = !state.isSearchActive
                             binding.loadingMore.visibility = View.GONE
 
                             state.paginationError?.let { errorMessage ->
@@ -237,15 +210,9 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
                             if (channels.isEmpty()) {
                                 binding.emptyState.visibility = View.VISIBLE
                                 binding.recyclerView.visibility = View.GONE
-                                if (state.isSearchActive) {
-                                    binding.emptyIcon.setImageResource(R.drawable.ic_search)
-                                    binding.emptyTitle.text = getString(R.string.search_no_results)
-                                    binding.emptySubtitle.text = getString(R.string.search_try_different_hint)
-                                } else {
-                                    binding.emptyIcon.setImageResource(R.drawable.ic_channels)
-                                    binding.emptyTitle.text = getString(R.string.channels_empty_title)
-                                    binding.emptySubtitle.text = getString(R.string.channels_empty_subtitle)
-                                }
+                                binding.emptyIcon.setImageResource(R.drawable.ic_channels)
+                                binding.emptyTitle.text = getString(R.string.channels_empty_title)
+                                binding.emptySubtitle.text = getString(R.string.channels_empty_subtitle)
                             } else {
                                 binding.emptyState.visibility = View.GONE
                                 binding.recyclerView.visibility = View.VISIBLE
