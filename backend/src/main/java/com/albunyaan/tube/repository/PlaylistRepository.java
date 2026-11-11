@@ -361,6 +361,7 @@ public class PlaylistRepository {
 
         // The full limit per category, fetched in the merge order (itemCount desc): the result is then exactly the
         // first `limit` of the whole sorted union.
+        // ponytail: reads up to limit × categoryIds.size() docs per call; see ChannelRepository.findByCategoryIds.
         LinkedHashMap<String, Playlist> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
             List<Playlist> batch = findByCategoryOrderByItemCountDesc(catId, limit);

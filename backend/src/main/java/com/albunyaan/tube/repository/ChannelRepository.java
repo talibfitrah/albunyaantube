@@ -520,6 +520,8 @@ public class ChannelRepository {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
         // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
+        // ponytail: reads up to limit × categoryIds.size() docs per call (e.g. SortOrderService's 500 × every
+        // subcategory, the same in Playlist/VideoRepository); merge per-category cursors (k-way) if that grows.
         LinkedHashMap<String, Channel> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
             List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, limit);
