@@ -1,0 +1,30 @@
+frontend/src/locales/messages.ts
+  s_83b05ee01cfee6::t_acf134e8222a5b 418-419,2082-2083,3526-3527
+frontend/tests/ContentSortingLive.spec.ts
+  s_83b05ee01cfee6::t_bcc8c74f8fc616 228-237,244-246,249-253
+  s_83b05ee01cfee6::t_90ff7fc4943dc7 247-248
+  s_83b05ee01cfee6::t_10d5d1140d719f 238-243
+frontend/src/views/ContentSortingView.vue
+  s_83b05ee01cfee6::t_90ff7fc4943dc7 229,501-503,510,1411,1420
+  s_83b05ee01cfee6::t_10d5d1140d719f 253-255,308-316,504,509,511,1412,1432,1497
+  s_83b05ee01cfee6::t_acf134e8222a5b 486,1431,1433-1434
+  s_83b05ee01cfee6::t_9641af6f2ccf96 1499
+  s_83b05ee01cfee6::t_18a64686ad7643 1342-1345,1435
+  s_83b05ee01cfee6::t_0a6d7db88718b3 1436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a0aaca96e7537a109682d45a9a1a998337a38f7",
+  "prompts": {},
+  "sessions": {
+    "s_83b05ee01cfee6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "708111a7-564b-4708-84c5-ef706bef2891",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
