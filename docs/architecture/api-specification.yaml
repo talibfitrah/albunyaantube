@@ -4415,9 +4415,9 @@ components:
       description: |
         Registry-wide counts per content type, from server-side aggregation. Served by
         GET /api/admin/content/totals, deliberately separate from the listing response so
-        a slow count never delays or fails the content itself. Deliberately
-        NOT filtered by status/category/search, so they stay stable while the user filters
-        and may legitimately exceed the number of rows shown. `videos` counts only
+        a slow count never delays or fails the content itself. Filtered by the `status`
+        parameter only (approved = live, archived left out), never by category or search,
+        so they stay stable while the user searches and may exceed the rows shown. `videos` counts only
         individually-curated video documents — approving a channel or playlist does not
         create video documents, so videos reachable through a channel or playlist are not
         counted here.

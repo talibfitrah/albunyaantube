@@ -104,8 +104,8 @@ public class ContentLibraryController {
     /**
      * Registry-wide per-type counts for the Content Library header.
      *
-     * <p>Deliberately its own request rather than a field on the listing response. The counts do
-     * not depend on any listing parameter, and the client needs them once — piggybacking them put
+     * <p>Deliberately its own request rather than a field on the listing response. The counts
+     * follow only the status filter, never search, category or paging — piggybacking them put
      * three serialized aggregation round-trips on the listing's critical path, where they were
      * recomputed on every debounced search keystroke, discarded on every infinite-scroll page, and
      * able to fail a listing that had already been fetched and sorted. On their own endpoint a
@@ -370,9 +370,12 @@ public class ContentLibraryController {
         boolean anyTypeTruncated = false;
         // "Approved" is live content, matching GET /totals: archived rows belong to the Archived page.
         boolean liveOnly = "approved".equalsIgnoreCase(status);
+        // Search drops archived rows itself before trimming, and its scan bound does not grow
+        // with the limit, so only a browse deepens its window.
+        boolean deepen = liveOnly && (search == null || search.isBlank());
 
         if (contentTypes.contains("channel")) {
-            BoundedFetchResult<Channel> result = fetchLive(liveOnly, fetchLimit, Channel::getValidationStatus,
+            BoundedFetchResult<Channel> result = fetchLive(deepen, fetchLimit, Channel::getValidationStatus,
                     limit -> fetchChannelsBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
@@ -388,7 +391,7 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("playlist")) {
-            BoundedFetchResult<Playlist> result = fetchLive(liveOnly, fetchLimit, Playlist::getValidationStatus,
+            BoundedFetchResult<Playlist> result = fetchLive(deepen, fetchLimit, Playlist::getValidationStatus,
                     limit -> fetchPlaylistsBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
@@ -405,7 +408,7 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("video")) {
-            BoundedFetchResult<Video> result = fetchLive(liveOnly, fetchLimit, Video::getValidationStatus,
+            BoundedFetchResult<Video> result = fetchLive(deepen, fetchLimit, Video::getValidationStatus,
                     limit -> fetchVideosBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
@@ -507,15 +510,15 @@ public class ContentLibraryController {
      * short page could not serve). Only when rows exist beyond the window; never past
      * {@link #MAX_ITEMS_PER_TYPE}, where the truncated flag already says the list is partial.
      */
-    private <T> BoundedFetchResult<T> fetchLive(boolean liveOnly, int fetchLimit,
+    private <T> BoundedFetchResult<T> fetchLive(boolean deepen, int fetchLimit,
                                                 java.util.function.Function<T, ValidationStatus> validationStatus,
                                                 BoundedFetch<T> fetch)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         int limit = fetchLimit;
         BoundedFetchResult<T> result = fetch.fetch(limit);
-        while (liveOnly && result.hitLimit) {
+        while (deepen && result.hitLimit) {
             long held = result.items.stream().filter(t -> ValidationStatus.holds(validationStatus.apply(t))).count();
-            if (result.items.size() - held >= fetchLimit) break; // enough live rows already (always, for search)
+            if (result.items.size() - held >= fetchLimit) break; // enough live rows already
             // At least double each round, so a long archived run costs a few rounds, not one per row.
             int deeper = (int) Math.min(Math.max(fetchLimit + held, 2L * limit), MAX_ITEMS_PER_TYPE);
             if (deeper <= limit) break;
@@ -885,9 +888,9 @@ public class ContentLibraryController {
     /**
      * Registry-wide counts per content type, from Firestore server-side aggregation.
      *
-     * <p>Deliberately NOT filtered by status/category/search: these answer "how much is in the
-     * library", which is why they stay stable while the user filters, and why they are counted
-     * separately from the listing rather than derived from them. {@code videos} counts only
+     * <p>Filtered by status only, never by category or search: these answer "how much is in the
+     * library" for that status, which is why they stay stable while the user searches, and why
+     * they are counted separately from the listing rather than derived from them. {@code videos} counts only
      * individually-curated video documents — approving a channel or playlist does not create
      * Video documents, so videos reachable through a channel or playlist are not counted here.</p>
      */

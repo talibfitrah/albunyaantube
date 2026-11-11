@@ -247,6 +247,27 @@ class ContentLibraryPagingAndTotalsTest {
     }
 
     @Test
+    void aBroadApprovedSearchWithFewLiveMatchesRunsItsScansOnce() throws Exception {
+        // The name scan hits its 200-row bound but only 5 rows are approved, so the window is
+        // short with hitLimit set. Deepening could never add a match: the scan bound is fixed.
+        List<Channel> matches = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%03d", i));
+            c.setName("term " + i);
+            c.setStatus(i < 5 ? "APPROVED" : "PENDING");
+            matches.add(c);
+        }
+        when(channelRepository.searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt())).thenReturn(matches);
+        when(channelRepository.searchByKeyword(org.mockito.ArgumentMatchers.anyString(), anyInt())).thenReturn(List.of());
+
+        controller.getContent("channel", "approved", null, "term", "newest", 0, 20);
+
+        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.times(1))
+                .searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt());
+    }
+
+    @Test
     void totalsRejectAStatusTheFilterDoesNotOffer() throws Exception {
         assertEquals(400, controller.getTotals("archived").getStatusCode().value());
         assertEquals(400, controller.getTotals("").getStatusCode().value());
