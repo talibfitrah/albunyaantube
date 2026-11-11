@@ -610,8 +610,8 @@ public class SearchIndex {
     }
 
     /**
-     * Spec §7.1: C (today's list) is unchanged. Inner tier-1–2 hits go in at h = max(3, |C tier ≤ 2|), so C's first h
-     * items and the header stay today's, and every curated tier ≤ 2 hit stays ahead of every inner hit. Never for
+     * Owner rule 2026-11-11 (replaces spec §7.1's "every curated tier ≤ 2 hit stays ahead of every inner hit"): inner
+     * tier-1–2 hits interleave by tier, exact > approximate > related, C's hits before inner ones within a tier. Never for
      * CHANNEL/PLAYLIST searches, while serveInner is off, or before the inner index is built. Then, on every search while
      * serving, broad ones too, Q17 on the answer. Any failure of the inner work (an inner index closing under it, at a
      * rebuild swap or shutdown) answers C: it never fails a search. A failure of the Q17 swap alone keeps the merge; the
@@ -648,18 +648,21 @@ public class SearchIndex {
         }
     }
 
-    /** The §7.1 merge: C, or C[0:h] ++ I ++ C[h:] cut to `want`. `todays` holds C's ids. */
+    /** C₁ ++ I₁ ++ C₂ ++ I₂ ++ C₃ cut to `want` (Cₙ, Iₙ: C's and the inner tier-n hits); the header, the first item's tier. */
     private Hits merged(IndexSearcher shared, Ladder today, Set<String> todays, int want, Trace trace) throws IOException {
         Hits plain = new Hits(today.items(), today.match());
-        int at = Math.min(Math.max(MIN_CONFIDENT_HITS, today.upToTier2()), today.items().size());
-        int need = want - at; // = want − min(h, |C|); ≤ 0 also covers "≥ 50 exact or approximate hits"
+        int need = want - today.upToTier1(); // ≤ 0: C's exact hits fill the page
         if (need <= 0) return plain;
         List<Tiered> found = innerLadder(shared, today.tokens(), need, new HashSet<>(todays), trace); // dedupe: C's copy keeps its place
         if (found.isEmpty()) return plain;
-        List<ContentItemDto> out = new ArrayList<>(today.items().subList(0, at));
-        for (Tiered t : found) out.add(t.item());
-        out.addAll(today.items().subList(at, today.items().size())); // only C's tier-3 hits can sit here
-        String match = today.items().isEmpty() ? TIER_NAMES[found.get(0).tier()] : today.match();
+        int[] ends = {0, today.upToTier1(), today.upToTier2(), today.items().size()};
+        List<ContentItemDto> out = new ArrayList<>();
+        String match = "none";
+        for (int tier = 1; tier <= 3; tier++) {
+            out.addAll(today.items().subList(ends[tier - 1], ends[tier]));
+            for (Tiered t : found) if (t.tier() == tier) out.add(t.item());
+            if (match.equals("none") && !out.isEmpty()) match = TIER_NAMES[tier];
+        }
         return new Hits(List.copyOf(out.subList(0, Math.min(want, out.size()))), match);
     }
 
@@ -860,11 +863,11 @@ public class SearchIndex {
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
         if (tokens.size() > SearchText.MAX_TOKENS) tokens = tokens.subList(0, SearchText.MAX_TOKENS);
         trace.tokens = tokens.size();
-        if (tokens.isEmpty()) return new Ladder(List.of(), "none", List.of(), 0);
+        if (tokens.isEmpty()) return new Ladder(List.of(), "none", List.of(), 0, 0);
         List<ContentItemDto> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String match = "none";
-        int upToTier2 = 0;
+        int upToTier1 = 0, upToTier2 = 0;
         // Each fuzzy clause is rewritten (its automaton built) once per search, then shared by tiers 2 and 3 (F1).
         Map<Query, Query> rewritten = new HashMap<>();
         UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
@@ -883,13 +886,14 @@ public class SearchIndex {
             trace.tierMs[tier] = (System.nanoTime() - t0) / 1_000_000;
             trace.tierHits[tier] = out.size() - before;
             if (wasEmpty && !out.isEmpty()) match = TIER_NAMES[tier];
+            if (tier == 1) upToTier1 = out.size();
             if (tier <= 2) upToTier2 = out.size();
         }
-        return new Ladder(out, match, tokens, upToTier2);
+        return new Ladder(out, match, tokens, upToTier1, upToTier2);
     }
 
-    /** One run of the ladder: the items, the header tier, the query's tokens, and how many items tiers 1–2 found (§7.1). */
-    private record Ladder(List<ContentItemDto> items, String match, List<String> tokens, int upToTier2) {}
+    /** One run of the ladder: the items, the header tier, the query's tokens, and how many items tier 1 and tiers 1–2 found. */
+    private record Ladder(List<ContentItemDto> items, String match, List<String> tokens, int upToTier1, int upToTier2) {}
 
     private record Tiered(ContentItemDto item, int tier) {}
 

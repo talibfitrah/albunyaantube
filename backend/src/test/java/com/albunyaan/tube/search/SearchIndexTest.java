@@ -851,7 +851,7 @@ class SearchIndexTest {
     }
 
     @Test
-    void innerHitsNeverPrecedeTodaysExactAndApproximateHits() throws Exception {
+    void innerHitsFollowTodaysHitsOfTheSameTier() throws Exception {
         InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Surah Al-Mulk", 600),
                 item("lesson00002", "Surah Ar-Rahman", 900))), Map.of(ALAFASY, "Alafasy"));
         SearchIndex four = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(
@@ -862,7 +862,7 @@ class SearchIndexTest {
         assertEquals(Set.of("lesson00001", "lesson00002"), Set.copyOf(ids.subList(4, 6)));
 
         four.slowSearchMs = -1;
-        SearchIndex.Hits two = four.search("surah", null, 2); // need = 2 - min(3, 2) = 0: the inner index is not asked
+        SearchIndex.Hits two = four.search("surah", null, 2); // need = 2 - 2 exact hits = 0: the inner index is not asked
         assertTrue(ids(two).stream().noneMatch(id -> id.startsWith("lesson")));
         assertFalse(lastSlowLine().contains(" inner="), lastSlowLine());
     }
@@ -877,6 +877,38 @@ class SearchIndexTest {
         assertEquals(List.of("lesson00001"), ids(typo));
         assertEquals("approximate", typo.match());
         assertEquals("exact", idx.search("kahf", null, 50).match());
+    }
+
+    // Owner rule 2026-11-11: tiers interleave, exact > close > related; curated before inner within a tier.
+    private SearchIndex zubdahnoorLessons(InnerIndex inner, Video... catalog) throws Exception {
+        return started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(catalog), List.of(), 5_000, inner));
+    }
+
+    @Test
+    void anInnerExactTitleBeatsACuratedApproximateHit() throws Exception {
+        SearchIndex index = zubdahnoorLessons(zubdahnoor(), video("vZubdahnur", "Zubdahnur lesson", "Alafasy"));
+        assertEquals(List.of("lesson00001", "vZubdahnur"), ids(index.search("zubdahnoor lesson", null, 50)).subList(0, 2));
+        assertEquals("exact", index.search("zubdahnoor lesson", null, 50).match());
+    }
+
+    @Test
+    void aCuratedExactHitStaysAheadOfAnInnerExactHit() throws Exception {
+        SearchIndex index = zubdahnoorLessons(zubdahnoor(), video("vZubdahnur", "Zubdahnur lesson", "Alafasy"),
+                video("vZubdahnoor", "Zubdahnoor lesson", "Alafasy"));
+        assertEquals(List.of("vZubdahnoor", "lesson00001", "vZubdahnur"), ids(index.search("zubdahnoor lesson", null, 50)));
+    }
+
+    @Test
+    void withoutInnerTheCuratedOrderIsUnchanged() throws Exception {
+        Video[] catalog = {video("vZubdahnur", "Zubdahnur lesson", "Alafasy"), video("vZubdahnoor", "Zubdahnoor lesson", "Alafasy")};
+        SearchIndex none = zubdahnoorLessons(null, catalog), off = zubdahnoorLessons(zubdahnoor(), catalog);
+        innerStore.state().serveInner = false;
+        assertEquals(List.of("vZubdahnoor", "vZubdahnur"), ids(none.search("zubdahnoor lesson", null, 50)));
+        for (String q : List.of("zubdahnoor lesson", "zubdahnur", "lesson")) {
+            SearchIndex.Hits a = none.search(q, null, 50), b = off.search(q, null, 50);
+            assertEquals(ids(a), ids(b), q);
+            assertEquals(a.match(), b.match(), q);
+        }
     }
 
     @Test
@@ -983,14 +1015,14 @@ class SearchIndexTest {
         assertEquals(RECITED.get(items.get(1).getId()), items.get(1).getTitle());
     }
 
-    /** I3: a broad query (≥ want tier-1–2 hits: no inner pass) still shows a stored stream's inner title; the lookup's searcher is released. */
+    /** I3: a broad query (≥ want tier-1 hits: no inner pass) still shows a stored stream's inner title; the lookup's searcher is released. */
     @Test
     void aBroadQueryStillShowsTheInnerTitleOfAStoredStream() throws Exception {
         InnerIndex inner = originals();
         SearchIndex idx = recitations(inner);
         idx.slowSearchMs = -1;
         int refs = refCount(inner);
-        SearchIndex.Hits hits = idx.search("recitation", null, 2); // need = 2 - min(3, 2) = 0
+        SearchIndex.Hits hits = idx.search("recitation", null, 2); // need = 2 - 2 exact hits = 0
         assertFalse(lastSlowLine().contains(" inner="), lastSlowLine());
         assertEquals(ORIGINAL, titles(hits));
         assertEquals(refs, refCount(inner));
@@ -1026,7 +1058,7 @@ class SearchIndexTest {
         assertEquals("Admitted playlist title", titles.get("live-two"), "its own source has no copy: the first admitted one");
     }
 
-    /** M6: inner hits go in at h, ahead of C's tier-3 tail (an append-at-the-end merge fails here). */
+    /** M6: an inner exact hit goes right after C's exact ones, ahead of C's tier-3 tail (an append-at-the-end merge fails here). */
     @Test
     void innerHitsGoAheadOfTodaysRelatedTail() throws Exception {
         InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Surah Zubdahnoor lesson", 600))), Map.of(ALAFASY, "Alafasy"));
@@ -1036,7 +1068,7 @@ class SearchIndexTest {
                 video("vTaha", "Surah Taha", "Alafasy")), List.of(), 5_000, inner));
         List<String> ids = ids(idx.search("surah zubdahnoor", null, 50));
         assertEquals("vZub", ids.get(0), ids.toString());
-        assertEquals(3, ids.indexOf("lesson00001"), ids.toString());
+        assertEquals(1, ids.indexOf("lesson00001"), ids.toString());
         assertEquals(6, ids.size(), ids.toString());
     }
 
@@ -1338,30 +1370,32 @@ class SearchIndexTest {
     }
 
     /**
-     * Acceptance #1 (spec §7.1 proof, RV I7a): with an adversarial inner corpus, every golden row keeps its header,
-     * today's items keep their order, no inner hit rises above #4, and each expected item keeps its exact rank
-     * (E25 surah al ikhlaas and E27 mohammad hijab included, the owner's pins).
+     * Acceptance #1 under the owner rule of 2026-11-11 (tiers interleave, curated first within a tier; it replaces spec
+     * §7.1's "no inner hit above #4"): with an adversarial inner corpus, today's items keep their order, the header never
+     * drops a tier, today's exact first hit stays first, and the inner hits sit in at most two runs (I₁, I₂). The pins
+     * (E25 surah al ikhlaas, E27 mohammad hijab) must face inner hits.
      */
     @ParameterizedTest(name = "{0}: {1}")
     @org.junit.jupiter.params.provider.MethodSource("golden")
-    void goldenRowsKeepTodaysHeadAndRanksWithAnAdversarialInnerCorpus(String language, String query, String expected,
-                                                                       int worstRank, String tier) throws Exception {
+    void goldenRowsInterleaveAnAdversarialInnerCorpusByTier(String language, String query, String expected,
+                                                            int worstRank, String tier) throws Exception {
         SearchIndex.Hits off = languages(null).search(query, null, 50);
         SearchIndex.Hits on = languages(adversarialInner()).search(query, null, 50);
         String row = language + " '" + query + "'";
-        assertEquals(off.match(), on.match(), row + ": header");
+        List<String> tiers = List.of("exact", "approximate", "related");
+        assertTrue(tiers.indexOf(on.match()) <= tiers.indexOf(off.match()), row + ": header " + off.match() + " -> " + on.match());
         List<String> offIds = ids(off), onIds = ids(on);
         Set<String> innerOnly = new HashSet<>(onIds);
         innerOnly.removeAll(offIds);
         List<String> today = onIds.stream().filter(id -> !innerOnly.contains(id)).toList();
         assertEquals(offIds.subList(0, today.size()), today, row + ": today's items keep their order");
-        int firstInner = java.util.stream.IntStream.range(0, onIds.size()).filter(i -> innerOnly.contains(onIds.get(i)))
-                .findFirst().orElse(onIds.size());
-        assertTrue(firstInner >= Math.min(3, offIds.size()), row + ": an inner hit above #4 -> " + onIds);
+        if ("exact".equals(off.match())) assertEquals(offIds.get(0), onIds.get(0), row + ": an inner hit above today's exact first hit");
+        long runs = java.util.stream.IntStream.range(0, onIds.size())
+                .filter(i -> innerOnly.contains(onIds.get(i)) && (i == 0 || !innerOnly.contains(onIds.get(i - 1)))).count();
+        assertTrue(runs <= 2, row + ": inner hits outside I₁ and I₂ -> " + onIds);
         if (Set.of("surah al ikhlaas", "mohammad hijab").contains(query)) { // E25, E27: the pins must face inner hits
             assertFalse(innerOnly.isEmpty(), row + ": no inner hit, so the pin proves nothing");
         }
-        for (String id : expected.split(" ")) assertEquals(offIds.indexOf(id), onIds.indexOf(id), row + ": " + id + " moved");
     }
 
     /** Task 24 hand-off: the title pass reports ms, titles swapped and a timeout in the slow line; integers only, never the query. */
