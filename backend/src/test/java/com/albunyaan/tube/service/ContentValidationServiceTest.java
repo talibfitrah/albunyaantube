@@ -788,6 +788,29 @@ class ContentValidationServiceTest {
             verify(publicContentCacheService, never()).evictPublicContentCaches();
         }
 
+        @Test
+        @DisplayName("An archive is announced even when the run record's save fails afterwards")
+        void validateVideos_runSaveFailsAfterArchive_stillEvicts() throws Exception {
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
+
+            BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
+            result.addNotFound("sCQwxFEMlZ4");
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            // The archive commits; every run-record save after it fails (Firestore brownout).
+            java.util.concurrent.atomic.AtomicBoolean archived = new java.util.concurrent.atomic.AtomicBoolean();
+            when(videoRepository.save(any())).thenAnswer(inv -> { archived.set(true); return inv.getArgument(0); });
+            when(validationRunRepository.save(any())).thenAnswer(inv -> {
+                if (archived.get()) throw new java.util.concurrent.TimeoutException("firestore");
+                return inv.getArgument(0);
+            });
+
+            service.validateVideos("MANUAL", "test-user", "Test User", 100);
+
+            verify(publicContentCacheService).evictPublicContentCaches();
+        }
+
         // --- Cache eviction resilience (N6) ---
 
         @Test

@@ -522,9 +522,6 @@ public class ContentValidationService {
             }
         }
 
-        // Final save after channels phase
-        validationRunRepository.save(run);
-
         if (!archivedChannelIds.isEmpty()) {
             run.addDetail("archivedChannelIds", archivedChannelIds);
             try {
@@ -539,6 +536,9 @@ public class ContentValidationService {
         if (skippedCount > 0) {
             run.addDetail("skippedChannelsCount", skippedCount);
         }
+
+        // Final save after channels phase: after the eviction, so a failed save cannot leave an archive unannounced
+        validationRunRepository.save(run);
     }
 
     private void validatePlaylistsInternal(ValidationRun run, String actorName, int limit)
@@ -657,9 +657,6 @@ public class ContentValidationService {
             }
         }
 
-        // Final save after playlists phase
-        validationRunRepository.save(run);
-
         if (!archivedPlaylistIds.isEmpty()) {
             run.addDetail("archivedPlaylistIds", archivedPlaylistIds);
             try {
@@ -676,6 +673,9 @@ public class ContentValidationService {
         }
         run.addDetail("brokenThumbnailsPicked", brokenThumbnailsPicked);
         run.addDetail("brokenThumbnailsHealed", brokenThumbnailsHealed);
+
+        // Final save after playlists phase: after the eviction, so a failed save cannot leave an archive unannounced
+        validationRunRepository.save(run);
     }
 
     private void validateVideosInternal(ValidationRun run, String actorName, int limit)
@@ -778,9 +778,6 @@ public class ContentValidationService {
             }
         }
 
-        // Final save after videos phase
-        validationRunRepository.save(run);
-
         if (!archivedVideoIds.isEmpty()) {
             run.addDetail("archivedVideoIds", archivedVideoIds);
             try {
@@ -795,6 +792,9 @@ public class ContentValidationService {
         if (skippedCount > 0) {
             run.addDetail("skippedVideosCount", skippedCount);
         }
+
+        // Final save after videos phase: after the eviction, so a failed save cannot leave an archive unannounced
+        validationRunRepository.save(run);
     }
 
     // ==================== Get Content for Validation ====================
