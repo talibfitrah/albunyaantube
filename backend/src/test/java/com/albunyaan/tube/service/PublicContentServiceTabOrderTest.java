@@ -67,11 +67,13 @@ class PublicContentServiceTabOrderTest {
 
     private PublicContentService service;
     private List<Category> categories;
+    private long now; // the service's nano clock: tests advance it, never sleep
 
     @BeforeEach
     void catalog() throws Exception {
         service = new PublicContentService(channelRepository, playlistRepository, videoRepository,
                 categoryRepository, orderRepository, Runnable::run, searchIndex, liveCategoryService);
+        service.nanoClock = () -> now;
 
         Category c1 = cat("c1", 1, null);
         Category c1a = cat("c1a", 0, "c1");
@@ -193,14 +195,46 @@ class PublicContentServiceTabOrderTest {
     @Test void aFailedRebuildIsNotCached() throws Exception {
         when(categoryRepository.findAll()).thenThrow(new TimeoutException("firestore")).thenReturn(categories);
         assertThrows(TimeoutException.class, () -> service.getContent("CHANNELS", null, 4, null, null, null, null));
+        now += PublicContentService.TAB_ORDER_FAILURE_BACKOFF.toNanos();
         assertEquals("yt-ch-C", first("CHANNELS"));
     }
     @Test void aTimedOutCategoryReadSurfacesAsTheTimeoutAndLeavesNothingPartialCached() throws Exception {
         when(orderRepository.findByCategoryIdsOrderByPosition(List.of("c2"))).thenThrow(new TimeoutException("firestore"));
         assertThrows(TimeoutException.class, () -> service.getContent("CHANNELS", null, 4, null, null, null, null));
         doReturn(rows("c2", "C", "A", "G", "P")).when(orderRepository).findByCategoryIdsOrderByPosition(List.of("c2"));
+        now += PublicContentService.TAB_ORDER_FAILURE_BACKOFF.toNanos();
         assertEquals(List.of("yt-ch-C","yt-ch-A","yt-ch-I","yt-ch-H","yt-ch-B","yt-ch-D","yt-ch-F","yt-ch-O","yt-ch-E"),
                 walk("CHANNELS", "CHANNEL"));
+    }
+    @Test void aFailedBuildIsRepeatedWithoutRereadingDuringTheBackoff() throws Exception {
+        when(categoryRepository.findAll()).thenThrow(new TimeoutException("firestore")).thenReturn(categories);
+        assertThrows(TimeoutException.class, () -> first("CHANNELS"));
+        now += PublicContentService.TAB_ORDER_FAILURE_BACKOFF.toNanos() - 1;
+        assertThrows(TimeoutException.class, () -> first("PLAYLISTS"));
+        verify(categoryRepository, times(1)).findAll();
+        verify(channelRepository, never()).findByStatus("APPROVED");
+    }
+    @Test void theFirstRequestAfterTheBackoffRebuilds() throws Exception {
+        when(categoryRepository.findAll()).thenThrow(new TimeoutException("firestore")).thenReturn(categories);
+        assertThrows(TimeoutException.class, () -> first("CHANNELS"));
+        now += PublicContentService.TAB_ORDER_FAILURE_BACKOFF.toNanos();
+        assertEquals("yt-ch-C", first("CHANNELS"));
+        verify(categoryRepository, times(2)).findAll();
+    }
+    @Test void aContentChangeEndsTheBackoff() throws Exception {
+        when(categoryRepository.findAll()).thenThrow(new TimeoutException("firestore")).thenReturn(categories);
+        assertThrows(TimeoutException.class, () -> first("CHANNELS"));
+        service.onContentChanged(new PublicContentCacheService.ContentChanged());
+        assertEquals("yt-ch-C", first("CHANNELS"));
+        verify(categoryRepository, times(2)).findAll();
+    }
+    @Test void aFailedBuildThatAContentChangeOvertookIsNotRemembered() throws Exception {
+        when(categoryRepository.findAll()).thenAnswer(inv -> {
+            service.onContentChanged(new PublicContentCacheService.ContentChanged());
+            throw new TimeoutException("firestore");
+        }).thenReturn(categories);
+        assertThrows(TimeoutException.class, () -> first("CHANNELS"));
+        assertEquals("yt-ch-C", first("CHANNELS"));
     }
     @Test void anAToZTwinOfTheSameItemIsListedOnce() throws Exception {
         // Two APPROVED docs for one youtube id (a re-add), neither in a category: one row, as the category walk dedupes.
@@ -253,6 +287,7 @@ class PublicContentServiceTabOrderTest {
         assertInstanceOf(TimeoutException.class,
                 assertThrows(ExecutionException.class, () -> waiter.get(10, TimeUnit.SECONDS)).getCause());
         verify(categoryRepository, times(1)).findAll(); // the waiter shared the failure, it did not rebuild
+        now += PublicContentService.TAB_ORDER_FAILURE_BACKOFF.toNanos();
         assertEquals("yt-ch-C", first("CHANNELS"));
         verify(categoryRepository, times(2)).findAll();
     }

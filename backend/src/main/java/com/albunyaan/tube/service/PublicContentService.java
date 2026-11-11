@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.text.Collator;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -50,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
 
 /**
@@ -210,12 +212,19 @@ public class PublicContentService {
     private final AtomicReference<CompletableFuture<Map<String, List<ContentItemDto>>>> tabOrderBuild = new AtomicReference<>();
     /** How long a request waits on another request's build before answering 504: two Firestore bulk-query timeouts. */
     private static final long TAB_ORDER_WAIT_SECONDS = 60;
+    /** How long a failed build is answered from memory, so a persistent failure cannot re-read the catalog per request. */
+    static final Duration TAB_ORDER_FAILURE_BACKOFF = Duration.ofSeconds(30);
+    LongSupplier nanoClock = System::nanoTime; // tests replace it
+    private record TabOrderFailure(Throwable error, long atNanos) {}
+    /** The last failed build, answered until the backoff passes or a content change; null when none. */
+    private volatile TabOrderFailure tabOrderFailure;
 
     /** Any content change drops the kept order; the generation bump first makes a build already running discard its result. */
     @EventListener
     public void onContentChanged(PublicContentCacheService.ContentChanged event) {
         tabOrderGeneration.incrementAndGet();
         tabOrder = null;
+        tabOrderFailure = null;
     }
 
     /**
@@ -226,6 +235,10 @@ public class PublicContentService {
             throws ExecutionException, InterruptedException, TimeoutException {
         Map<String, List<ContentItemDto>> order = tabOrder;
         if (order != null) return order;
+        TabOrderFailure failed = tabOrderFailure;
+        if (failed != null && nanoClock.getAsLong() - failed.atNanos() < TAB_ORDER_FAILURE_BACKOFF.toNanos()) {
+            throw rethrown(failed.error());
+        }
         CompletableFuture<Map<String, List<ContentItemDto>>> mine = new CompletableFuture<>();
         CompletableFuture<Map<String, List<ContentItemDto>>> running = tabOrderBuild.compareAndExchange(null, mine);
         if (running != null) {
@@ -235,13 +248,13 @@ public class PublicContentService {
                 throw unwrapped(e);
             }
         }
+        long generation = tabOrderGeneration.get();
         try {
             order = tabOrder; // a build that finished between the fast-path read and the CAS
             if (order != null) {
                 mine.complete(order);
                 return order;
             }
-            long generation = tabOrderGeneration.get();
             order = buildTabOrder();
             // Store, then re-check: onContentChanged bumps before it nulls, so a change racing the store always wins.
             tabOrder = order;
@@ -249,6 +262,11 @@ public class PublicContentService {
             mine.complete(order);
             return order;
         } catch (Throwable t) {
+            // Remembered like the order (store, then re-check); an interrupt is this thread's, not the build's.
+            if (!(t instanceof InterruptedException)) {
+                tabOrderFailure = new TabOrderFailure(t, nanoClock.getAsLong());
+                if (tabOrderGeneration.get() != generation) tabOrderFailure = null;
+            }
             mine.completeExceptionally(t);
             throw t;
         } finally {
@@ -1629,6 +1647,15 @@ public class PublicContentService {
             if (t instanceof InterruptedException ie) throw ie;
         }
         return e;
+    }
+
+    /** Throws a remembered build failure as itself (a TimeoutException stays a 504). */
+    private static RuntimeException rethrown(Throwable t) throws ExecutionException, InterruptedException, TimeoutException {
+        if (t instanceof ExecutionException e) throw e;
+        if (t instanceof TimeoutException e) throw e;
+        if (t instanceof RuntimeException e) throw e;
+        if (t instanceof Error e) throw e;
+        return new IllegalStateException(t);
     }
 
     /** Supplier that can throw checked exceptions. */
