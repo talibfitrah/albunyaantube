@@ -181,6 +181,24 @@ class ContentLibraryPagingAndTotalsTest {
     }
 
     @Test
+    void anApprovedPageWithNothingArchivedIsOneQuery() throws Exception {
+        List<Channel> rows = new ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%03d", i));
+            c.setStatus("APPROVED");
+            rows.add(c);
+        }
+        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
+                .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
+
+        controller.getContent("channel", "approved", null, null, "newest", 0, 20);
+
+        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.times(1))
+                .findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt());
+    }
+
+    @Test
     void aLongArchivedRunCostsAFewRoundsNotOnePerRow() throws Exception {
         // 1500 archived rows ahead of 100 live ones: linear deepening would re-query ~20 times.
         List<Channel> rows = new ArrayList<>();
@@ -223,6 +241,9 @@ class ContentLibraryPagingAndTotalsTest {
 
         assertEquals(20, body.content.size());
         assertEquals(30, body.totalItems);
+        // Archived rows go before the trim, so the search never re-runs its scans to deepen.
+        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.times(1))
+                .searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt());
     }
 
     @Test

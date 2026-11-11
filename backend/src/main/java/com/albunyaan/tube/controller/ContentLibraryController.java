@@ -515,6 +515,7 @@ public class ContentLibraryController {
         BoundedFetchResult<T> result = fetch.fetch(limit);
         while (liveOnly && result.hitLimit) {
             long held = result.items.stream().filter(t -> ValidationStatus.holds(validationStatus.apply(t))).count();
+            if (result.items.size() - held >= fetchLimit) break; // enough live rows already (always, for search)
             // At least double each round, so a long archived run costs a few rounds, not one per row.
             int deeper = (int) Math.min(Math.max(fetchLimit + held, 2L * limit), MAX_ITEMS_PER_TYPE);
             if (deeper <= limit) break;
