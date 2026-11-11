@@ -1,0 +1,23 @@
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_8a99188edaca7b::t_57dbccd76bc262 116-118,376,392,409,498-511
+  s_8a99188edaca7b::t_1253dfd15c6f46 512-513
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryPagingAndTotalsTest.java
+  s_8a99188edaca7b::t_57dbccd76bc262 183-196
+  s_8a99188edaca7b::t_a5d908c5877996 182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "779b7aa9a02e794c30832b46dee6355c3d4aa568",
+  "prompts": {},
+  "sessions": {
+    "s_8a99188edaca7b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e8c71ed4-1e4d-43b6-bcd9-6f2707009b24",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
