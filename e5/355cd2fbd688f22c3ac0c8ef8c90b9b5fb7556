@@ -1,0 +1,21 @@
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_8a936fc306f37b::t_51c5bd0bc11b5c 475
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServicePaginationTest.java
+  s_8a936fc306f37b::t_44d2d73765ec5b 426-455
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5355cd2fbd688f22c3ac0c8ef8c90b9b5fb7556",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
