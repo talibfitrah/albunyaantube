@@ -1,0 +1,33 @@
+android/app/src/test/java/com/albunyaan/tube/ui/adapters/HomeFeaturedA11yTest.kt
+  s_8a936fc306f37b::t_fcdf3eb5582abb 49,53,58-63
+  s_8a936fc306f37b::t_a73b9dadc68d45 64-66
+android/app/src/main/java/com/albunyaan/tube/ui/detail/adapters/ChannelVideoAdapter.kt
+  s_8a936fc306f37b::t_31ecbfedc4eb00 6,15,49-51
+android/app/src/main/java/com/albunyaan/tube/ui/favorites/FavoritesAdapter.kt
+  s_8a936fc306f37b::t_31ecbfedc4eb00 9,17,55-57
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/VideoGridAdapter.kt
+  s_8a936fc306f37b::t_9a03be42f92192 6,15
+android/app/src/main/java/com/albunyaan/tube/ui/SearchResultsAdapter.kt
+  s_8a936fc306f37b::t_9a03be42f92192 6,18
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/FeaturedListAdapter.kt
+  s_8a936fc306f37b::t_9a03be42f92192 6,17
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/HomeFeaturedAdapter.kt
+  s_8a936fc306f37b::t_fcdf3eb5582abb 204,212
+  s_8a936fc306f37b::t_9a03be42f92192 6,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e305d9e540c2d6ce20b72297a31b1aeebe9ecf24",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
