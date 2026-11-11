@@ -1146,4 +1146,15 @@ class ContentValidationServiceTest {
         verify(playlistRepository).deleteById("pl-1");
         verify(sortOrderService).removeContentFromAllCategories("pl-1", "playlist");
     }
+
+    @Test
+    void aFailedSortOrderCleanupStillReportsTheDelete() throws Exception {
+        doThrow(new RuntimeException("boom")).when(sortOrderService).removeContentFromAllCategories(any(), any());
+
+        ContentValidationService.BulkActionResult result = service.deleteContent("video", List.of("v-1"), "uid", "admin");
+
+        // The document is gone; a leftover order entry must not turn that into a reported failure.
+        assertEquals(1, result.getSuccessCount());
+        assertTrue(result.getErrors().isEmpty());
+    }
 }

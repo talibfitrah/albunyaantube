@@ -3101,8 +3101,8 @@ paths:
     get:
       summary: Approved content for the category picker
       description: |
-        Every approved item, carrying only the fields the "add content to a category" picker
-        renders. One request, no paging.
+        Every live approved item (archived and personal-grant items left out), carrying only
+        the fields the "add content to a category" picker renders. One request, no paging.
 
         Replaces a client-side loop over `/admin/content` that could not terminate on its own:
         that endpoint's `totalPages` describes its current fetch window, which grows by one page
@@ -3182,7 +3182,9 @@ paths:
             example: channel,playlist,video
         - name: status
           in: query
-          description: Filter by approval status
+          description: |
+            Filter by approval status. `approved` lists live content only: archived items
+            keep status APPROVED but are listed on the Archived page.
           schema:
             type: string
             enum: [all, approved, pending, rejected]
@@ -3242,7 +3244,9 @@ paths:
       parameters:
         - name: status
           in: query
-          description: Count only this approval status, matching the listing's status filter
+          description: |
+            Count only this approval status, matching the listing's status filter (`approved`
+            leaves out archived items). Any other value is a 400.
           schema:
             type: string
             enum: [all, approved, pending, rejected]

@@ -136,6 +136,9 @@ public class ContentLibraryController {
                     Math.max(0, videoRepository.countByStatus("APPROVED") - videoRepository.countApprovedArchived())
             ));
         }
+        if (!"pending".equalsIgnoreCase(status) && !"rejected".equalsIgnoreCase(status)) {
+            return ResponseEntity.badRequest().build();
+        }
         String upper = status.toUpperCase(java.util.Locale.ROOT);
         return ResponseEntity.ok(new RegistryTotals(
                 channelRepository.countByStatus(upper),
@@ -366,14 +369,11 @@ public class ContentLibraryController {
         List<ContentItem> allContent = new ArrayList<>();
         boolean anyTypeTruncated = false;
         // "Approved" is live content, matching GET /totals: archived rows belong to the Archived page.
-        // Each type fetches its archived count extra, so dropping them never leaves the window short
-        // of live rows (offset paging would otherwise skip the ones a short page could not serve).
-        // ponytail: one aggregation per type per approved listing; cache it if archives grow large.
         boolean liveOnly = "approved".equalsIgnoreCase(status);
 
         if (contentTypes.contains("channel")) {
-            BoundedFetchResult<Channel> result = fetchChannelsBounded(status, category, search, sort,
-                    fetchLimit + archivedBuffer(liveOnly, search, channelRepository::countApprovedArchived));
+            BoundedFetchResult<Channel> result = fetchLive(liveOnly, fetchLimit, Channel::getValidationStatus,
+                    limit -> fetchChannelsBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
@@ -388,8 +388,8 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("playlist")) {
-            BoundedFetchResult<Playlist> result = fetchPlaylistsBounded(status, category, search, sort,
-                    fetchLimit + archivedBuffer(liveOnly, search, playlistRepository::countApprovedArchived));
+            BoundedFetchResult<Playlist> result = fetchLive(liveOnly, fetchLimit, Playlist::getValidationStatus,
+                    limit -> fetchPlaylistsBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
@@ -405,8 +405,8 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("video")) {
-            BoundedFetchResult<Video> result = fetchVideosBounded(status, category, search, sort,
-                    fetchLimit + archivedBuffer(liveOnly, search, videoRepository::countApprovedArchived));
+            BoundedFetchResult<Video> result = fetchLive(liveOnly, fetchLimit, Video::getValidationStatus,
+                    limit -> fetchVideosBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
@@ -495,20 +495,32 @@ public class ContentLibraryController {
         return ResponseEntity.ok(response);
     }
 
+    @FunctionalInterface
+    private interface BoundedFetch<T> {
+        BoundedFetchResult<T> fetch(int limit)
+                throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
+    }
+
     /**
-     * Extra rows an approved browse fetches so dropping archived ones never leaves a page short.
-     * Search scans its own bound and ignores the limit, so it skips the count. A failed count costs
-     * only the buffer, never the listing.
+     * Fetch a type's window and, for approved (live) listings, deepen it by the archived rows it
+     * held, so dropping them never leaves a page short (offset paging would skip the live rows a
+     * short page could not serve). Only when rows exist beyond the window; never past
+     * {@link #MAX_ITEMS_PER_TYPE}, where the truncated flag already says the list is partial.
      */
-    private int archivedBuffer(boolean liveOnly, String search, java.util.concurrent.Callable<Long> countArchived) {
-        if (!liveOnly || (search != null && !search.isBlank())) return 0;
-        try {
-            return (int) (long) countArchived.call();
-        } catch (Exception e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            log.warn("Archived count unavailable; an approved page may run short: {}", e.getMessage());
-            return 0;
+    private <T> BoundedFetchResult<T> fetchLive(boolean liveOnly, int fetchLimit,
+                                                java.util.function.Function<T, ValidationStatus> validationStatus,
+                                                BoundedFetch<T> fetch)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        int limit = fetchLimit;
+        BoundedFetchResult<T> result = fetch.fetch(limit);
+        while (liveOnly && result.hitLimit) {
+            long held = result.items.stream().filter(t -> ValidationStatus.holds(validationStatus.apply(t))).count();
+            int deeper = (int) Math.min(fetchLimit + held, MAX_ITEMS_PER_TYPE);
+            if (deeper <= limit) break;
+            limit = deeper;
+            result = fetch.fetch(limit);
         }
+        return result;
     }
 
     /**
@@ -638,6 +650,10 @@ public class ContentLibraryController {
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(ch -> !status.equalsIgnoreCase(ch.getStatus()));
             }
+            if ("approved".equalsIgnoreCase(status)) {
+                // Live only, and before the trim below, so held rows never take a live match's place.
+                results.removeIf(ch -> ValidationStatus.holds(ch.getValidationStatus()));
+            }
             // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
             boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
                     || nameResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
@@ -713,6 +729,10 @@ public class ContentLibraryController {
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(pl -> !status.equalsIgnoreCase(pl.getStatus()));
             }
+            if ("approved".equalsIgnoreCase(status)) {
+                // Live only, and before the trim below, so held rows never take a live match's place.
+                results.removeIf(pl -> ValidationStatus.holds(pl.getValidationStatus()));
+            }
             // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
             boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
                     || titleResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
@@ -787,6 +807,10 @@ public class ContentLibraryController {
             }
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(v -> !status.equalsIgnoreCase(v.getStatus()));
+            }
+            if ("approved".equalsIgnoreCase(status)) {
+                // Live only, and before the trim below, so held rows never take a live match's place.
+                results.removeIf(v -> ValidationStatus.holds(v.getValidationStatus()));
             }
             // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
             boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE

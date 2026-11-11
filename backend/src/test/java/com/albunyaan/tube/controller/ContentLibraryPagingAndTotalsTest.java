@@ -168,7 +168,6 @@ class ContentLibraryPagingAndTotalsTest {
             if (i < 60) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
             rows.add(c);
         }
-        when(channelRepository.countApprovedArchived()).thenReturn(60L);
         when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
                 .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
 
@@ -177,21 +176,52 @@ class ContentLibraryPagingAndTotalsTest {
 
         assertEquals(20, body.content.size());
         assertEquals(40, body.totalItems);
+        // Deepened by the rows it dropped, not by a registry-wide count on the listing's path.
+        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.never()).countApprovedArchived();
     }
 
     @Test
-    void aFailedArchivedCountNeverFailsTheApprovedListing() throws Exception {
-        Channel live = new Channel("UClive");
-        live.setId("c-live");
-        live.setStatus("APPROVED");
-        when(channelRepository.countApprovedArchived()).thenThrow(new java.util.concurrent.TimeoutException("slow"));
-        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
-                .thenReturn(List.of(live));
+    void anApprovedSearchDropsArchivedMatchesBeforeTrimming() throws Exception {
+        // 75 archived matches ahead of 30 live ones. Trimming to the 70-row window first would keep
+        // only archived rows and report nothing, though the live matches were already fetched.
+        List<Channel> matches = new ArrayList<>();
+        for (int i = 0; i < 105; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%03d", i));
+            c.setName("term " + i);
+            c.setStatus("APPROVED");
+            if (i < 75) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+            matches.add(c);
+        }
+        when(channelRepository.searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt())).thenReturn(matches);
+        when(channelRepository.searchByKeyword(org.mockito.ArgumentMatchers.anyString(), anyInt())).thenReturn(List.of());
 
         ContentLibraryController.ContentLibraryResponse body =
-                controller.getContent("channel", "approved", null, null, "newest", 0, 20).getBody();
+                controller.getContent("channel", "approved", null, "term", "newest", 0, 20).getBody();
 
-        assertEquals(1, body.content.size());
+        assertEquals(20, body.content.size());
+        assertEquals(30, body.totalItems);
+    }
+
+    @Test
+    void totalsRejectAStatusTheFilterDoesNotOffer() throws Exception {
+        assertEquals(400, controller.getTotals("archived").getStatusCode().value());
+        assertEquals(400, controller.getTotals("").getStatusCode().value());
+    }
+
+    @Test
+    void rejectedTotalsCountEveryRejectedDoc() throws Exception {
+        when(videoRepository.countByStatus("REJECTED")).thenReturn(1L);
+
+        assertEquals(1L, controller.getTotals("rejected").getBody().videos);
+    }
+
+    @Test
+    void approvedTotalsNeverGoNegativeWhenTheTwoReadsStraddleAChange() throws Exception {
+        when(channelRepository.countByStatus("APPROVED")).thenReturn(0L);
+        when(channelRepository.countApprovedArchived()).thenReturn(1L);
+
+        assertEquals(0L, controller.getTotals("approved").getBody().channels);
     }
 
     @Test
@@ -202,10 +232,12 @@ class ContentLibraryPagingAndTotalsTest {
         // slow or failing aggregation can never delay or fail a listing.
         controller.getContent("channel", "all", null, null, "newest", 0, 20);
         controller.getContent("channel", "all", null, null, "newest", 1, 20);
+        controller.getContent("channel", "approved", null, null, "newest", 0, 20);
 
         org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.never()).countAll();
         org.mockito.Mockito.verify(playlistRepository, org.mockito.Mockito.never()).countAll();
         org.mockito.Mockito.verify(videoRepository, org.mockito.Mockito.never()).countAll();
+        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.never()).countApprovedArchived();
     }
 
     @Test

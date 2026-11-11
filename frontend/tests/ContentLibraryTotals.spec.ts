@@ -87,6 +87,25 @@ describe('ContentLibraryView registry totals', () => {
     await waitFor(() => expect(container.querySelector('.registry-totals')).toBeNull());
   });
 
+  it('keeps the newest status\'s totals when an older request answers last', async () => {
+    const { container } = renderView();
+    await waitFor(() => expect(screen.getByText('4,321')).toBeInTheDocument());
+
+    let answerPending: (v: unknown) => void = () => {};
+    fetchRegistryTotalsMock.mockImplementationOnce(() => new Promise(r => { answerPending = r; }));
+    await fireEvent.click(container.querySelector('input[name="status"][value="pending"]') as HTMLInputElement);
+    fetchRegistryTotalsMock.mockResolvedValueOnce({ channels: 900, playlists: 40, videos: 30 });
+    await fireEvent.click(container.querySelector('input[name="status"][value="approved"]') as HTMLInputElement);
+    await waitFor(() => expect(screen.getByText('900')).toBeInTheDocument());
+
+    answerPending({ channels: 313, playlists: 7, videos: 762 });
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(screen.getByText('900')).toBeInTheDocument();
+    expect(screen.queryByText('313')).toBeNull();
+    expect(screen.getByText('In the registry: Approved')).toBeInTheDocument();
+  });
+
   it('groups digits by the app locale, not the browser locale', async () => {
     renderView('nl');
 

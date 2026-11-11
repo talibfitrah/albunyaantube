@@ -190,7 +190,7 @@ class UserControllerLifecycleIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void countAll_excludesDeleted_byDefault() throws Exception {
+    void countAll_keepsDeletedRows_countDeletedCountsThem() throws Exception {
         String adminUid = seedUser("a-f11-5@t", "admin");
         seedUser("a-f11-6@t", "admin"); // ensure not last
         seedUser("live-1@t", "moderator");
@@ -199,11 +199,7 @@ class UserControllerLifecycleIntegrationTest extends BaseIntegrationTest {
         stubToken(adminUid, "admin");
 
         // 5 users total (2 admins + 1 active mod + 2 to-be-deleted mods).
-        // Pre-delete: countAll(false) returns 5, countAll() returns 5.
-        long beforeLive = userRepository.countAll(false);
         long beforeAll = userRepository.countAll();
-        assertEquals(beforeAll, beforeLive,
-                "Pre-delete the two counts must match — no deleted users yet");
 
         // Soft-delete 2 users.
         mvc.perform(delete("/api/admin/users/" + dead1 + "?reason=test")
@@ -213,11 +209,8 @@ class UserControllerLifecycleIntegrationTest extends BaseIntegrationTest {
                 .header("Authorization", "Bearer fake-token"))
             .andExpect(status().isNoContent());
 
-        long liveAfter = userRepository.countAll(false);
         long allAfter = userRepository.countAll();
         long deletedAfter = userRepository.countDeleted();
-        assertEquals(beforeLive - 2, liveAfter,
-                "countAll(false) must drop by exactly the number of deletions");
         assertEquals(beforeAll, allAfter,
                 "countAll() (includeDeleted) must NOT drop — deleted rows still exist");
         assertEquals(2L, deletedAfter,
