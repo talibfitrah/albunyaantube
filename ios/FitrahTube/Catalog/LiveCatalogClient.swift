@@ -126,7 +126,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
             category: dto.category,
             description: dto.description,
             thumbnailURL: dto.thumbnailUrl.flatMap(URL.init(string:)),
-            durationSeconds: dto.durationSeconds,
+            durationSeconds: dto.durationSeconds.flatMap { $0 > 0 ? $0 : nil },  // 0 = unknown (legacy rows), same as absent
             uploadedDaysAgo: dto.uploadedDaysAgo,
             viewCount: dto.viewCount,
             channelTitle: dto.channelTitle,

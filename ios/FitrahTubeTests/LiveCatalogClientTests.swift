@@ -252,6 +252,21 @@ struct LiveCatalogClientTests {
         #expect(PlayerArgs(item: page.items[0]).liveTitle == "Zad")                // I-P1: D12's backend title (open, queue)
     }
 
+    /// The backend omits an unknown duration; stored legacy rows still send 0. Both mean "unknown" (no chip, no a11y duration).
+    @Test func aZeroOrMissingDurationMapsToNil() async throws {
+        let json = Data(#"""
+        {"data":[{"id":"v0","type":"VIDEO","durationSeconds":0},
+                 {"id":"vn","type":"VIDEO"},
+                 {"id":"v1","type":"VIDEO","durationSeconds":754}],
+         "pageInfo":{"hasNext":false}}
+        """#.utf8)
+        let (sut, _) = makeClient(responseBody: json)
+
+        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(), query: nil)
+
+        #expect(page.items.map(\.durationSeconds) == [nil, nil, 754])
+    }
+
     /// An exact live link (a plain VIDEO of a live category) carries `liveLink: true` into the player args; the heartbeat
     /// asks `/live/links/{id}` for it.
     @Test func aLiveLinkItemKeepsItsFlag() async throws {
