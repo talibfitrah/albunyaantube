@@ -1,0 +1,33 @@
+backend/src/main/java/com/albunyaan/tube/service/VideoValidationService.java
+  s_8a936fc306f37b::t_2b84e9d1a2adc7 188-192
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_8a936fc306f37b::t_2b84e9d1a2adc7 162-163,268-269,307-308,350-351,391-392,1268-1269
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceTabOrderTest.java
+  s_8a936fc306f37b::t_a0ca4dc790671a 208-209,211,216-217,223-224,232,234,237-242,298-300
+  s_8a936fc306f37b::t_5d7884b33320e7 301-302
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_8a936fc306f37b::t_2b84e9d1a2adc7 215-219,269-271
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_8a936fc306f37b::t_1a3cde3d28abf1 881,883-886,892-893
+  s_8a936fc306f37b::t_550cf137e8b014 758-781
+  s_8a936fc306f37b::t_975cdc0482d431 757
+backend/src/test/java/com/albunyaan/tube/service/VideoValidationServiceTest.java
+  s_8a936fc306f37b::t_550cf137e8b014 29,128-145
+  s_8a936fc306f37b::t_01a09e052a38a1 146-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1c091b2307404ac5747f5cf373a894985d9c0678",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
