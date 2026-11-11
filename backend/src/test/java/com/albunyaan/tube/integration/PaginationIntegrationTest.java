@@ -12,6 +12,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.service.ApprovalService;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.PublicContentService;
 import com.albunyaan.tube.util.TestDataBuilder;
 import com.google.cloud.Timestamp;
@@ -61,6 +62,9 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private PublicContentService publicContentService;
+
+    @Autowired
+    private PublicContentCacheService publicContentCacheService;
 
     @Autowired
     private ApprovalService approvalService;
@@ -954,6 +958,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
             for (int i = 25; i < 30; i++) {
                 channelRepository.deleteById(channels.get(i).getId());
             }
+            publicContentCacheService.evictPublicContentCaches(); // what the registry delete does after its write
 
             // Continue fetching with cursor
             while (cursor != null) {
