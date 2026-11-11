@@ -318,7 +318,7 @@ public class ContentLibraryController {
         String st = "all".equalsIgnoreCase(status) ? null : status.toUpperCase(java.util.Locale.ROOT);
         String cat = category == null || category.isBlank() ? null : category;
 
-        log.info("Content Library request: types={}, status={}, category={}, search={}, sort={}, cursor={}, size={}",
+        log.info("Content Library request: types={}, status={}, category={}, search={}, sort={}, hasCursor={}, size={}",
                 types, status, category, search, sort, cursor != null, cappedSize);
 
         ContentLibraryResponse response;
@@ -404,8 +404,8 @@ public class ContentLibraryController {
      * <p>Each type unfinished contributes its next {@code size} rows, so the first {@code size}
      * of the merge can never be preceded by a row of any type not yet read. Each type's cursor
      * then moves to the last of its rows the page served, or past the archived rows before the
-     * first it did not, so an archived run is read once. A page reads at most about
-     * {@code size + 1} rows per type, whatever its depth.</p>
+     * first it did not, so an archived run is read once. A page reads about {@code size + 1} rows per
+     * type, whatever its depth, plus any archived run it moves past.</p>
      */
     private ContentLibraryResponse mergePage(Set<String> contentTypes, String status, boolean oldest,
                                              ListingCursor at, int size, PageQuery<Channel> channels,

@@ -248,6 +248,7 @@ async function loadContent() {
   loadMoreError.value = null
   items.value = []
   nextCursor = null
+  hasMore.value = false // a scroll before the new first page lands would re-fetch that page
 
   try {
     const params = buildParams(null)

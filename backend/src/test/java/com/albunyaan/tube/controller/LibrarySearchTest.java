@@ -74,11 +74,15 @@ class LibrarySearchTest {
     }
 
     private List<ContentLibraryController.ContentItem> search(String status, String term) throws Exception {
+        return search(status, null, term);
+    }
+
+    private List<ContentLibraryController.ContentItem> search(String status, String category, String term) throws Exception {
         List<ContentLibraryController.ContentItem> all = new ArrayList<>();
         String cursor = null;
         do {
             ContentLibraryController.ContentLibraryResponse body =
-                    controller.getContent(null, status, null, term, "newest", cursor, 25).getBody();
+                    controller.getContent(null, status, category, term, "newest", cursor, 25).getBody();
             assertTrue(body.content.size() <= 25);
             all.addAll(body.content);
             cursor = body.nextCursor;
@@ -170,6 +174,27 @@ class LibrarySearchTest {
         registry.channels.remove(c);
         snapshot.onCatalogChanged(new CatalogChanged("CHANNEL", c.getId(), false));
         assertEquals(0, search("all", "aqeedah").size());
+    }
+
+    @Test
+    void aCategorySearchListsThatCategoryOnly() throws Exception {
+        channel(1, "Fiqh one", "APPROVED").setCategoryIds(List.of("fiqh"));
+        channel(2, "Fiqh two", "APPROVED").setCategoryIds(List.of("aqeedah"));
+        channel(3, "Fiqh three", "APPROVED");
+
+        assertEquals(1, search("all", "fiqh", "fiqh").size());
+        assertEquals(3, search("all", "fiqh").size());
+    }
+
+    @Test
+    void aWriteThatCommitsLateIsStillFound() throws Exception {
+        Channel c = channel(1, "Old name", "PENDING");
+        // The write's transaction failed to report: it may still commit after the next search reads.
+        snapshot.onCatalogChanged(new CatalogChanged("CHANNEL", c.getId(), true));
+        assertEquals(0, search("all", "aqeedah").size());
+
+        c.setName("Aqeedah basics"); // the late commit, which publishes no second event
+        assertEquals(1, search("all", "aqeedah").size());
     }
 
     @Test

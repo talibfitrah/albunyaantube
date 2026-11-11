@@ -1182,7 +1182,7 @@ async function toggleOfflineAllowed(item: ContentItem) {
 
 // Data Loading
 // Page size for the client-side sorts, which load every page up front: the backend's cap (100).
-const CUSTOM_SORT_MAX_ITEMS = 100;
+const CLIENT_SORT_PAGE_SIZE = 100;
 const PAGE_SIZE = 25;
 
 // Infinite scroll state. The server's cursor is the position after the last row it served, so a
@@ -1288,7 +1288,7 @@ function updateLoadedItems(items: BulkActionItem[], patch?: (item: ContentItem) 
 }
 
 function buildContentParams(cursor: string | null): Record<string, any> {
-  const pageSize = paginationDisabled.value ? CUSTOM_SORT_MAX_ITEMS : PAGE_SIZE;
+  const pageSize = paginationDisabled.value ? CLIENT_SORT_PAGE_SIZE : PAGE_SIZE;
 
   const params: Record<string, any> = {
     status: filters.value.status,
