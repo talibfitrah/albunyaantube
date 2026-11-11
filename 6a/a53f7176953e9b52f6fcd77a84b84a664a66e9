@@ -1,0 +1,27 @@
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_8a936fc306f37b::t_4ab78e68303e36 321,407-408
+backend/src/test/java/com/albunyaan/tube/controller/LibrarySearchTest.java
+  s_8a936fc306f37b::t_9171934065338e 77-80,85,179-199
+frontend/src/components/exclusions/ContentBrowserModal.vue
+  s_8a936fc306f37b::t_852163aeaa3f31 251
+frontend/src/views/ContentLibraryView.vue
+  s_8a936fc306f37b::t_aaa165dd649008 1185,1291
+frontend/tests/ContentBrowserModalPaging.spec.ts
+  s_8a936fc306f37b::t_7a94e9fb0d3342 49-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6aa53f7176953e9b52f6fcd77a84b84a664a66e9",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
