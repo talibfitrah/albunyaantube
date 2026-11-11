@@ -743,14 +743,9 @@ const contentTypes = [
 const totalPending = ref<number | null>(null);
 const countUnavailable = ref(false);
 const displayPendingCount = computed(() => {
-  // The by-user tab counts its own; the queue's badge must not include the imports it no longer
-  // shows, or the number and the list disagree by exactly that many.
-  if (adminTab.value === 'byUser' && !isModeratorView.value) return userImportTotal.value;
-  if (totalPending.value !== null) {
-    return isModeratorView.value
-      ? totalPending.value
-      : Math.max(0, totalPending.value - userImportTotal.value);
-  }
+  // Everything pending, the same number as the Dashboard and the Content Library "Pending" totals.
+  // The Queue and By-user tabs carry their own split of it in their labels.
+  if (totalPending.value !== null) return totalPending.value;
   // Before any count loads, show loaded items count as lower-bound
   return approvals.value.length;
 });

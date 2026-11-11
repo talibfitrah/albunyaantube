@@ -123,7 +123,6 @@ class ContentLibraryPagingAndTotalsTest {
         when(videoRepository.countByStatus("APPROVED")).thenReturn(30L);
         when(channelRepository.countApprovedArchived()).thenReturn(2L);
         when(playlistRepository.countApprovedArchived()).thenReturn(8L);
-        when(videoRepository.countApprovedArchived()).thenReturn(0L);
         when(channelRepository.countByStatus("PENDING")).thenReturn(313L);
 
         ContentLibraryController.RegistryTotals totals = controller.getTotals("approved").getBody();
@@ -155,6 +154,29 @@ class ContentLibraryPagingAndTotalsTest {
         // Same definition as GET /totals?status=approved, so the list and its header agree.
         assertEquals(1, body.content.size());
         assertEquals("c-live", body.content.get(0).id);
+    }
+
+    @Test
+    void archivedRowsNeverLeaveAnApprovedPageShort() throws Exception {
+        // 60 archived rows ahead of 40 live ones. Page 0 of 20 normally reads 70 rows: dropping the
+        // archived would leave 10, and offset paging would then skip live rows 10-19 for good.
+        List<Channel> rows = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%03d", i));
+            c.setStatus("APPROVED");
+            if (i < 60) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+            rows.add(c);
+        }
+        when(channelRepository.countApprovedArchived()).thenReturn(60L);
+        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
+                .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
+
+        ContentLibraryController.ContentLibraryResponse body =
+                controller.getContent("channel", "approved", null, null, "newest", 0, 20).getBody();
+
+        assertEquals(20, body.content.size());
+        assertEquals(40, body.totalItems);
     }
 
     @Test

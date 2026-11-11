@@ -1650,7 +1650,7 @@ async function saveOrder() {
 
 /**
  * Header counts are decorative relative to the listing, so a failure is logged and swallowed —
- * the totals row just stays hidden. Never surfaced as an error banner over working content.
+ * the totals row just hides. Never surfaced as an error banner over working content.
  */
 let totalsRequest = 0;
 async function loadRegistryTotals() {
@@ -1664,6 +1664,8 @@ async function loadRegistryTotals() {
     registryTotalsStatus.value = status;
   } catch (err) {
     console.warn('Registry totals unavailable', err);
+    // Hide rather than keep numbers that no longer describe this status or this list.
+    if (request === totalsRequest) registryTotals.value = null;
   }
 }
 

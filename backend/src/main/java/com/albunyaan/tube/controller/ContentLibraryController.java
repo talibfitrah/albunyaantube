@@ -113,8 +113,9 @@ public class ContentLibraryController {
      *
      * <p>{@code status} follows the listing's status filter (all, approved, pending, rejected), so
      * the header reads e.g. "approved channels" while the admin views approved content. Approved
-     * means live: archived items keep status APPROVED but the apps hide them, and the Archived
-     * page counts them, so all = approved + pending + rejected + archived.</p>
+     * means live, as in the listing and the Content Sorting picker: archived items keep status
+     * APPROVED, but the apps hide them and the Archived page counts them. Pending and rejected
+     * count every doc with that status, so pending equals the Pending Approvals queue.</p>
      */
     @GetMapping("/totals")
     public ResponseEntity<RegistryTotals> getTotals(@RequestParam(defaultValue = "all") String status)
@@ -126,12 +127,19 @@ public class ContentLibraryController {
                     videoRepository.countAll()
             ));
         }
+        if ("approved".equalsIgnoreCase(status)) {
+            // Two reads, so a concurrent status change can skew one moment by an item; never below 0.
+            return ResponseEntity.ok(new RegistryTotals(
+                    Math.max(0, channelRepository.countByStatus("APPROVED") - channelRepository.countApprovedArchived()),
+                    Math.max(0, playlistRepository.countByStatus("APPROVED") - playlistRepository.countApprovedArchived()),
+                    Math.max(0, videoRepository.countByStatus("APPROVED") - videoRepository.countApprovedArchived())
+            ));
+        }
         String upper = status.toUpperCase(java.util.Locale.ROOT);
-        boolean approved = "APPROVED".equals(upper);
         return ResponseEntity.ok(new RegistryTotals(
-                channelRepository.countByStatus(upper) - (approved ? channelRepository.countApprovedArchived() : 0),
-                playlistRepository.countByStatus(upper) - (approved ? playlistRepository.countApprovedArchived() : 0),
-                videoRepository.countByStatus(upper) - (approved ? videoRepository.countApprovedArchived() : 0)
+                channelRepository.countByStatus(upper),
+                playlistRepository.countByStatus(upper),
+                videoRepository.countByStatus(upper)
         ));
     }
 
@@ -357,10 +365,14 @@ public class ContentLibraryController {
         List<ContentItem> allContent = new ArrayList<>();
         boolean anyTypeTruncated = false;
         // "Approved" is live content, matching GET /totals: archived rows belong to the Archived page.
+        // Each type fetches its archived count extra, so dropping them never leaves the window short
+        // of live rows (offset paging would otherwise skip the ones a short page could not serve).
+        // ponytail: one aggregation per type per approved listing; cache it if archives grow large.
         boolean liveOnly = "approved".equalsIgnoreCase(status);
 
         if (contentTypes.contains("channel")) {
-            BoundedFetchResult<Channel> result = fetchChannelsBounded(status, category, search, sort, fetchLimit);
+            BoundedFetchResult<Channel> result = fetchChannelsBounded(status, category, search, sort,
+                    fetchLimit + (liveOnly ? (int) channelRepository.countApprovedArchived() : 0));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
@@ -375,7 +387,8 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("playlist")) {
-            BoundedFetchResult<Playlist> result = fetchPlaylistsBounded(status, category, search, sort, fetchLimit);
+            BoundedFetchResult<Playlist> result = fetchPlaylistsBounded(status, category, search, sort,
+                    fetchLimit + (liveOnly ? (int) playlistRepository.countApprovedArchived() : 0));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
@@ -391,7 +404,8 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("video")) {
-            BoundedFetchResult<Video> result = fetchVideosBounded(status, category, search, sort, fetchLimit);
+            BoundedFetchResult<Video> result = fetchVideosBounded(status, category, search, sort,
+                    fetchLimit + (liveOnly ? (int) videoRepository.countApprovedArchived() : 0));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }

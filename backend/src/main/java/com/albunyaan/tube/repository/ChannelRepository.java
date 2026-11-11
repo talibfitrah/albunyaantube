@@ -633,7 +633,9 @@ public class ChannelRepository {
     public long countApprovedArchived() throws ExecutionException, InterruptedException, TimeoutException {
         AggregateQuery countQuery = getCollection()
                 .whereEqualTo("status", "APPROVED")
-                .whereIn("validationStatus", java.util.List.of("ARCHIVED", "UNAVAILABLE"))
+                .whereIn("validationStatus", java.util.List.of(
+                        com.albunyaan.tube.model.ValidationStatus.ARCHIVED.name(),
+                        com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE.name()))
                 .count();
         AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();

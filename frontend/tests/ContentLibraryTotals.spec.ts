@@ -76,6 +76,17 @@ describe('ContentLibraryView registry totals', () => {
     expect(screen.getByText('In the registry: Approved')).toBeInTheDocument();
   });
 
+  it('hides the totals rather than showing another status\'s numbers when a refresh fails', async () => {
+    const { container } = renderView();
+    await waitFor(() => expect(screen.getByText('4,321')).toBeInTheDocument());
+
+    fetchRegistryTotalsMock.mockRejectedValue(new Error('firestore slow'));
+    const pending = container.querySelector('input[name="status"][value="pending"]') as HTMLInputElement;
+    await fireEvent.click(pending);
+
+    await waitFor(() => expect(container.querySelector('.registry-totals')).toBeNull());
+  });
+
   it('groups digits by the app locale, not the browser locale', async () => {
     renderView('nl');
 
