@@ -1,0 +1,23 @@
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_8a936fc306f37b::t_e6771d588ff224 206
+  s_8a936fc306f37b::t_e435eb5dccc135 49,52,209-212,221-224,229-238,241-244,246-250,311,1615-1624,1626
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceTabOrderTest.java
+  s_8a936fc306f37b::t_d62ebcd2f7eae7 33-36,41,205-226,228-281
+  s_8a936fc306f37b::t_6918138f15ee7d 227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fda295b5cc8ce4199b71cdf1d414a76af0c3387b",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
