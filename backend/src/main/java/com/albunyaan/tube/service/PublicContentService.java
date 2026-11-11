@@ -472,6 +472,7 @@ public class PublicContentService {
                     });
                     break;
                 case "POPULAR":
+                case "MOST_POPULAR":
                     stream = stream.sorted((v1, v2) -> {
                         Long views1 = v1.getViewCount() != null ? v1.getViewCount() : 0L;
                         Long views2 = v2.getViewCount() != null ? v2.getViewCount() : 0L;

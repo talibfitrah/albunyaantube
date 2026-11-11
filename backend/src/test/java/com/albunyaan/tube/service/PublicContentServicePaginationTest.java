@@ -423,6 +423,36 @@ class PublicContentServicePaginationTest {
         assertNotEquals("0", PublicContentService.normalizeCursor(cursor));
     }
 
+    @Test
+    void getContent_videos_mostPopular_sortsByViewsDescending() throws Exception {
+        List<Video> videos = createTestVideos(3);
+        videos.get(0).setViewCount(10L);
+        videos.get(1).setViewCount(30L);
+        videos.get(2).setViewCount(20L);
+        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(videos);
+
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "VIDEOS", null, 5, null, null, null, "MOST_POPULAR");
+
+        assertEquals(List.of("yt-video-2", "yt-video-3", "yt-video-1"),
+                response.getData().stream().map(ContentItemDto::getId).toList());
+    }
+
+    @Test
+    void getContent_videos_popular_sortsByViewsDescending() throws Exception {
+        List<Video> videos = createTestVideos(3);
+        videos.get(0).setViewCount(10L);
+        videos.get(1).setViewCount(30L);
+        videos.get(2).setViewCount(20L);
+        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(videos);
+
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "VIDEOS", null, 5, null, null, null, "POPULAR");
+
+        assertEquals(List.of("yt-video-2", "yt-video-3", "yt-video-1"),
+                response.getData().stream().map(ContentItemDto::getId).toList());
+    }
+
     private List<Video> createTestVideos(int count) {
         List<Video> videos = new ArrayList<>();
         for (int i = 1; i <= count; i++) {
