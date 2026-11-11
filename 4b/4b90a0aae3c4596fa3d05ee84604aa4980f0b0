@@ -1,0 +1,19 @@
+backend/src/test/java/com/albunyaan/tube/integration/PaginationIntegrationTest.java
+  s_8a936fc306f37b::t_aa779a8bbe0ad8 738,742-744
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b4b90a0aae3c4596fa3d05ee84604aa4980f0b0",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
