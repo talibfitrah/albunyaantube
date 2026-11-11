@@ -3258,6 +3258,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegistryTotals'
+        '400':
+          description: '`status` is not one of all, approved, pending, rejected'
 
   /admin/content/bulk/approve:
     post:

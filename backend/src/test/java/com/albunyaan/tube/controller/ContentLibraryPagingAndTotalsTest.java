@@ -199,6 +199,25 @@ class ContentLibraryPagingAndTotalsTest {
     }
 
     @Test
+    void oneArchivedRowCostsOneMoreRowNotADoubledWindow() throws Exception {
+        List<Channel> rows = new ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%03d", i));
+            c.setStatus("APPROVED");
+            if (i == 0) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+            rows.add(c);
+        }
+        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
+                .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
+
+        controller.getContent("channel", "approved", null, null, "newest", 0, 20);
+
+        // Window 70 (+1 probe) holds one archived row, so the second ask is 71 (+1), not 140.
+        org.mockito.Mockito.verify(channelRepository).findByStatus("APPROVED", 72);
+    }
+
+    @Test
     void aLongArchivedRunCostsAFewRoundsNotOnePerRow() throws Exception {
         // 1500 archived rows ahead of 100 live ones: linear deepening would re-query ~20 times.
         List<Channel> rows = new ArrayList<>();

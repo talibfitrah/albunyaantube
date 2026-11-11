@@ -519,8 +519,9 @@ public class ContentLibraryController {
         while (deepen && result.hitLimit) {
             long held = result.items.stream().filter(t -> ValidationStatus.holds(validationStatus.apply(t))).count();
             if (result.items.size() - held >= fetchLimit) break; // enough live rows already
-            // At least double each round, so a long archived run costs a few rounds, not one per row.
-            int deeper = (int) Math.min(Math.max(fetchLimit + held, 2L * limit), MAX_ITEMS_PER_TYPE);
+            // Add exactly the rows held: one archived row costs one more row, and a window that is
+            // all archived doubles, so a long archived run costs a few rounds, not one per row.
+            int deeper = (int) Math.min(limit + held, MAX_ITEMS_PER_TYPE);
             if (deeper <= limit) break;
             limit = deeper;
             result = fetch.fetch(limit);
