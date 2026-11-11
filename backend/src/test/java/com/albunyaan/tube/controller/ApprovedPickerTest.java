@@ -146,6 +146,20 @@ class ApprovedPickerTest {
     }
 
     @Test
+    void leavesOutArchivedContent() throws Exception {
+        // Archived rows keep status APPROVED, but the apps hide them and the Archived page counts
+        // them; offering one would file content into a category that renders for nobody.
+        Channel archived = channel("c-archived");
+        archived.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(channelRepository.findByStatus(eq("APPROVED"), anyInt())).thenReturn(List.of(channel("c-live"), archived));
+
+        ContentLibraryController.ApprovedPickerResponse body = fetch();
+
+        assertEquals(1, body.items.size());
+        assertEquals("c-live", body.items.get(0).id);
+    }
+
+    @Test
     void saysSoWhenTheRegistryIsDeeperThanTheScan() throws Exception {
         // A silent cap would present a partial list as the whole library, which is the failure
         // the old loop's truncated flag existed to avoid.

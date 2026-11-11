@@ -3233,13 +3233,20 @@ paths:
     get:
       summary: Registry-wide content counts per type
       description: |
-        Per-type counts of everything in the registry, from server-side aggregation.
-        Separate from the listing endpoint on purpose: the counts depend on no listing
-        parameter, so keeping them off that request means a slow or failing count never
-        delays or fails the content itself. Unaffected by filters, paging or the listing
-        query bounds.
+        Per-type counts of the registry for one approval status (or all), from server-side
+        aggregation. Separate from the listing endpoint on purpose: keeping them off that
+        request means a slow or failing count never delays or fails the content itself.
+        Unaffected by search, category, paging or the listing query bounds.
       operationId: getContentTotals
       tags: [Content Library]
+      parameters:
+        - name: status
+          in: query
+          description: Count only this approval status, matching the listing's status filter
+          schema:
+            type: string
+            enum: [all, approved, pending, rejected]
+            default: all
       responses:
         '200':
           description: Registry-wide counts per content type

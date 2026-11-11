@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen, waitFor } from '@testing-library/vue';
+import { render, screen, waitFor, fireEvent } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import ContentLibraryView from '@/views/ContentLibraryView.vue';
@@ -18,7 +18,7 @@ vi.mock('@/services/api/client', () => ({
 
 vi.mock('@/services/contentLibrary', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/contentLibrary')>()),
-  fetchRegistryTotals: () => fetchRegistryTotalsMock()
+  fetchRegistryTotals: (...args: unknown[]) => fetchRegistryTotalsMock(...args)
 }));
 
 /**
@@ -59,7 +59,21 @@ describe('ContentLibraryView registry totals', () => {
     expect(screen.getByText('Channels')).toBeInTheDocument();
     expect(screen.getByText('Playlists')).toBeInTheDocument();
     expect(screen.getByText('Videos')).toBeInTheDocument();
-    expect(screen.getByText('In the registry, all statuses')).toBeInTheDocument();
+    expect(screen.getByText('In the registry: All Statuses')).toBeInTheDocument();
+    expect(fetchRegistryTotalsMock).toHaveBeenCalledWith('all');
+  });
+
+  it('counts only the selected status when the status filter changes', async () => {
+    const { container } = renderView();
+    await waitFor(() => expect(screen.getByText('4,321')).toBeInTheDocument());
+
+    fetchRegistryTotalsMock.mockResolvedValue({ channels: 900, playlists: 40, videos: 30 });
+    const approved = container.querySelector('input[name="status"][value="approved"]') as HTMLInputElement;
+    await fireEvent.click(approved);
+
+    await waitFor(() => expect(screen.getByText('900')).toBeInTheDocument());
+    expect(fetchRegistryTotalsMock).toHaveBeenLastCalledWith('approved');
+    expect(screen.getByText('In the registry: Approved')).toBeInTheDocument();
   });
 
   it('groups digits by the app locale, not the browser locale', async () => {

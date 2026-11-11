@@ -2,7 +2,7 @@ package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.repository.CategoryRepository;
-import com.albunyaan.tube.repository.ChannelRepository;
+import com.albunyaan.tube.repository.ApprovalRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.service.VideoValidationService;
 import com.google.cloud.Timestamp;
@@ -20,18 +20,18 @@ import org.springframework.web.bind.annotation.*;
 public class DashboardController {
 
     private final CategoryRepository categoryRepository;
-    private final ChannelRepository channelRepository;
+    private final ApprovalRepository approvalRepository;
     private final UserRepository userRepository;
     private final VideoValidationService videoValidationService;
 
     public DashboardController(
             CategoryRepository categoryRepository,
-            ChannelRepository channelRepository,
+            ApprovalRepository approvalRepository,
             UserRepository userRepository,
             VideoValidationService videoValidationService
     ) {
         this.categoryRepository = categoryRepository;
-        this.channelRepository = channelRepository;
+        this.approvalRepository = approvalRepository;
         this.userRepository = userRepository;
         this.videoValidationService = videoValidationService;
     }
@@ -45,17 +45,11 @@ public class DashboardController {
             @RequestParam(required = false, defaultValue = "LAST_7_DAYS") String timeframe
     ) throws Exception {
 
-        // Count totals - using optimized count queries.
-        // F11: exclude soft-deleted users from the live total — pre-fix this
-        // included deleted rows, so the dashboard "total users" exceeded the
-        // visible row count from GET /api/admin/users.
         long totalCategories = categoryRepository.count();
-        long totalChannels = channelRepository.countAll();
-        long totalUsers = userRepository.countAll(false);
 
-        // Count by status - using database-level queries instead of loading all channels
-        long pendingChannels = channelRepository.countByStatus("PENDING");
-        long approvedChannels = channelRepository.countByStatus("APPROVED");
+        // Channels + playlists + videos: the same number as the Pending Approvals badge and the
+        // Content Library "Pending" totals. Channels alone under-reported the queue.
+        long pendingAll = approvalRepository.countAllPending();
 
         // Count moderators - using optimized query
         long totalModerators = userRepository.countModerators();
@@ -65,9 +59,9 @@ public class DashboardController {
 
         // Pending moderation metric (comparison metric)
         data.pendingModeration = new ComparisonMetric(
-                (int) pendingChannels,
+                (int) pendingAll,
                 0, // TODO: Calculate previous period value
-                determineTrend(pendingChannels, 0)
+                determineTrend(pendingAll, 0)
         );
 
         // Categories metric

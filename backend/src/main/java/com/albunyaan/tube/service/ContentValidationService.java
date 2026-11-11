@@ -53,6 +53,7 @@ public class ContentValidationService {
     private final ContentReportService contentReportService;
     private final ThumbnailRepairMigration thumbnailRepair;
     private final LiveCategoryGuard liveCategoryGuard;
+    private final SortOrderService sortOrderService;
 
     public ContentValidationService(
             ChannelRepository channelRepository,
@@ -66,7 +67,8 @@ public class ContentValidationService {
             StreamIndexService streamIndexService,
             ThumbnailRepairMigration thumbnailRepair,
             ContentReportService contentReportService,
-            LiveCategoryGuard liveCategoryGuard
+            LiveCategoryGuard liveCategoryGuard,
+            SortOrderService sortOrderService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -80,6 +82,7 @@ public class ContentValidationService {
         this.thumbnailRepair = thumbnailRepair;
         this.contentReportService = contentReportService;
         this.liveCategoryGuard = liveCategoryGuard;
+        this.sortOrderService = sortOrderService;
     }
 
     // ==================== Validation Triggers ====================
@@ -1136,6 +1139,13 @@ public class ContentValidationService {
                         continue;
                 }
                 successCount++;
+                // As every other delete path does: a deleted item left in a category's sort order
+                // keeps counting in Content Sorting after it is gone from the registry.
+                try {
+                    sortOrderService.removeContentFromAllCategories(id, contentType.toLowerCase());
+                } catch (Exception e) {
+                    logger.warn("Failed to clean up sort order for {} {}: {}", contentType, id, e.getMessage());
+                }
             } catch (Exception e) {
                 errors.add("Failed to delete " + contentType + " " + id + ": " + e.getMessage());
                 logger.error("Failed to delete {} {}", contentType, id, e);

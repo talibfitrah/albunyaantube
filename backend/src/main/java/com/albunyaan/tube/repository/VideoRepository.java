@@ -858,6 +858,30 @@ public class VideoRepository {
     }
 
     /**
+     * Count by approval status (APPROVED, PENDING, REJECTED) using server-side aggregation
+     */
+    public long countByStatus(String status) throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereEqualTo("status", status)
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
+     * Count approved docs that are archived ({@link com.albunyaan.tube.model.ValidationStatus#holds}): they
+     * keep status APPROVED, but the apps hide them and the Archived page counts them.
+     */
+    public long countApprovedArchived() throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .whereIn("validationStatus", java.util.List.of("ARCHIVED", "UNAVAILABLE"))
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
      * Count videos by validation status using server-side aggregation.
      *
      * @param status ValidationStatus to count

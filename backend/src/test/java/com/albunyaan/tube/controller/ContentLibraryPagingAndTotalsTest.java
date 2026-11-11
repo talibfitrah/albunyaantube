@@ -108,12 +108,53 @@ class ContentLibraryPagingAndTotalsTest {
         when(playlistRepository.countAll()).thenReturn(87L);
         when(videoRepository.countAll()).thenReturn(65L);
 
-        ContentLibraryController.RegistryTotals totals = controller.getTotals().getBody();
+        ContentLibraryController.RegistryTotals totals = controller.getTotals("all").getBody();
 
         // Registry-wide, from aggregation — never derived from a bounded, filtered listing.
         assertEquals(4321L, totals.channels);
         assertEquals(87L, totals.playlists);
         assertEquals(65L, totals.videos);
+    }
+
+    @Test
+    void totalsFollowTheStatusFilter() throws Exception {
+        when(channelRepository.countByStatus("APPROVED")).thenReturn(900L);
+        when(playlistRepository.countByStatus("APPROVED")).thenReturn(40L);
+        when(videoRepository.countByStatus("APPROVED")).thenReturn(30L);
+        when(channelRepository.countApprovedArchived()).thenReturn(2L);
+        when(playlistRepository.countApprovedArchived()).thenReturn(8L);
+        when(videoRepository.countApprovedArchived()).thenReturn(0L);
+        when(channelRepository.countByStatus("PENDING")).thenReturn(313L);
+
+        ContentLibraryController.RegistryTotals totals = controller.getTotals("approved").getBody();
+
+        // Approved = live: archived rows keep status APPROVED but are counted on the Archived page.
+        assertEquals(898L, totals.channels);
+        assertEquals(32L, totals.playlists);
+        assertEquals(30L, totals.videos);
+        // The stored status is upper-case; the listing's filter values are lower-case.
+        assertEquals(313L, controller.getTotals("pending").getBody().channels);
+        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.never()).countAll();
+    }
+
+    @Test
+    void theApprovedListingLeavesArchivedRowsToTheArchivedPage() throws Exception {
+        Channel live = new Channel("UClive");
+        live.setId("c-live");
+        live.setStatus("APPROVED");
+        Channel archived = new Channel("UCgone");
+        archived.setId("c-gone");
+        archived.setStatus("APPROVED");
+        archived.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
+                .thenReturn(List.of(live, archived));
+
+        ContentLibraryController.ContentLibraryResponse body =
+                controller.getContent("channel", "approved", null, null, "newest", 0, 20).getBody();
+
+        // Same definition as GET /totals?status=approved, so the list and its header agree.
+        assertEquals(1, body.content.size());
+        assertEquals("c-live", body.content.get(0).id);
     }
 
     @Test

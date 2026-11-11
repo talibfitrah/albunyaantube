@@ -3,6 +3,7 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
@@ -109,14 +110,28 @@ public class ContentLibraryController {
      * recomputed on every debounced search keystroke, discarded on every infinite-scroll page, and
      * able to fail a listing that had already been fetched and sorted. On their own endpoint a
      * slow or failing count costs nothing but an unpopulated header.</p>
+     *
+     * <p>{@code status} follows the listing's status filter (all, approved, pending, rejected), so
+     * the header reads e.g. "approved channels" while the admin views approved content. Approved
+     * means live: archived items keep status APPROVED but the apps hide them, and the Archived
+     * page counts them, so all = approved + pending + rejected + archived.</p>
      */
     @GetMapping("/totals")
-    public ResponseEntity<RegistryTotals> getTotals()
+    public ResponseEntity<RegistryTotals> getTotals(@RequestParam(defaultValue = "all") String status)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        if ("all".equalsIgnoreCase(status)) {
+            return ResponseEntity.ok(new RegistryTotals(
+                    channelRepository.countAll(),
+                    playlistRepository.countAll(),
+                    videoRepository.countAll()
+            ));
+        }
+        String upper = status.toUpperCase(java.util.Locale.ROOT);
+        boolean approved = "APPROVED".equals(upper);
         return ResponseEntity.ok(new RegistryTotals(
-                channelRepository.countAll(),
-                playlistRepository.countAll(),
-                videoRepository.countAll()
+                channelRepository.countByStatus(upper) - (approved ? channelRepository.countApprovedArchived() : 0),
+                playlistRepository.countByStatus(upper) - (approved ? playlistRepository.countApprovedArchived() : 0),
+                videoRepository.countByStatus(upper) - (approved ? videoRepository.countApprovedArchived() : 0)
         ));
     }
 
@@ -158,7 +173,7 @@ public class ContentLibraryController {
         truncated |= probedChannel.size() > MAX_ITEMS_PER_TYPE;
         List<Channel> channels = withinBound(probedChannel);
         for (Channel c : channels) {
-            if (!offerableInPicker(c.getStatus(), c.getVisibility())) continue;
+            if (!offerableInPicker(c.getStatus(), c.getVisibility(), c.getValidationStatus())) continue;
             items.add(new ApprovedPickerItem("channel", c.getId(), c.getName(), c.getThumbnailUrl(), c.getYoutubeId()));
         }
 
@@ -166,7 +181,7 @@ public class ContentLibraryController {
         truncated |= probedPlaylist.size() > MAX_ITEMS_PER_TYPE;
         List<Playlist> playlists = withinBound(probedPlaylist);
         for (Playlist p : playlists) {
-            if (!offerableInPicker(p.getStatus(), p.getVisibility())) continue;
+            if (!offerableInPicker(p.getStatus(), p.getVisibility(), p.getValidationStatus())) continue;
             items.add(new ApprovedPickerItem("playlist", p.getId(), p.getTitle(), p.getThumbnailUrl(), p.getYoutubeId()));
         }
 
@@ -174,7 +189,7 @@ public class ContentLibraryController {
         truncated |= probedVideo.size() > MAX_ITEMS_PER_TYPE;
         List<Video> videos = withinBound(probedVideo);
         for (Video v : videos) {
-            if (!offerableInPicker(v.getStatus(), v.getVisibility())) continue;
+            if (!offerableInPicker(v.getStatus(), v.getVisibility(), v.getValidationStatus())) continue;
             items.add(new ApprovedPickerItem("video", v.getId(), v.getTitle(), v.getThumbnailUrl(), v.getYoutubeId()));
         }
 
@@ -193,10 +208,12 @@ public class ContentLibraryController {
      *
      * <p>A personal grant is not catalogue content — it exists only for the people it was
      * approved for, and the public feed filters it out. Filing one into a category's sort order
-     * would leave an entry there that never renders for anybody.
+     * would leave an entry there that never renders for anybody. An archived item is the same:
+     * the apps hide it, so it is not live approved content.
      */
-    private static boolean offerableInPicker(String status, String visibility) {
-        return "APPROVED".equalsIgnoreCase(status) && VisibilityPolicy.isPublic(visibility);
+    private static boolean offerableInPicker(String status, String visibility, ValidationStatus validationStatus) {
+        return "APPROVED".equalsIgnoreCase(status) && VisibilityPolicy.isPublic(visibility)
+                && !ValidationStatus.holds(validationStatus);
     }
 
     /**
@@ -339,6 +356,8 @@ public class ContentLibraryController {
         // This prevents false-negatives where post-filtering might reduce count below limit
         List<ContentItem> allContent = new ArrayList<>();
         boolean anyTypeTruncated = false;
+        // "Approved" is live content, matching GET /totals: archived rows belong to the Archived page.
+        boolean liveOnly = "approved".equalsIgnoreCase(status);
 
         if (contentTypes.contains("channel")) {
             BoundedFetchResult<Channel> result = fetchChannelsBounded(status, category, search, sort, fetchLimit);
@@ -346,6 +365,7 @@ public class ContentLibraryController {
                 anyTypeTruncated = true;
             }
             for (Channel ch : result.items) {
+                if (liveOnly && ValidationStatus.holds(ch.getValidationStatus())) continue;
                 allContent.add(withVisibility(new ContentItem("channel", ch.getId(), ch.getYoutubeId(), ch.getName(),
                         ch.getDescription(), ch.getThumbnailUrl(), ch.getStatus(), ch.getCategoryIds(),
                         ch.getCreatedAt() != null ? ch.getCreatedAt().toDate() : null,
@@ -360,6 +380,7 @@ public class ContentLibraryController {
                 anyTypeTruncated = true;
             }
             for (Playlist pl : result.items) {
+                if (liveOnly && ValidationStatus.holds(pl.getValidationStatus())) continue;
                 allContent.add(withVisibility(new ContentItem("playlist", pl.getId(), pl.getYoutubeId(), pl.getTitle(),
                         pl.getDescription(), pl.getThumbnailUrl(), pl.getStatus(), pl.getCategoryIds(),
                         pl.getCreatedAt() != null ? pl.getCreatedAt().toDate() : null,
@@ -375,6 +396,7 @@ public class ContentLibraryController {
                 anyTypeTruncated = true;
             }
             for (Video v : result.items) {
+                if (liveOnly && ValidationStatus.holds(v.getValidationStatus())) continue;
                 ContentItem item = new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
                         v.getDescription(), v.getThumbnailUrl(), v.getStatus(), v.getCategoryIds(),
                         v.getCreatedAt() != null ? v.getCreatedAt().toDate() : null,

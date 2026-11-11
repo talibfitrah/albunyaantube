@@ -71,6 +71,9 @@ class ContentValidationServiceTest {
     @Mock
     private ContentReportService contentReportService;
 
+    @Mock
+    private SortOrderService sortOrderService;
+
     private ValidationProperties validationProperties;
 
     private ContentValidationService service;
@@ -92,7 +95,8 @@ class ContentValidationServiceTest {
                 streamIndexService,
                 thumbnailRepair,
                 contentReportService,
-                mock(LiveCategoryGuard.class)
+                mock(LiveCategoryGuard.class),
+                sortOrderService
         );
     }
 
@@ -1108,7 +1112,7 @@ class ContentValidationServiceTest {
                 videoRepository, channelOrchestrator, auditLogService, validationRunRepository, validationProperties,
                 publicContentCacheService, streamIndexService, thumbnailRepair, contentReportService,
                 new LiveCategoryGuard(liveCategories, live, videoRepository, channelRepository, playlistRepository,
-                        new CategoryMappingService(mock(CategoryRepository.class))));
+                        new CategoryMappingService(mock(CategoryRepository.class))), sortOrderService);
         when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
         Map<LiveTabResult, List<String>> served = new LinkedHashMap<>();
         served.put(LiveTabResult.error(1, "boom"), List.of());
@@ -1132,5 +1136,14 @@ class ContentValidationServiceTest {
             assertEquals(e.getValue(), LiveCategoryService.servedLives(channel, live.state(uc), Map.of()).stream()
                     .map(LiveChannelState.Live::getVideoId).toList(), e.getKey().outcome().name());
         }
+    }
+
+    @Test
+    void deletingArchivedContentAlsoLeavesEveryCategorySortOrder() throws Exception {
+        service.deleteContent("playlist", List.of("pl-1"), "uid", "admin");
+
+        // Every other delete path does this; skipping it left orphans counted in Content Sorting.
+        verify(playlistRepository).deleteById("pl-1");
+        verify(sortOrderService).removeContentFromAllCategories("pl-1", "playlist");
     }
 }

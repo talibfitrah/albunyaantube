@@ -443,7 +443,7 @@ export const messages = {
     contentLibrary: {
       heading: 'Content Library',
       subtitle: 'Manage all approved content across channels, playlists, and videos',
-      totalsCaption: 'In the registry, all statuses',
+      totalsCaption: 'In the registry: {status}',
       totalsChannels: 'Channels',
       totalsPlaylists: 'Playlists',
       totalsVideos: 'Videos',
@@ -2106,7 +2106,7 @@ export const messages = {
     contentLibrary: {
       heading: 'مكتبة المحتوى',
       subtitle: 'إدارة جميع المحتوى المعتمد عبر القنوات وقوائم التشغيل والفيديوهات',
-      totalsCaption: 'في السجل، جميع الحالات',
+      totalsCaption: 'في السجل: {status}',
       totalsChannels: 'القنوات',
       totalsPlaylists: 'قوائم التشغيل',
       totalsVideos: 'الفيديوهات',
@@ -3549,7 +3549,7 @@ export const messages = {
     contentLibrary: {
       heading: 'Inhoudsbibliotheek',
       subtitle: 'Beheer alle goedgekeurde inhoud voor kanalen, afspeellijsten en video\'s',
-      totalsCaption: 'In het register, alle statussen',
+      totalsCaption: 'In het register: {status}',
       totalsChannels: 'Kanalen',
       totalsPlaylists: 'Afspeellijsten',
       totalsVideos: 'Video\'s',
