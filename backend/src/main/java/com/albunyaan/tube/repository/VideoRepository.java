@@ -401,10 +401,9 @@ public class VideoRepository {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
         // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
-        int perCategoryLimit = limit;
         LinkedHashMap<String, Video> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Video> batch = findByCategoryOrderByUploadedAtDesc(catId, perCategoryLimit);
+            List<Video> batch = findByCategoryOrderByUploadedAtDesc(catId, limit);
             for (Video v : batch) {
                 deduped.putIfAbsent(v.getId(), v);
             }

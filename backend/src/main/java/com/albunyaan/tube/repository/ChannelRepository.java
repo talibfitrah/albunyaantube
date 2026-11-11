@@ -520,10 +520,9 @@ public class ChannelRepository {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
         // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
-        int perCategoryLimit = limit;
         LinkedHashMap<String, Channel> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, perCategoryLimit);
+            List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, limit);
             for (Channel ch : batch) {
                 deduped.putIfAbsent(ch.getId(), ch);
             }

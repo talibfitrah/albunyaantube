@@ -361,10 +361,9 @@ public class PlaylistRepository {
 
         // The full limit per category, fetched in the merge order (itemCount desc): the result is then exactly the
         // first `limit` of the whole sorted union.
-        int perCategoryLimit = limit;
         LinkedHashMap<String, Playlist> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Playlist> batch = findByCategoryOrderByItemCountDesc(catId, perCategoryLimit);
+            List<Playlist> batch = findByCategoryOrderByItemCountDesc(catId, limit);
             for (Playlist pl : batch) {
                 deduped.putIfAbsent(pl.getId(), pl);
             }
