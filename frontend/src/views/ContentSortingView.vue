@@ -255,12 +255,9 @@
 
             <div v-if="addModalError" class="add-error" role="alert">{{ addModalError }}</div>
 
-            <div class="modal-body">
+            <div ref="addModalBodyRef" class="modal-body">
               <div v-if="addModalTruncated" class="truncation-warning">
                 <p>{{ t('contentSorting.addContentTruncated', { count: addModalAvailable.length }) }}</p>
-              </div>
-              <div v-if="addModalMatches.length > addModalFiltered.length" class="truncation-warning">
-                <p>{{ t('contentSorting.addContentClipped', { shown: addModalFiltered.length, total: addModalMatches.length }) }}</p>
               </div>
               <div v-if="addModalLoading" class="loading-state" role="status" aria-live="polite">
                 <span class="spinner" aria-hidden="true"></span>
@@ -288,6 +285,7 @@
                     :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
                     :alt="item.title"
                     class="thumbnail"
+                    loading="lazy"
                     @error="handleThumbnailError($event, item)"
                   />
                   <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''"></div>
@@ -322,7 +320,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted } from 'vue';
+import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import {
@@ -344,6 +342,7 @@ import { apiErrorWithOffenders, offenderTitles } from '@/services/http';
 import { liveCategoryIds } from '@/components/contentSearch/bulk/useCategoryPicker';
 import { getLiveStatus, liveChips, liveYoutubeUrl, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import type { Ref } from 'vue';
 
 const { t, locale } = useI18n();
@@ -472,10 +471,28 @@ const { activate: activateFocusTrap, deactivate: deactivateFocusTrap } = useFocu
   onEscape: () => closeAddContentModal()
 });
 
-/** Rows drawn at once in the add-content modal. Beyond this, the reviewer searches. */
-const ADD_MODAL_RENDER_LIMIT = 300;
+/** Rows added to the add-content modal each time the reviewer scrolls near the bottom. */
+const ADD_MODAL_PAGE = 100;
+const addModalShown = ref(ADD_MODAL_PAGE);
+const { containerRef: addModalBodyRef, isLoading: addModalGrowing } = useInfiniteScroll({
+  throttleMs: 100,
+  onLoadMore: () => showMoreAddRows()
+});
 
-/** Everything matching the current filters, before the render cap. */
+/**
+ * Draws the next page of rows. Toggling isLoading makes the composable re-check, once the rows render,
+ * whether the list still fits without scrolling (tall screen, zoomed out), so it keeps growing until it
+ * overflows or everything is drawn — a scroll event alone would never come.
+ */
+async function showMoreAddRows() {
+  if (addModalShown.value >= addModalMatches.value.length) return;
+  addModalGrowing.value = true;
+  addModalShown.value += ADD_MODAL_PAGE;
+  await nextTick();
+  addModalGrowing.value = false;
+}
+
+/** Everything matching the current filters, before the render window. */
 const addModalMatches = computed(() => {
   let items = addModalAvailable.value;
 
@@ -492,12 +509,16 @@ const addModalMatches = computed(() => {
 });
 
 /**
- * What is actually drawn. The list is a plain v-for, and the picker now fetches the whole
- * approved registry in one request rather than the first twenty pages of it, so rendering every
- * row of a large library would put thousands of nodes in the modal. The clip is stated in the UI
- * — a silent one would read as content missing from the registry.
+ * What is drawn: the whole registry is fetched in one request, but rows are rendered a page at a
+ * time as the reviewer scrolls (incremental, not bounded: scrolling to the end draws every row).
  */
-const addModalFiltered = computed(() => addModalMatches.value.slice(0, ADD_MODAL_RENDER_LIMIT));
+const addModalFiltered = computed(() => addModalMatches.value.slice(0, addModalShown.value));
+watch([addModalAvailable, addModalSearch, addModalTypeFilter], () => {
+  if (!addModalOpen.value) return; // closing clears the list: leave the fading modal as it was; the next load resets
+  if (addModalBodyRef.value) addModalBodyRef.value.scrollTop = 0; // new matches start at the top
+  addModalShown.value = 0;
+  showMoreAddRows();
+});
 
 // ==================== Data loading ====================
 

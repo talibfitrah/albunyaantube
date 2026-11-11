@@ -12,6 +12,10 @@ const svc = vi.hoisted(() => ({
     { id: 'live', name: 'Channels Live', type: 'LIVE', subcategories: [] },
     { id: 'other', name: 'Other', type: 'REGULAR', subcategories: [] }
   ])),
+  approved: vi.fn((): unknown[] => [
+    { id: 'pl-9', type: 'playlist', youtubeId: null, title: 'Some playlist', thumbnailUrl: null },
+    { id: 'ch-9', type: 'channel', youtubeId: 'UCz', title: 'Some channel', thumbnailUrl: null }
+  ]),
   getCategoryContentOrder: vi.fn((): Promise<unknown[]> => Promise.resolve([
     { contentId: 'channel_UCa', contentType: 'channel', title: 'Zad', thumbnailUrl: null, position: 0, youtubeId: 'UCa' },
     { contentId: 'doc-1', contentType: 'video', title: 'A stream', thumbnailUrl: null, position: 1, youtubeId: 'vid00000001' }
@@ -31,10 +35,7 @@ vi.mock('@/services/sortOrder', async (importOriginal) => ({
   ]),
   addContentToCategorySort: (...a: unknown[]) => add.fn(...a),
   getCategoryContentOrder: () => svc.getCategoryContentOrder(),
-  getApprovedContent: () => Promise.resolve({ truncated: false, items: [
-    { id: 'pl-9', type: 'playlist', youtubeId: null, title: 'Some playlist', thumbnailUrl: null },
-    { id: 'ch-9', type: 'channel', youtubeId: 'UCz', title: 'Some channel', thumbnailUrl: null }
-  ] })
+  getApprovedContent: () => Promise.resolve({ truncated: false, items: svc.approved() })
 }));
 vi.mock('@/services/liveChannels', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/liveChannels')>()),
@@ -197,6 +198,51 @@ describe('Content Sorting on a live category (spec §8)', () => {
 
     expect(await screen.findByText('Some channel')).toBeInTheDocument();
     expect(screen.getByText('Some playlist')).toBeInTheDocument();
+  });
+
+  it('the add picker renders more rows on scroll until every item is reachable (no fixed cap)', async () => {
+    status.fn.mockImplementation(ok);
+    svc.approved.mockReturnValueOnce(Array.from({ length: 350 }, (_, i) =>
+      ({ id: `ch-${i}`, type: 'channel', youtubeId: `UC${i}`, title: `Bulk ${i}`, thumbnailUrl: null })));
+    mount();
+    await fireEvent.click(await screen.findByText('Other'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+    await screen.findByText('Bulk 0');
+    const rows = () => document.querySelectorAll('.add-content-item').length;
+    expect(rows()).toBe(100);
+
+    const body = document.querySelector('.modal-body')!;
+    vi.useFakeTimers();
+    try {
+      for (let i = 0; i < 4; i++) {
+        await fireEvent.scroll(body); // jsdom: zero heights put the list "at the bottom"
+        await vi.advanceTimersByTimeAsync(100); // past the throttle
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(rows()).toBe(350);
+    expect(screen.getByText('Bulk 349')).toBeInTheDocument();
+  });
+
+  it('the add picker keeps growing without a scroll when its rows fit on screen (tall viewport)', async () => {
+    status.fn.mockImplementation(ok);
+    svc.approved.mockReturnValueOnce(Array.from({ length: 350 }, (_, i) =>
+      ({ id: `ch-${i}`, type: 'channel', youtubeId: `UC${i}`, title: `Bulk ${i}`, thumbnailUrl: null })));
+    // A laid-out container whose content never overflows (scrollHeight stays 0 in jsdom).
+    const tall = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(5000);
+    try {
+      mount();
+      await fireEvent.click(await screen.findByText('Other'));
+      await fireEvent.click(await screen.findByText(/Add Content/));
+      await screen.findByText('Bulk 0');
+      vi.useFakeTimers();
+      await vi.advanceTimersByTimeAsync(1000); // each growth re-checks fill after the throttle
+      expect(document.querySelectorAll('.add-content-item').length).toBe(350);
+    } finally {
+      vi.useRealTimers();
+      tall.mockRestore();
+    }
   });
 
   it('an older reload of the list does not overwrite a newer add reply (Cubic r9 #27)', async () => {
