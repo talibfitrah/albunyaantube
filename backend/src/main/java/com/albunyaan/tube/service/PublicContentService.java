@@ -139,9 +139,7 @@ public class PublicContentService {
                 if (servesTabOrder(upperType, category, length, date, sort)) return tabOrderPage("PLAYLIST", cursor, limit);
                 return getPlaylistsWithCursor(limit, category, allCategoryIds, cursor);
             case "VIDEOS":
-                if (servesTabOrder(upperType, category, length, date, sort)) {
-                    return tabOrderPage("VIDEO", cursor, limit);
-                }
+                if (servesTabOrder(upperType, category, length, date, sort)) return tabOrderPage("VIDEO", cursor, limit);
                 return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
             case "HOME":
             default:
@@ -1540,7 +1538,7 @@ public class PublicContentService {
     }
 
     /**
-     * Offset paging over the whole expanded LIVE list.
+     * Offset paging over a whole in-memory list (the expanded LIVE list, the kept tab order).
      * ponytail: every page builds the full list, entries × lives per channel (≤ 30 entries, LIVE_CATEGORY_FULL, a
      * few lives each), still small; page inside items() if the cap or the lives per channel grow.
      */
