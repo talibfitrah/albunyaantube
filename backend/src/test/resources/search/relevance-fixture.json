@@ -1,0 +1,584 @@
+{
+ "channels": [
+  {
+   "youtubeId": "UCmMcOjsVehVlEOteyrhjI2Q",
+   "name": "Alafasy"
+  },
+  {
+   "youtubeId": "UC3YmP7nqf514I1zh1eVbzrA",
+   "name": "Dr Zakir Naik"
+  },
+  {
+   "youtubeId": "UCWZEG9O221KaXiWThBtMHQQ",
+   "name": "Dr. Zakir Naik in arabic"
+  },
+  {
+   "youtubeId": "UCNB_OaI4524fASt8h0IL8dw",
+   "name": "Mufti Menk"
+  },
+  {
+   "youtubeId": "UCtlcIZVBdFPSAtCoNZsTusg",
+   "name": "Learn with Zakaria - تعلم مع زكريا"
+  },
+  {
+   "youtubeId": "UCzPBBUB3SQlDx7EO00YawkQ",
+   "name": "Tafsir Center for Qur’anic Studies"
+  },
+  {
+   "youtubeId": "UCWjCSGhmSGu0VLf2mPFS0Kg",
+   "name": "Dr. Othman Alkamees - الشيخ الدكتور عثمان الخميس"
+  },
+  {
+   "youtubeId": "UCos52azQNBgW63_9uDJoPDA",
+   "name": "The official channel of KSA Qur’an TV "
+  },
+  {
+   "youtubeId": "UCTY0UNILf_OBsWF2WEv0mLQ",
+   "name": "Ahmad alnufais | أحمد النفيس "
+  },
+  {
+   "youtubeId": "UCQHRLH8RQIrdGWMhf5heWiA",
+   "name": "OnePath Network"
+  },
+  {
+   "youtubeId": "UC5vfWTTPnKdFp-8s0KbqJhw",
+   "name": "One4kids",
+   "excludedVideos": [
+    "BcCLLPZNPHk"
+   ]
+  },
+  {
+   "youtubeId": "UCijSEIUA72pyzSNOf_lx5ng",
+   "name": "القناة الرسمية لفضيلة الشيخ محمد متولي الشعراوي"
+  },
+  {
+   "youtubeId": "UCpPZKwayH_pWPF20Ls0hgVw",
+   "name": "الشيخ نبيل العوضي"
+  },
+  {
+   "youtubeId": "UC_x9Ji3SYOGGcx9Ezky002A",
+   "name": "Adnan Quran"
+  }
+ ],
+ "playlists": [
+  {
+   "youtubeId": "PLiTKQO5a7ZXn3ePWq7YzVAXeXUmdFu6PA",
+   "title": "شرح العقيدة السفارينية"
+  },
+  {
+   "youtubeId": "PLiTKQO5a7ZXluOys9QONER4krLwPkgGf-",
+   "title": "شرح الأصول من علم الأصول"
+  },
+  {
+   "youtubeId": "PLiTKQO5a7ZXlMgT8KQEYSkpFt-OdZU32D",
+   "title": "شرح كتاب التوحيد"
+  },
+  {
+   "youtubeId": "PLiTKQO5a7ZXk7462OvRA1qTlJdX8y5ipu",
+   "title": "كتاب الأربعين النووية"
+  },
+  {
+   "youtubeId": "PLXS0usquloW_VC2gPb6nu1FFQTxWc1Ww_",
+   "title": "شــرح الأربــعــون الــنــوويــة - ابن عثيمين"
+  },
+  {
+   "youtubeId": "PLtcQeiBJIKBu1bYgzwqOkCykPEUjkAKzz",
+   "title": "تفسير جزء عم للأطفال ( مكتمل )"
+  },
+  {
+   "youtubeId": "PLZxBOI1uMgZjhg-1ZYYS0GhZBiWDnqaeU",
+   "title": "تفسير جزء عم"
+  },
+  {
+   "youtubeId": "PLkCl7h8FSnn0aErco1PlzOGWRbJRCCKNZ",
+   "title": "Learn Quran Juz Amma | Quran for Kids | English Adnan The Quran Teacher |"
+  },
+  {
+   "youtubeId": "PLkCl7h8FSnn0MhK_zePclIWuVGDv5QUa0",
+   "title": "جزء عمّ | عدنان معلم القرآن English"
+  },
+  {
+   "youtubeId": "PLwNeHLk_z0aTfGVQbSejWzc6_BilvBb6j",
+   "title": "Understand & Memorize Quran Project"
+  },
+  {
+   "youtubeId": "PL2A9CB8EA5145AB54",
+   "title": "قصص الأنبياء - للشيخ نبيل العوضي"
+  },
+  {
+   "youtubeId": "PLcitu3ZrbYgRXYg5_q5LTJHFeinSnXZc6",
+   "title": "أسماء الله الحسنى"
+  },
+  {
+   "youtubeId": "PLVbRFHv4QvgLEJPO33q4QZncYa53D-V4F",
+   "title": "القرآن الكريم كاملاً للقارئ ابراهيم الاخضر"
+  },
+  {
+   "youtubeId": "PL2hoGhz2jBSqcVVYEPzOCLo9QnM33JNFP",
+   "title": "The Holy Qur'an -القرآن الكريم كاملا بصوت القارئ مشاري راشد العفاسي مترجم إنجليزي"
+  },
+  {
+   "youtubeId": "PLEaGEZnOHpUPBcDnCCXkmgsgRDICnhYwT",
+   "title": "Learn Arabic for Kids -  تعليم اللغة العربية للأطفال"
+  },
+  {
+   "youtubeId": "PLEaGEZnOHpUMC6v_ER7j43IdfMlzM4jC-",
+   "title": "Islam for Kids - الإسلام للأطفال"
+  },
+  {
+   "youtubeId": "PLHOfj8gmmq00W8aj5c9yGsAxOhVrAJkm2",
+   "title": "رياض الصالحين"
+  },
+  {
+   "youtubeId": "PLXwTDEZdV1joQfHkYC9al05HckcKSRykG",
+   "title": "أخطاء شائعة في الصلاة"
+  },
+  {
+   "youtubeId": "PLx3Fh1kiMbrfN5p78iSHithKGCqcA2L6r",
+   "title": "عقيدة -عام"
+  },
+  {
+   "youtubeId": "PLF665E9BCD51FEF24",
+   "title": "شرح كتاب النحو الواضح"
+  },
+  {
+   "youtubeId": "PLgq3Wz3bNspZiCllYt5Ey2H501LafiVr3",
+   "title": "Learn the Quran for children."
+  }
+ ],
+ "videos": [
+  {
+   "youtubeId": "V2Brp_esIVI",
+   "title": "أذكار الصباح | الشيخ مشاري راشد العفاسي 1434هـ",
+   "channelTitle": "Alafasy"
+  },
+  {
+   "youtubeId": "TGtdZmxsM5Q",
+   "title": "أذكار المساء | الشيخ مشاري راشد العفاسي 1434هـ",
+   "channelTitle": "Alafasy"
+  },
+  {
+   "youtubeId": "3ohmiDv3dVA",
+   "title": "أذكار الصباح الثابتة والصحيحة والمختصرة | تسجيل جديد للقارئ أحمد النفيس",
+   "channelTitle": "Ahmad alnufais | أحمد النفيس"
+  },
+  {
+   "youtubeId": "G2oY4bAFKQQ",
+   "title": "سورة البقرة 2014م الشيخ مشاري راشد العفاسي Surah Al-Baqarah Mishary Rashed Alafasy",
+   "channelTitle": "Alafasy"
+  },
+  {
+   "youtubeId": "fLHVCOLU_WI",
+   "title": "سورة الكهف 2005م الشيخ مشاري راشد العفاسي Surah Al-Kahf Mishary Rashid Alafasy",
+   "channelTitle": "Alafasy"
+  },
+  {
+   "youtubeId": "waxbAKa-9Fc",
+   "title": "الرقية الشرعية | الشيخ مشاري راشد العفاسي Mishary Alafasy Ruqiah",
+   "channelTitle": "Alafasy"
+  },
+  {
+   "youtubeId": "sU4JIFbPhDI",
+   "title": "شرح واضح ميسر لصفة صلاة النبي ﷺ",
+   "channelTitle": "Dr. Othman Alkamees - الشيخ الدكتور عثمان الخميس"
+  },
+  {
+   "youtubeId": "xIgU7ft5Hh4",
+   "title": "كيف اكسب الاستقامة الشيخ محمد الشنقيطي",
+   "channelTitle": "مقاطع الشيخ الشنقيطي"
+  },
+  {
+   "youtubeId": "OT24EHlHVWc",
+   "title": "ﺍﻷﺭﺑﻌﻴﻦ ﺍﻟﻨﻮﻭﻳﺔ 42 حديث كاملا",
+   "channelTitle": "The Osmanli"
+  },
+  {
+   "youtubeId": "d_kQW6_300Q",
+   "title": "أسماء الله الحسنى مع أدلة | الشيخ ابن عثيمين - رحمه الله",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "v7yOGE_LOes",
+   "title": "مذهب أهل الحديث الفقهي 1 الشيخ مشهور حسن",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "P1rL7vB4jhY",
+   "title": "مذهب أهل الحديث الفقهي 4 الشيخ مشهور حسن",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "vC43yxyjIEE",
+   "title": "أركان الإسلام للأطفال | تعليم أركان الإسلام الخمسة للاطفال  - تعليم الإسلام للأطفال مع زكريا",
+   "channelTitle": "Learn with Zakaria - تعلم مع زكريا"
+  },
+  {
+   "youtubeId": "uelbpCyRYBA",
+   "title": "أسهل طريقة لتعلم أحكام التجويد كاملة لكل الاعمار فقط 19 دقيقة  (3)",
+   "channelTitle": "اياد قزاز"
+  },
+  {
+   "youtubeId": "49rXN-V4wbs",
+   "title": "اسهل طريقة لكل الرموز في القران  (4)",
+   "channelTitle": "اياد قزاز"
+  },
+  {
+   "youtubeId": "6x7ieWtbxMs",
+   "title": "منظومة تحفة الأطفال -  بصوت القارئ: عبد القادر العثمان - (قراءة الإجازة)",
+   "channelTitle": "مؤسسة تاج لتعليم القرآن الكريم"
+  },
+  {
+   "youtubeId": "lgeRThaK4rU",
+   "title": "((متن تحفة الأطفال)) ياسر سلامة",
+   "channelTitle": "ياسر سلامة - Yasser Salama"
+  },
+  {
+   "youtubeId": "IrBL-L6t-cA",
+   "title": "أساليب خاطئة في تربية الأبناء",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "c2I-MdrBkUY",
+   "title": "The Story of Prophet Yunus (as) With Zaky - Muslim Cartoon",
+   "channelTitle": "One4kids"
+  },
+  {
+   "youtubeId": "5E7FM07d0JE",
+   "title": "Al-Fatiha Repeats with ZAKY - Let's Memorise Quran!",
+   "channelTitle": "One4kids"
+  },
+  {
+   "youtubeId": "BcCLLPZNPHk",
+   "title": "Surah Al-Ikhlas Repeats with ZAKY - Let's Memorise Quran!",
+   "channelTitle": "One4kids"
+  },
+  {
+   "youtubeId": "aYDHGWJS4TI",
+   "title": "Zaky's Stories of the Prophets - Compilation",
+   "channelTitle": "One4kids"
+  },
+  {
+   "youtubeId": "cBjnzYHSV4M",
+   "title": "Hoe voed ik mijn kind op in Nederland? - Shaykh Suhayb Salam",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "XGmZMVzV0K4",
+   "title": "Samen richting een profijtvolle Ramadan  -  Deel 2  |  Shaykh Suhayb Salam",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "2CtsyWJMK6w",
+   "title": "De hidjaab en zijn voorwaarden - Shaykh Ahmad Salaam",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "KsBeFUsryj4",
+   "title": "Verduidelijking omtrent Ashuraa' - Shaykh Ahmad Salam",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "tfuMDR1ZSFw",
+   "title": "Verduidelijking omtrent het meedoen met verkiezingen Sheikh Ahmed Salaam",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "Gj3c4Axo9VY",
+   "title": "De vijf zuilen van de Islam",
+   "channelTitle": "Zakaria"
+  },
+  {
+   "youtubeId": "_tMa5d56sH0",
+   "title": "Hoe geniet je van het gebed? Aflevering 22 - De Qur’aan  en de neerbuiging.",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "axaVXRxjlqY",
+   "title": "De smeekbede waarmee jou grote zonden vergeven worden",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "mkgOc92QpPc",
+   "title": "Islaamstudies I - IvOE - Het Instituut voor Opvoeding & Educatie",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "RLB-Um-kLpA",
+   "title": "Arnoud van Doorn’s Message to Parents | رسالة أرنود فان دورن إلى الآباء",
+   "channelTitle": null
+  },
+  {
+   "youtubeId": "SxQvIdEOw3A",
+   "title": "Qabil & Habil",
+   "channelTitle": "Dar al-Hudaa - Opvoeding & Educatie voor kinderen"
+  },
+  {
+   "youtubeId": "feG2xn5GKQE",
+   "title": "HD طارق بن زياد",
+   "channelTitle": "Dar al-Hudaa - Opvoeding & Educatie voor kinderen"
+  }
+ ],
+ "inner": {
+  "channel:UCmMcOjsVehVlEOteyrhjI2Q": [
+   {
+    "id": "pUb9EW770d0",
+    "t": "سورة الفاتحة مشاري راشد العفاسي Surah Al- Fatiha Mishari Rashid Alafasy",
+    "d": 59
+   },
+   {
+    "id": "xc7keR2piUM",
+    "t": "جزء عم المعلم مشاري راشد العفاسي",
+    "d": 8456
+   }
+  ],
+  "channel:UC5vfWTTPnKdFp-8s0KbqJhw": [
+   {
+    "id": "An4Q3Z7LlIw",
+    "t": "Let's Learn Quran With Zaky - Full Cartoon Movie",
+    "d": 2377
+   },
+   {
+    "id": "0b0FZwsgZTw",
+    "t": "Let's Learn Quran with Zaky & Friends | Part 2 - FULL ANIMATED MOVIE",
+    "d": 1928
+   }
+  ],
+  "channel:UCWjCSGhmSGu0VLf2mPFS0Kg": [
+   {
+    "id": "jj8DbMqQTgY",
+    "t": "صفة وضوء النبيﷺ كأنك تراه",
+    "d": 982
+   }
+  ],
+  "channel:UCTY0UNILf_OBsWF2WEv0mLQ": [
+   {
+    "id": "xNtGHe8s5V0",
+    "t": "أذكار المساء الثابتة والصحيحة والمختصرة | تسجيل جديد للقارئ أحمد النفيس",
+    "d": 444
+   }
+  ]
+ },
+ "cases": [
+  {
+   "query": "شرح العقيدة السفارينية",
+   "top": [
+    "PLiTKQO5a7ZXn3ePWq7YzVAXeXUmdFu6PA"
+   ],
+   "rule": "exact"
+  },
+  {
+   "query": "السفارنية",
+   "top": [
+    "PLiTKQO5a7ZXn3ePWq7YzVAXeXUmdFu6PA"
+   ],
+   "rule": "close"
+  },
+  {
+   "query": "عقيدة سفارينية",
+   "top": [
+    "PLiTKQO5a7ZXn3ePWq7YzVAXeXUmdFu6PA"
+   ],
+   "rule": "arabic-fold"
+  },
+  {
+   "query": "شَرْحُ الأُصُولِ مِنْ عِلْمِ الأُصُولِ",
+   "top": [
+    "PLiTKQO5a7ZXluOys9QONER4krLwPkgGf-"
+   ],
+   "rule": "arabic-fold"
+  },
+  {
+   "query": "اذكار المساء العفاسي",
+   "top": [
+    "TGtdZmxsM5Q"
+   ],
+   "rule": "arabic-fold"
+  },
+  {
+   "query": "كتاب الاربعين النوويه",
+   "top": [
+    "PLiTKQO5a7ZXk7462OvRA1qTlJdX8y5ipu"
+   ],
+   "rule": "arabic-fold"
+  },
+  {
+   "query": "اسماء الله الحسني",
+   "top": [
+    "PLcitu3ZrbYgRXYg5_q5LTJHFeinSnXZc6",
+    "d_kQW6_300Q"
+   ],
+   "rule": "arabic-fold"
+  },
+  {
+   "query": "تفسير جزء عم",
+   "top": [
+    "PLZxBOI1uMgZjhg-1ZYYS0GhZBiWDnqaeU",
+    "PLtcQeiBJIKBu1bYgzwqOkCykPEUjkAKzz"
+   ],
+   "rule": "exact"
+  },
+  {
+   "query": "شرح كتاب التو",
+   "top": [
+    "PLiTKQO5a7ZXlMgT8KQEYSkpFt-OdZU32D"
+   ],
+   "rule": "prefix"
+  },
+  {
+   "query": "منظومة تحفة الأطفال",
+   "top": [
+    "6x7ieWtbxMs",
+    "lgeRThaK4rU"
+   ],
+   "rule": "related"
+  },
+  {
+   "query": "عثمان الخميس",
+   "top": [
+    "UCWjCSGhmSGu0VLf2mPFS0Kg"
+   ],
+   "rule": "exact"
+  },
+  {
+   "query": "الأربعين النووية 42 حديث",
+   "top": [
+    "OT24EHlHVWc"
+   ],
+   "rule": "arabic-fold"
+  },
+  {
+   "query": "جزء عم المعلم",
+   "top": [
+    "PLkCl7h8FSnn0MhK_zePclIWuVGDv5QUa0",
+    "xc7keR2piUM"
+   ],
+   "rule": "inner-exact"
+  },
+  {
+   "query": "صفة وضوء النبي",
+   "top": [
+    "jj8DbMqQTgY"
+   ],
+   "rule": "inner-exact"
+  },
+  {
+   "query": "أذكار المساء الثابتة",
+   "top": [
+    "xNtGHe8s5V0"
+   ],
+   "rule": "inner-exact"
+  },
+  {
+   "query": "Understand & Memorize Quran Project",
+   "top": [
+    "PLwNeHLk_z0aTfGVQbSejWzc6_BilvBb6j"
+   ],
+   "rule": "exact"
+  },
+  {
+   "query": "OnePath Network",
+   "top": [
+    "UCQHRLH8RQIrdGWMhf5heWiA"
+   ],
+   "rule": "exact"
+  },
+  {
+   "query": "De vijf zuilen van de Islam",
+   "top": [
+    "Gj3c4Axo9VY"
+   ],
+   "rule": "exact"
+  },
+  {
+   "query": "Mufti Mank",
+   "top": [
+    "UCNB_OaI4524fASt8h0IL8dw"
+   ],
+   "rule": "close"
+  },
+  {
+   "query": "Learn Arabik for Kids",
+   "top": [
+    "PLEaGEZnOHpUPBcDnCCXkmgsgRDICnhYwT"
+   ],
+   "rule": "close"
+  },
+  {
+   "query": "Verduideljking omtrent Ashuraa",
+   "top": [
+    "KsBeFUsryj4",
+    "tfuMDR1ZSFw"
+   ],
+   "rule": "close"
+  },
+  {
+   "query": "Instituut voor Opvoedng",
+   "top": [
+    "mkgOc92QpPc"
+   ],
+   "rule": "close"
+  },
+  {
+   "query": "Ahmad Salaam",
+   "top": [
+    "2CtsyWJMK6w"
+   ],
+   "rule": "close"
+  },
+  {
+   "query": "The Story of Prophet Yunus",
+   "top": [
+    "c2I-MdrBkUY",
+    "aYDHGWJS4TI"
+   ],
+   "rule": "related"
+  },
+  {
+   "query": "zakir naik in ar",
+   "top": [
+    "UCWZEG9O221KaXiWThBtMHQQ",
+    "UC3YmP7nqf514I1zh1eVbzrA"
+   ],
+   "rule": "prefix"
+  },
+  {
+   "query": "hoe voed ik mijn ki",
+   "top": [
+    "cBjnzYHSV4M"
+   ],
+   "rule": "prefix"
+  },
+  {
+   "query": "tafseer center",
+   "top": [
+    "UCzPBBUB3SQlDx7EO00YawkQ"
+   ],
+   "rule": "transliteration"
+  },
+  {
+   "query": "Quraan for kids",
+   "top": [
+    "PLkCl7h8FSnn0aErco1PlzOGWRbJRCCKNZ"
+   ],
+   "rule": "transliteration"
+  },
+  {
+   "query": "Mishari Rashid Alafasy",
+   "top": [
+    "pUb9EW770d0",
+    "fLHVCOLU_WI"
+   ],
+   "rule": "inner-exact"
+  },
+  {
+   "query": "Repeats with Zaky",
+   "top": [
+    "5E7FM07d0JE"
+   ],
+   "absent": [
+    "BcCLLPZNPHk"
+   ],
+   "rule": "exact"
+  }
+ ]
+}

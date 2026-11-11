@@ -835,6 +835,64 @@ class SearchIndexTest {
         assertEquals(tier, hits.match(), language + " '" + query + "'");
     }
 
+    // ---- relevance on real catalog titles (unified-search Task 5) -----------------------------------
+
+    private static final com.fasterxml.jackson.databind.JsonNode RELEVANCE = relevanceFixture();
+
+    private static com.fasterxml.jackson.databind.JsonNode relevanceFixture() {
+        try (var in = SearchIndexTest.class.getResourceAsStream("/search/relevance-fixture.json")) {
+            return new com.fasterxml.jackson.databind.ObjectMapper().readTree(in);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    private static List<String> texts(com.fasterxml.jackson.databind.JsonNode array) {
+        List<String> out = new ArrayList<>();
+        if (array != null) array.forEach(node -> out.add(node.asText()));
+        return out;
+    }
+
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> relevanceCases() {
+        List<org.junit.jupiter.params.provider.Arguments> out = new ArrayList<>();
+        RELEVANCE.get("cases").forEach(c -> out.add(org.junit.jupiter.params.provider.Arguments.of(
+                c.get("query").asText(), texts(c.get("top")), c.get("rule").asText(), texts(c.get("absent")))));
+        return out.stream();
+    }
+
+    /**
+     * The fixture's corpus: live-catalog channels, playlists and videos (public API, 2026-11-11) and real uploads placed
+     * only in their channel's inner corpus. Built per case: newIndex/inner() are per-test (their @TempDir and teardown).
+     */
+    private SearchIndex relevanceIndex() throws Exception {
+        List<Channel> cs = new ArrayList<>();
+        RELEVANCE.get("channels").forEach(c -> cs.add(with(channel(c.get("youtubeId").asText(), c.get("name").asText()),
+                ch -> ch.getExcludedItems().setVideos(texts(c.get("excludedVideos"))))));
+        List<Playlist> ps = new ArrayList<>();
+        RELEVANCE.get("playlists").forEach(p -> ps.add(playlist(p.get("youtubeId").asText(), p.get("title").asText())));
+        List<Video> vs = new ArrayList<>();
+        RELEVANCE.get("videos").forEach(v -> vs.add(video(v.get("youtubeId").asText(), v.get("title").asText(),
+                v.get("channelTitle").isNull() ? null : v.get("channelTitle").asText())));
+        Map<String, List<InnerCorpus.Item>> corpus = new java.util.HashMap<>();
+        Map<String, String> names = new java.util.HashMap<>();
+        RELEVANCE.get("inner").fields().forEachRemaining(source -> {
+            List<InnerCorpus.Item> items = new ArrayList<>();
+            source.getValue().forEach(i -> items.add(item(i.get("id").asText(), i.get("t").asText(), i.get("d").asInt())));
+            corpus.put(source.getKey(), items);
+            String channelId = source.getKey().substring("channel:".length());
+            cs.stream().filter(c -> c.getYoutubeId().equals(channelId)).forEach(c -> names.put(source.getKey(), c.getName()));
+        });
+        return started(newIndex(cs, ps, vs, List.of(), 5_000, inner(corpus, names)));
+    }
+
+    @ParameterizedTest(name = "{0} [{2}]")
+    @org.junit.jupiter.params.provider.MethodSource("relevanceCases")
+    void realCatalogQueriesRankAsYouTubeWould(String query, List<String> top, String rule, List<String> absent) throws Exception {
+        List<String> ids = ids(relevanceIndex().search(query, null, 50));
+        assertEquals(top, ids.subList(0, Math.min(top.size(), ids.size())), "'" + query + "' -> " + ids);
+        for (String id : absent) assertFalse(ids.contains(id), id + " is excluded: '" + query + "' -> " + ids);
+    }
+
     // ---- inner search (inner-search spec §7.1, R28, R30, R35) --------------------------------------
 
     @Test
