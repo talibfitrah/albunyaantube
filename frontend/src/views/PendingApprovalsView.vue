@@ -480,7 +480,7 @@ async function loadSubmitters() {
  * How many phone imports are waiting, across everybody.
  *
  * Summed from the by-user roll-up, which scans a bounded number of pending documents. Past that
- * bound this under-counts, so the queue badge — which subtracts it from an exact total — would
+ * bound this under-counts, so the Queue tab label — which subtracts it from an exact total — would
  * over-report by however many imports went uncounted. Bounded by a queue depth far past what a
  * person reviews by hand, and the server logs when it hits it.
  */
@@ -1056,7 +1056,7 @@ onMounted(async () => {
   loadApprovals();
   const counted = loadPendingCount();
   if (isModeratorView.value) return;
-  // Needed by the queue badge too, which subtracts the imports it no longer lists.
+  // Needed by the Queue tab label too, which subtracts the imports it no longer lists.
   await Promise.all([counted, loadSubmitters()]);
   // An empty queue must not hide imports that are waiting on the other tab.
   if (!tabChosen.value && adminTab.value === 'queue' && queueCount.value === 0 && (importCount.value ?? 0) > 0) {
