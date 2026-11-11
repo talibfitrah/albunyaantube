@@ -181,6 +181,28 @@ class ContentLibraryPagingAndTotalsTest {
     }
 
     @Test
+    void aLongArchivedRunCostsAFewRoundsNotOnePerRow() throws Exception {
+        // 1500 archived rows ahead of 100 live ones: linear deepening would re-query ~20 times.
+        List<Channel> rows = new ArrayList<>();
+        for (int i = 0; i < 1600; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%04d", i));
+            c.setStatus("APPROVED");
+            if (i < 1500) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+            rows.add(c);
+        }
+        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
+                .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
+
+        ContentLibraryController.ContentLibraryResponse body =
+                controller.getContent("channel", "approved", null, null, "newest", 0, 20).getBody();
+
+        assertEquals(20, body.content.size());
+        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.atMost(6))
+                .findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt());
+    }
+
+    @Test
     void anApprovedSearchDropsArchivedMatchesBeforeTrimming() throws Exception {
         // 75 archived matches ahead of 30 live ones. Trimming to the 70-row window first would keep
         // only archived rows and report nothing, though the live matches were already fetched.
