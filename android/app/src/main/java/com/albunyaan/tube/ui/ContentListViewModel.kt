@@ -121,7 +121,7 @@ class ContentListViewModel(
     /**
      * Initial load - clears existing data and fetches from the beginning behind the skeleton.
      */
-    fun loadContent() {
+    private fun loadContent() {
         val onScreen = _content.value.items
 
         // Cancel any ongoing request to prevent race conditions
@@ -159,7 +159,6 @@ class ContentListViewModel(
                 throw e // superseded by a newer load: never flash an error for it
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading content for type=$contentType", e)
-                _hasMoreData = true // paging stays open: a scroll to the end retries page 1
                 _content.value = ContentState.Error(e.message ?: "Unknown error", onScreen)
             }
         }

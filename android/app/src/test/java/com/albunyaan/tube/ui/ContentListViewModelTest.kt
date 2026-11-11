@@ -465,6 +465,42 @@ class ContentListViewModelTest {
         assertFalse(retryState.hasMoreData)
     }
 
+    // --- Retry of a first page that failed ---
+
+    @Test
+    fun `scrolling to the end retries a first page that failed`() = runTest {
+        fakeService.errorOnCall = 0 // the first page fails
+        fakeService.responses.add(CursorResponse(emptyList(), null)) // (call 0 throws instead)
+        fakeService.responses.add(CursorResponse(listOf(createVideo("2")), CursorResponse.PageInfo("c2"))) // the retry
+        fakeService.responses.add(CursorResponse(listOf(createVideo("3")), null)) // a later return after idle: page 1 again
+        val returns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val vm = ContentListViewModel(fakeService, ContentType.VIDEOS, returns)
+        advanceUntilIdle()
+        assertTrue(vm.content.value is ContentListViewModel.ContentState.Error)
+
+        assertTrue("paging is left dead after the failure", vm.canLoadMore)
+        vm.loadMore(); advanceUntilIdle()
+
+        assertEquals(null, fakeService.asked.last()) // page 1 again, not a cursor
+        assertEquals(listOf(createVideo("2")), (vm.content.value as ContentListViewModel.ContentState.Success).items)
+        // the retried page counts as page 1: a return after idle swaps it, it does not keep it as a page below
+        returns.tryEmit(Unit); advanceUntilIdle()
+        assertEquals(listOf(createVideo("3")), vm.content.value.items)
+    }
+
+    @Test
+    fun `a scroll retry of the first page that fails again keeps the Error instead of reading as an empty list`() = runTest {
+        fakeService.errorOnCall = 0
+        fakeService.gates[1] = CompletableDeferred<Unit>().apply { completeExceptionally(RuntimeException("still offline")) }
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.loadMore(); advanceUntilIdle() // the retry fails too
+
+        val state = vm.content.value
+        assertTrue("the failed retry read as $state", state is ContentListViewModel.ContentState.Error)
+    }
+
     // --- A tab never sends a query (search lives on Home's button) ---
 
     @Test
