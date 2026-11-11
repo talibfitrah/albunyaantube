@@ -856,7 +856,8 @@ class SearchIndexTest {
     static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> relevanceCases() {
         List<org.junit.jupiter.params.provider.Arguments> out = new ArrayList<>();
         RELEVANCE.get("cases").forEach(c -> out.add(org.junit.jupiter.params.provider.Arguments.of(
-                c.get("query").asText(), texts(c.get("top")), c.get("rule").asText(), texts(c.get("absent")))));
+                c.get("query").asText(), texts(c.get("top")), c.get("rule").asText(), texts(c.get("absent")),
+                c.has("match") ? c.get("match").asText() : null)));
         return out.stream();
     }
 
@@ -887,10 +888,13 @@ class SearchIndexTest {
 
     @ParameterizedTest(name = "{0} [{2}]")
     @org.junit.jupiter.params.provider.MethodSource("relevanceCases")
-    void realCatalogQueriesRankAsYouTubeWould(String query, List<String> top, String rule, List<String> absent) throws Exception {
-        List<String> ids = ids(relevanceIndex().search(query, null, 50));
+    void realCatalogQueriesRankAsYouTubeWould(String query, List<String> top, String rule, List<String> absent, String match)
+            throws Exception {
+        SearchIndex.Hits hits = relevanceIndex().search(query, null, 50);
+        List<String> ids = ids(hits);
         assertEquals(top, ids.subList(0, Math.min(top.size(), ids.size())), "'" + query + "' -> " + ids);
         for (String id : absent) assertFalse(ids.contains(id), id + " is excluded: '" + query + "' -> " + ids);
+        if (match != null) assertEquals(match, hits.match(), "'" + query + "': the first item's tier");
     }
 
     // ---- inner search (inner-search spec §7.1, R28, R30, R35) --------------------------------------

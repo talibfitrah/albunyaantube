@@ -452,7 +452,7 @@
     "PLkCl7h8FSnn0MhK_zePclIWuVGDv5QUa0",
     "xc7keR2piUM"
    ],
-   "rule": "inner-exact"
+   "rule": "curated-first"
   },
   {
    "query": "صفة وضوء النبي",
@@ -467,6 +467,28 @@
     "xNtGHe8s5V0"
    ],
    "rule": "inner-exact"
+  },
+  {
+   "query": "صفة وضوء النبي كأنك تراه",
+   "top": [
+    "jj8DbMqQTgY"
+   ],
+   "match": "exact",
+   "rule": "arabic-fold"
+  },
+  {
+   "query": "اركان الاسلام للاطفال",
+   "top": [
+    "vC43yxyjIEE"
+   ],
+   "rule": "arabic-fold"
+  },
+  {
+   "query": "القران الكريم كاملا للقارئ ابراهيم",
+   "top": [
+    "PLVbRFHv4QvgLEJPO33q4QZncYa53D-V4F"
+   ],
+   "rule": "arabic-fold"
   },
   {
    "query": "Understand & Memorize Quran Project",
@@ -523,7 +545,7 @@
    "top": [
     "2CtsyWJMK6w"
    ],
-   "rule": "close"
+   "rule": "exact"
   },
   {
    "query": "The Story of Prophet Yunus",
