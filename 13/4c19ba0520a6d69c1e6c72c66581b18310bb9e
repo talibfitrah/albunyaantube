@@ -1,0 +1,21 @@
+backend/src/test/resources/search/relevance-fixture.json
+  s_8a936fc306f37b::t_2db805c75ecd21 1-584
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_8a936fc306f37b::t_904ff112ab6a96 838-895
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "134c19ba0520a6d69c1e6c72c66581b18310bb9e",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
