@@ -199,7 +199,7 @@ class ContentLibraryPagingAndTotalsTest {
     }
 
     @Test
-    void oneArchivedRowCostsOneMoreRowNotADoubledWindow() throws Exception {
+    void aFewArchivedRowsAreAbsorbedByTheReadBuffer() throws Exception {
         List<Channel> rows = new ArrayList<>();
         for (int i = 0; i < 500; i++) {
             Channel c = new Channel("UC" + i);
@@ -213,8 +213,9 @@ class ContentLibraryPagingAndTotalsTest {
 
         controller.getContent("channel", "approved", null, null, "newest", 0, 20);
 
-        // Window 70 (+1 probe) holds one archived row, so the second ask is 71 (+1), not 140.
-        org.mockito.Mockito.verify(channelRepository).findByStatus("APPROVED", 72);
+        // 69 live rows in a 70-row window still fill page 0 and signal more: no second query.
+        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.times(1))
+                .findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt());
     }
 
     @Test

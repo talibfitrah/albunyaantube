@@ -373,9 +373,12 @@ public class ContentLibraryController {
         // Search drops archived rows itself before trimming, and its scan bound does not grow
         // with the limit, so only a browse deepens its window.
         boolean deepen = liveOnly && (search == null || search.isBlank());
+        // Enough live rows to fill this page and tell the client more exist; the +50 read buffer
+        // absorbs a few archived rows without a second query.
+        int liveNeeded = Math.min(fetchLimit, (page + 1) * cappedSize + 1);
 
         if (contentTypes.contains("channel")) {
-            BoundedFetchResult<Channel> result = fetchLive(deepen, fetchLimit, Channel::getValidationStatus,
+            BoundedFetchResult<Channel> result = fetchLive(deepen, fetchLimit, liveNeeded, Channel::getValidationStatus,
                     limit -> fetchChannelsBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
@@ -391,7 +394,7 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("playlist")) {
-            BoundedFetchResult<Playlist> result = fetchLive(deepen, fetchLimit, Playlist::getValidationStatus,
+            BoundedFetchResult<Playlist> result = fetchLive(deepen, fetchLimit, liveNeeded, Playlist::getValidationStatus,
                     limit -> fetchPlaylistsBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
@@ -408,7 +411,7 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("video")) {
-            BoundedFetchResult<Video> result = fetchLive(deepen, fetchLimit, Video::getValidationStatus,
+            BoundedFetchResult<Video> result = fetchLive(deepen, fetchLimit, liveNeeded, Video::getValidationStatus,
                     limit -> fetchVideosBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
@@ -510,7 +513,7 @@ public class ContentLibraryController {
      * short page could not serve). Only when rows exist beyond the window; never past
      * {@link #MAX_ITEMS_PER_TYPE}, where the truncated flag already says the list is partial.
      */
-    private <T> BoundedFetchResult<T> fetchLive(boolean deepen, int fetchLimit,
+    private <T> BoundedFetchResult<T> fetchLive(boolean deepen, int fetchLimit, int liveNeeded,
                                                 java.util.function.Function<T, ValidationStatus> validationStatus,
                                                 BoundedFetch<T> fetch)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -518,7 +521,7 @@ public class ContentLibraryController {
         BoundedFetchResult<T> result = fetch.fetch(limit);
         while (deepen && result.hitLimit) {
             long held = result.items.stream().filter(t -> ValidationStatus.holds(validationStatus.apply(t))).count();
-            if (result.items.size() - held >= fetchLimit) break; // enough live rows already
+            if (result.items.size() - held >= liveNeeded) break; // enough live rows already
             // Add exactly the rows held: one archived row costs one more row, and a window that is
             // all archived doubles, so a long archived run costs a few rounds, not one per row.
             int deeper = (int) Math.min(limit + held, MAX_ITEMS_PER_TYPE);
