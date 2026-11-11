@@ -156,8 +156,15 @@ class SearchTextTest {
         // Relevance fixture (2026-11-11): the live title "ﺍﻷﺭﺑﻌﻴﻦ ﺍﻟﻨﻮﻭﻳﺔ 42 حديث كاملا" is typed in Presentation Forms-B
         // (U+FE8D, the lam-alef ligature U+FEF7, ...), so "الأربعين النووية" found it only in the related tier.
         assertEquals(tokens(BASE, "الأربعين النووية الله"), tokens(BASE, "ﺍﻷﺭﺑﻌﻴﻦ ﺍﻟﻨﻮﻭﻳﺔ ﷲ"));
-        // A ligature of several words (ﷺ) is not a spelling of one word: it stays as it was.
-        assertEquals(List.of("النبيﷺ"), tokens(BASE, "النبيﷺ"));
+        // A ligature of several words (ﷺ U+FDFA, ﷻ U+FDFB) ends the word it touches and adds no words: the live title
+        // "صفة وضوء النبيﷺ كأنك تراه" must answer "صفة وضوء النبي كأنك تراه" in the exact tier. ﷽ (So) already split.
+        assertEquals(List.of("النبي", "كانك"), tokens(BASE, "النبيﷺ كأنك"));
+        assertEquals(List.of("الله", "اكبر"), tokens(BASE, "اللهﷻاكبر"));
+        assertEquals(List.of("بسم", "الله"), tokens(BASE, "بسم﷽الله"));
+        // The isolated tashkeel forms (NFKC: a space, then the mark) vanish inside a word like the marks themselves.
+        for (char c : "ﹰﹲﹴﹶﹸﹺﹼﹾﱞﱟﱠﱡﱢﱣ".toCharArray()) {
+            assertEquals(List.of("محمد"), tokens(BASE, "مح" + c + "مد"), Integer.toHexString(c));
+        }
     }
 
     @Test

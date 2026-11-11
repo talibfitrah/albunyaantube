@@ -104,13 +104,17 @@ final class SearchText {
         b.add("\u06DD", " ");
         b.add("\u08E2", " ");
         // Arabic Presentation Forms-A/B (U+FB50-FDFF, U+FE70-FEFF): a letter's positional form or a one-word ligature
-        // (lam-alef, \uFDF2) is that word in plain letters (NFKC). Multi-word ligatures (\uFDFA, \uFDFD) are not one word: they stay.
+        // (lam-alef, \uFDF2) is that word in plain letters (NFKC). An isolated tashkeel form (NFKC: space + marks) goes like
+        // the marks. A multi-word ligature (\uFDFA, \uFDFB) ends the word it touches without adding its words to the title.
         for (char[] range : new char[][]{{'\uFB50', '\uFDFF'}, {'\uFE70', '\uFEFF'}}) {
             for (char c = range[0]; c <= range[1]; c++) {
                 String plain = Normalizer.normalize(String.valueOf(c), Normalizer.Form.NFKC);
-                if (Character.getType(c) == Character.OTHER_LETTER && !plain.contains(" ") && !plain.equals(String.valueOf(c))) {
-                    b.add(String.valueOf(c), plain);
+                if (Character.getType(c) != Character.OTHER_LETTER || plain.equals(String.valueOf(c))) continue;
+                if (plain.contains(" ")) {
+                    boolean marks = plain.replace(" ", "").chars().allMatch(m -> Character.getType(m) == Character.NON_SPACING_MARK);
+                    plain = marks ? "" : " ";
                 }
+                b.add(String.valueOf(c), plain);
             }
         }
         // Directional controls (LRM, RLM, ALM, the embeddings/overrides U+202A-202E, the isolates U+2066-2069) and the
