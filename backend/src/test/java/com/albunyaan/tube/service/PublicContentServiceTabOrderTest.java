@@ -30,10 +30,15 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -197,6 +202,83 @@ class PublicContentServiceTabOrderTest {
         assertEquals(List.of("yt-ch-C","yt-ch-A","yt-ch-I","yt-ch-H","yt-ch-B","yt-ch-D","yt-ch-F","yt-ch-O","yt-ch-E"),
                 walk("CHANNELS", "CHANNEL"));
     }
+    @Test void anAToZTwinOfTheSameItemIsListedOnce() throws Exception {
+        // Two APPROVED docs for one youtube id (a re-add), neither in a category: one row, as the category walk dedupes.
+        Channel twin = channel("ch-F2", "alpha", List.of());
+        twin.setYoutubeId("yt-ch-F");
+        List<Channel> approved = new ArrayList<>(channelRepository.findByStatus("APPROVED"));
+        approved.add(twin);
+        when(channelRepository.findByStatus("APPROVED")).thenReturn(approved);
+        assertEquals(List.of("yt-ch-C","yt-ch-A","yt-ch-I","yt-ch-H","yt-ch-B","yt-ch-D","yt-ch-F","yt-ch-O","yt-ch-E"),
+                walk("CHANNELS", "CHANNEL"));
+    }
+
+    @Test void concurrentFirstRequestsShareOneBuild() throws Exception {
+        CountDownLatch building = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(categoryRepository.findAll()).thenAnswer(inv -> {
+            building.countDown();
+            assertTrue(release.await(10, TimeUnit.SECONDS));
+            return categories;
+        });
+        FutureTask<String> builder = start(() -> first("CHANNELS"));
+        assertTrue(building.await(10, TimeUnit.SECONDS));
+        FutureTask<String> waiter = new FutureTask<>(() -> first("CHANNELS"));
+        Thread waiterThread = new Thread(waiter);
+        waiterThread.start();
+        awaitParkedInTabOrder(waiterThread);
+        release.countDown();
+        assertEquals("yt-ch-C", builder.get(10, TimeUnit.SECONDS));
+        assertEquals("yt-ch-C", waiter.get(10, TimeUnit.SECONDS));
+        verify(categoryRepository, times(1)).findAll();
+    }
+
+    @Test void aFailedSharedBuildFailsItsWaiterWithoutASecondBuildAndTheNextRequestRebuilds() throws Exception {
+        CountDownLatch building = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(categoryRepository.findAll()).thenAnswer(inv -> {
+            building.countDown();
+            assertTrue(release.await(10, TimeUnit.SECONDS));
+            throw new TimeoutException("firestore");
+        }).thenReturn(categories);
+        FutureTask<String> builder = start(() -> first("CHANNELS"));
+        assertTrue(building.await(10, TimeUnit.SECONDS));
+        FutureTask<String> waiter = new FutureTask<>(() -> first("CHANNELS"));
+        Thread waiterThread = new Thread(waiter);
+        waiterThread.start();
+        awaitParkedInTabOrder(waiterThread);
+        release.countDown();
+        assertInstanceOf(TimeoutException.class,
+                assertThrows(ExecutionException.class, () -> builder.get(10, TimeUnit.SECONDS)).getCause());
+        assertInstanceOf(TimeoutException.class,
+                assertThrows(ExecutionException.class, () -> waiter.get(10, TimeUnit.SECONDS)).getCause());
+        verify(categoryRepository, times(1)).findAll(); // the waiter shared the failure, it did not rebuild
+        assertEquals("yt-ch-C", first("CHANNELS"));
+        verify(categoryRepository, times(2)).findAll();
+    }
+
+    private static FutureTask<String> start(java.util.concurrent.Callable<String> call) {
+        FutureTask<String> task = new FutureTask<>(call);
+        new Thread(task).start();
+        return task;
+    }
+
+    /** Until {@code t} is parked or blocked inside PublicContentService.tabOrder (waiting on the build in flight). */
+    private static void awaitParkedInTabOrder(Thread t) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Thread.State state = t.getState();
+            boolean inTabOrder = Arrays.stream(t.getStackTrace()).anyMatch(f ->
+                    f.getClassName().equals(PublicContentService.class.getName()) && f.getMethodName().equals("tabOrder"));
+            if (inTabOrder && (state == Thread.State.BLOCKED || state == Thread.State.WAITING
+                    || state == Thread.State.TIMED_WAITING)) {
+                return;
+            }
+            Thread.onSpinWait();
+        }
+        throw new AssertionError("waiter never reached the in-flight build: " + t.getState());
+    }
+
     private String first(String tab) throws Exception {
         return service.getContent(tab, null, 4, null, null, null, null).getData().get(0).getId();
     }

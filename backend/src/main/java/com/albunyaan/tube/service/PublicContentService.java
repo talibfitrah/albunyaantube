@@ -46,8 +46,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -201,10 +203,13 @@ public class PublicContentService {
     }
 
     // ponytail: no TTL; a write that skips evictPublicContentCaches() leaves the order stale until the next content change. Add a built-at check if such a path appears.
-    // ponytail: uploadedDaysAgo in the kept DTOs is frozen until the next ContentChanged (the daily validation schedulers evict, so about a day); rebuild when the UTC day changes if that drift matters.
+    // ponytail: uploadedDaysAgo in the kept DTOs is frozen until the next ContentChanged (each completed daily validation run announces one, so about a day); rebuild when the UTC day changes if that drift matters.
     private volatile Map<String, List<ContentItemDto>> tabOrder;
     private final AtomicLong tabOrderGeneration = new AtomicLong();
-    private final Object tabOrderLock = new Object();
+    /** The build in flight, shared by every request that finds no kept order; null when none runs. */
+    private final AtomicReference<CompletableFuture<Map<String, List<ContentItemDto>>>> tabOrderBuild = new AtomicReference<>();
+    /** How long a request waits on another request's build before answering 504: two Firestore bulk-query timeouts. */
+    private static final long TAB_ORDER_WAIT_SECONDS = 60;
 
     /** Any content change drops the kept order; the generation bump first makes a build already running discard its result. */
     @EventListener
@@ -213,18 +218,36 @@ public class PublicContentService {
         tabOrder = null;
     }
 
-    /** The kept order; one build at a time, and a build that a content change overtook is served once, never stored. */
-    // ponytail: waiters rebuild one after another when a build fails (k-th waits ~k x Firestore timeout); share the in-flight future if brownouts make that bite.
+    /**
+     * The kept order. One build at a time: requests that arrive while it runs share its result or its failure.
+     * A build that a content change overtook is served to its requests, never kept.
+     */
     private Map<String, List<ContentItemDto>> tabOrder()
             throws ExecutionException, InterruptedException, TimeoutException {
         Map<String, List<ContentItemDto>> order = tabOrder;
         if (order != null) return order;
-        synchronized (tabOrderLock) {
-            if (tabOrder != null) return tabOrder;
+        CompletableFuture<Map<String, List<ContentItemDto>>> mine = new CompletableFuture<>();
+        CompletableFuture<Map<String, List<ContentItemDto>>> running = tabOrderBuild.compareAndExchange(null, mine);
+        if (running != null) {
+            try {
+                return running.get(TAB_ORDER_WAIT_SECONDS, TimeUnit.SECONDS);
+            } catch (ExecutionException e) {
+                throw unwrapped(e);
+            }
+        }
+        try {
             long generation = tabOrderGeneration.get();
             order = buildTabOrder();
-            if (tabOrderGeneration.get() == generation) tabOrder = order;
+            // Store, then re-check: onContentChanged bumps before it nulls, so a change racing the store always wins.
+            tabOrder = order;
+            if (tabOrderGeneration.get() != generation) tabOrder = null;
+            mine.complete(order);
             return order;
+        } catch (Throwable t) {
+            mine.completeExceptionally(t);
+            throw t;
+        } finally {
+            tabOrderBuild.compareAndSet(mine, null);
         }
     }
 
@@ -285,7 +308,7 @@ public class PublicContentService {
         // the collator is built per call because it is not thread-safe.
         Collator collator = Collator.getInstance(Locale.ROOT);
         rest.stream()
-                .filter(d -> !seen.contains(d.getType() + ":" + d.getId()))
+                .filter(d -> seen.add(d.getType() + ":" + d.getId()))
                 .sorted(Comparator.comparing((ContentItemDto d) -> d.getTitle() != null ? d.getTitle() : d.getName(),
                                 Comparator.nullsLast(collator))
                         .thenComparing(ContentItemDto::getId))
@@ -1589,13 +1612,18 @@ public class PublicContentService {
         try {
             return future.join();
         } catch (CompletionException e) {
-            for (Throwable t = e.getCause(); t != null; t = t.getCause()) {
-                if (t instanceof TimeoutException te) throw te;
-                if (t instanceof ExecutionException ee) throw ee;
-                if (t instanceof InterruptedException ie) throw ie;
-            }
-            throw e;
+            throw unwrapped(e);
         }
+    }
+
+    /** Throws the first TimeoutException / ExecutionException / InterruptedException in e's cause chain; else returns e. */
+    private static <E extends Exception> E unwrapped(E e) throws ExecutionException, InterruptedException, TimeoutException {
+        for (Throwable t = e.getCause(); t != null; t = t.getCause()) {
+            if (t instanceof TimeoutException te) throw te;
+            if (t instanceof ExecutionException ee) throw ee;
+            if (t instanceof InterruptedException ie) throw ie;
+        }
+        return e;
     }
 
     /** Supplier that can throw checked exceptions. */
