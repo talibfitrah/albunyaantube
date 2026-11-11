@@ -519,8 +519,8 @@ public class ChannelRepository {
     public List<Channel> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
-        // Fetch limit per subcategory (not per total) but cap to avoid waste
-        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
+        int perCategoryLimit = limit;
         LinkedHashMap<String, Channel> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
             List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, perCategoryLimit);

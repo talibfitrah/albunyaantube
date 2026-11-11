@@ -359,7 +359,8 @@ public class PlaylistRepository {
     public List<Playlist> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
-        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
+        int perCategoryLimit = limit;
         LinkedHashMap<String, Playlist> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
             List<Playlist> batch = findByCategoryId(catId, perCategoryLimit);
