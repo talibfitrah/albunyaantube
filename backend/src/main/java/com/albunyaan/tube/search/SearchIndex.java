@@ -796,7 +796,6 @@ public class SearchIndex {
     private Copy innerCopy(IndexSearcher searcher, String id, String preferredKey, boolean blockedByVideo) throws IOException {
         StoredFields fields = searcher.storedFields();
         Copy first = null;
-        if (excludedAnywhere(id)) return null; // hidden everywhere: it cannot be returned nor lend its title or duration
         for (ScoreDoc hit : searcher.search(new TermQuery(new Term("id", id)), TITLE_COPIES).scoreDocs) {
             Document doc = fields.document(hit.doc);
             String keeper = keeper(doc, null, blockedByVideo), title = doc.get("t"); // an INNER copy never reaches the stream gate
@@ -904,7 +903,7 @@ public class SearchIndex {
         } finally {
             searchers.release(searcher);
         }
-        if (out.isEmpty() && inner != null && inner.serving() && (type == null || "VIDEO".equals(type))) {
+        if (out.isEmpty() && inner != null && inner.serving() && (type == null || "VIDEO".equals(type)) && !excludedAnywhere(youtubeId)) {
             try { // R27: a pasted id of a video inside an admitted source, named by the search's own copy rule
                 IndexSearcher s = inner.acquire();
                 if (s != null) {

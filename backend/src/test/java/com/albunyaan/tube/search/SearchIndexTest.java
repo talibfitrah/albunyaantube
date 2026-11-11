@@ -1156,6 +1156,29 @@ class SearchIndexTest {
         assertFalse(ids(idx.searchPage("Surah Al-Kahf", "VIDEO", 50, null, -1)).contains("vKahf")); // the in-tab path too
     }
 
+    /** Only a stored stream (no approved Video to hide it by videoIds), so the global check alone must hide it. */
+    @Test
+    void aStoredStreamExcludedByAnotherSourceIsHiddenOnEveryPath() throws Exception {
+        SearchIndex idx = started(newIndex(
+                List.of(with(channel("UCalafasy", "Alafasy"), c -> c.getExcludedItems().setVideos(List.of("vKahf")))),
+                List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")), List.of(),
+                List.of(stream("vKahf", "Surah Al-Kahf stream", "playlist:PLtafsir")), 5_000, null));
+        assertFalse(ids(idx.search("Surah Al-Kahf", null, 50)).contains("vKahf"));
+        assertFalse(ids(idx.searchPage("Surah Al-Kahf", "VIDEO", 50, null, -1)).contains("vKahf"));
+        assertEquals(SearchIndex.Hits.NONE, idx.byId("vKahf", null));
+    }
+
+    /** /titles is not search: another source's exclusion does not take a page's original inner title away. */
+    @Test
+    void titlesStillNameAnIdAnotherSourceExcludes() throws Exception {
+        InnerIndex inner = inner(Map.of("playlist:PLtafsir", List.of(item("vKahf", "Surah Al-Kahf inner copy", 600))), Map.of());
+        SearchIndex idx = started(newIndex(
+                List.of(with(channel("UCalafasy", "Alafasy"), c -> c.getExcludedItems().setVideos(List.of("vKahf")))),
+                List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")), List.of(), List.of(), 5_000, inner));
+        assertEquals("Surah Al-Kahf inner copy", idx.titles(List.of("vKahf")).map().get("vKahf"));
+        assertEquals(SearchIndex.Hits.NONE, idx.byId("vKahf", null));
+    }
+
     @Test
     void anExclusionTakesEffectOnTheNextSearchAndALiftedOneComesBack() throws Exception {
         index = alafasy(zubdahnoor());
