@@ -1,0 +1,51 @@
+android/app/src/main/java/com/albunyaan/tube/ui/VideosFragmentNew.kt
+  s_8a936fc306f37b::t_947043c7b1a3a3 82,87-88,186,223-225
+android/app/src/main/res/layout/fragment_simple_list.xml
+  s_8a936fc306f37b::t_2da0d0980fef89 20,23-25,27-29
+android/app/src/main/java/com/albunyaan/tube/data/source/api/ContentApi.kt
+  s_8a936fc306f37b::t_ddf7ce04ab8ae6 24
+android/app/src/main/java/com/albunyaan/tube/data/source/RetrofitContentService.kt
+  s_8a936fc306f37b::t_ddf7ce04ab8ae6 26,42
+android/app/src/main/java/com/albunyaan/tube/ui/ChannelsFragmentNew.kt
+  s_8a936fc306f37b::t_947043c7b1a3a3 65,71-72,181,213-215
+android/app/src/main/java/com/albunyaan/tube/ui/PlaylistsFragmentNew.kt
+  s_8a936fc306f37b::t_947043c7b1a3a3 65,70-71,171,203-205
+android/app/src/test/java/com/albunyaan/tube/ui/SearchViewModelTest.kt
+  s_8a936fc306f37b::t_ddf7ce04ab8ae6 59
+android/app/src/main/res/layout/fragment_channels_new.xml
+  s_8a936fc306f37b::t_2da0d0980fef89 19,22-24,26-28
+android/app/src/test/java/com/albunyaan/tube/data/source/FakeContentService.kt
+  s_8a936fc306f37b::t_ddf7ce04ab8ae6 62,72
+android/app/src/androidTest/java/com/albunyaan/tube/di/TestNetworkModule.kt
+  s_8a936fc306f37b::t_863493c2cb73b5 53,124-125
+android/app/src/test/java/com/albunyaan/tube/ui/ContentListViewModelTest.kt
+  s_8a936fc306f37b::t_9888c59c2c2cf9 468,471-473,475,477,480-481
+  s_8a936fc306f37b::t_21fddc64da7381 258,352,526,532,534
+android/app/src/main/java/com/albunyaan/tube/ui/ContentListViewModel.kt
+  s_8a936fc306f37b::t_25706d75c3f647 83,97,145,156,198,209,251,264,275
+  s_8a936fc306f37b::t_4ee7f694e1cbbb 122,124,132,138,212,294,335
+android/app/src/test/java/com/albunyaan/tube/ui/HomeViewModelTest.kt
+  s_8a936fc306f37b::t_ddf7ce04ab8ae6 365
+android/app/src/test/java/com/albunyaan/tube/data/source/RetrofitContentServiceTest.kt
+  s_8a936fc306f37b::t_ddf7ce04ab8ae6 298,302,305
+android/app/src/test/java/com/albunyaan/tube/data/shorts/ShortsFeedRepositoryTest.kt
+  s_8a936fc306f37b::t_ddf7ce04ab8ae6 29,44
+android/app/src/main/java/com/albunyaan/tube/data/source/ContentService.kt
+  s_8a936fc306f37b::t_ddf7ce04ab8ae6 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff385e6a14423222101c98af8ceb7f908fce6fce",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
