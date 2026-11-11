@@ -1,0 +1,49 @@
+android/app/src/test/java/com/albunyaan/tube/update/MinVersionGateTest.kt
+  s_8a936fc306f37b::t_7a36d93b057bf9 1-141
+android/app/src/main/res/navigation/app_nav_graph.xml
+  s_8a936fc306f37b::t_f4375c4527fde9 46-52,55-58
+  s_8a936fc306f37b::t_d911df08c41707 59
+android/app/src/main/res/values/strings.xml
+  s_8a936fc306f37b::t_42e771342ab495 207-209
+android-remote-config.json
+  s_8a936fc306f37b::t_d83d1e9f78d5d3 1
+android/app/src/main/res/values-nl/strings.xml
+  s_8a936fc306f37b::t_c8dd3efa5c86b0 188-190
+android/app/src/main/res/values-ar/strings.xml
+  s_8a936fc306f37b::t_3a8fe0bbccf69b 178-180
+android/app/src/sideload/java/com/albunyaan/tube/update/UpdatePromptFlow.kt
+  s_8a936fc306f37b::t_e8adeb2a90cc4f 134-137
+android/app/src/play/java/com/albunyaan/tube/update/NoUpdateGateway.kt
+  s_8a936fc306f37b::t_888d022e6c4d41 4-6,25-29,45-60
+android/app/src/main/java/com/albunyaan/tube/ui/UpdateRequiredFragment.kt
+  s_8a936fc306f37b::t_260142012840b0 1-30
+android/app/src/main/res/layout/fragment_update_required.xml
+  s_8a936fc306f37b::t_497f94cd7e74dd 1-67
+android/app/src/main/java/com/albunyaan/tube/update/UpdateGateway.kt
+  s_8a936fc306f37b::t_e8adeb2a90cc4f 59-64
+android/app/src/main/java/com/albunyaan/tube/update/MinVersionGate.kt
+  s_8a936fc306f37b::t_9363f4e0b8f383 1-106
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_8a936fc306f37b::t_e562896ebdc5be 86-87
+  s_8a936fc306f37b::t_87c251ba62082d 18
+  s_8a936fc306f37b::t_a8a14e62a24ffe 260-270
+  s_8a936fc306f37b::t_df4f98e8b3b4f4 169-174,179-180,183-186
+  s_8a936fc306f37b::t_36b6476412ceff 364-370
+  s_8a936fc306f37b::t_5933f0ea04fc2a 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb8ec734f40b9441bb39fb927b3644fda14c22b7",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
