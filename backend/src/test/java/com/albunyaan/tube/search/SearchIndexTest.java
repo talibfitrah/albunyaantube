@@ -847,7 +847,7 @@ class SearchIndexTest {
         assertEquals("vKahf", ids(hits).get(0));
         assertEquals(Set.of("lesson00001", "lesson00002"), Set.copyOf(ids(hits).subList(1, 3)));
         assertEquals("exact", hits.match());
-        assertTrue(lastSlowLine().matches(".* inner=\\d+ms:2"), lastSlowLine());
+        assertTrue(lastSlowLine().matches(".* inner=\\d+ms:2( titles=\\d+ms:0)?"), lastSlowLine()); // vKahf has no duration: one lookup, no title swap
     }
 
     @Test
@@ -1327,6 +1327,44 @@ class SearchIndexTest {
         idx.search("recitation", null, 2);
         assertTrue(lastSlowLine().matches(".* titles=\\d+ms:1:timeout"), lastSlowLine());
         assertFalse(lastSlowLine().contains("recitation"), lastSlowLine());
+    }
+
+    // ---- Task 2: a hit with no duration takes its inner copy's -------------------------------------------
+
+    private static ContentItemDto hit(SearchIndex.Hits hits, String id) {
+        return hits.items().stream().filter(i -> i.getId().equals(id)).findFirst().orElseThrow();
+    }
+
+    @Test
+    void aStoredStreamWithoutADurationTakesItsInnerCopysDuration() throws Exception {
+        SearchIndex.Hits hits = recitations(originals()).search("recitation", null, 2);
+        assertEquals(600, hit(hits, "live-kahf").getDurationSeconds());
+        assertEquals(600, hit(hits, "live-yasin").getDurationSeconds());
+    }
+
+    @Test
+    void aCatalogVideoWithoutADurationTakesItsInnerCopysDuration() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("vKahf", "Surah Al-Kahf", 1500))), Map.of(ALAFASY, "Alafasy"));
+        assertEquals(1500, hit(alafasy(inner).search("kahf", null, 50), "vKahf").getDurationSeconds());
+        Video known = video("vKahf", "Surah Al-Kahf", "Alafasy");
+        known.setDurationSeconds(900);
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(known), List.of(), 5_000, inner));
+        assertEquals(900, hit(idx.search("kahf", null, 50), "vKahf").getDurationSeconds(), "a stored duration is kept");
+    }
+
+    @Test
+    void durationFillsShareTheTitleBudgetAndStopWhenItRunsOut() throws Exception {
+        SearchIndex idx = recitations(originals());
+        idx.slowSearchMs = -1;
+        idx.newTimeout = ms -> scripted(1, false); // the first lookup is refused
+        SearchIndex.Hits hits = idx.search("recitation", null, 2);
+        assertEquals(2, hits.items().size());
+        for (ContentItemDto item : hits.items()) assertNull(item.getDurationSeconds(), item.getId());
+        assertTrue(lastSlowLine().matches(".* titles=\\d+ms:0:timeout"), lastSlowLine());
+        idx.newTimeout = ms -> scripted(2, false); // the first lookup answers, the second is refused
+        List<ContentItemDto> cut = idx.search("recitation", null, 2).items();
+        assertEquals(1, cut.stream().filter(i -> i.getDurationSeconds() != null).count(), "one budget, one lookup per item");
+        assertTrue(lastSlowLine().matches(".* titles=\\d+ms:1:timeout"), lastSlowLine());
     }
 
     /** Task 24 hand-off: a failing title pass keeps the merged inner hits and only skips the swap; its WARN names the class only. */

@@ -629,9 +629,11 @@ public class SearchIndex {
                 Set<String> todays = new HashSet<>();
                 for (ContentItemDto item : today.items()) todays.add(item.getId());
                 Hits answer = merged(shared, today, todays, want, trace);
-                try { // In C only a stored stream names a source; inner hits never share an id with C.
+                try { // Only C's items need the lookup: a stored stream (it names a source) or a video with no duration.
                     originalTitles(shared, answer.items().stream()
-                            .filter(item -> item.getSourceType() != null && todays.contains(item.getId())).toList(), trace);
+                            .filter(item -> todays.contains(item.getId())
+                                    && (item.getSourceType() != null || ("VIDEO".equals(item.getType()) && item.getDurationSeconds() == null)))
+                            .toList(), trace);
                 } catch (IOException | RuntimeException e) {
                     log.warn("inner titles failed ({}); keeping the stored titles", e.getClass().getName()); // the class only: see below
                 }
@@ -738,7 +740,8 @@ public class SearchIndex {
 
     /**
      * Q17: each stored stream shown takes its inner copy's title, which is in its source's own `hl` (the stored titles came
-     * from `hl=en` lists, so they are often machine-translated), and keeps its place. Its own budget, checked before each
+     * from `hl=en` lists, so they are often machine-translated), and keeps its place. Any item shown with no duration
+     * (a stream or a catalog video) takes its inner copy's, when that is known: the same lookup, the same budget. Its own budget, checked before each
      * lookup: past it (a cold page cache, say) the rest keep their stored titles. The slow line shows its ms, the titles
      * it swapped and whether it ran out.
      */
@@ -753,10 +756,16 @@ public class SearchIndex {
                 trace.titlesTimedOut = true;
                 break;
             }
-            String title = innerTitle(searcher, item.getId(), item.getSourceType().toLowerCase(Locale.ROOT) + ":" + item.getSourceId());
-            if (title != null) {
-                item.setTitle(title);
+            boolean stream = item.getSourceType() != null;
+            Copy copy = innerCopy(searcher, item.getId(), stream ? item.getSourceType().toLowerCase(Locale.ROOT) + ":" + item.getSourceId() : null, stream);
+            if (copy == null) continue;
+            if (stream) { // a catalog video keeps its title
+                item.setTitle(copy.doc().get("t"));
                 trace.titles++;
+            }
+            IndexableField d = copy.doc().getField("d");
+            if (item.getDurationSeconds() == null && d != null && d.numericValue().intValue() > 0) {
+                item.setDurationSeconds(d.numericValue().intValue());
             }
         }
         if (searcher.timedOut()) trace.titlesTimedOut = true; // Lucene cut a lookup short
@@ -781,11 +790,15 @@ public class SearchIndex {
      * never names a video, nor does a blank title (as in the catalog path).
      */
     private Copy innerCopy(IndexSearcher searcher, String id, String preferredKey) throws IOException {
+        return innerCopy(searcher, id, preferredKey, true);
+    }
+
+    private Copy innerCopy(IndexSearcher searcher, String id, String preferredKey, boolean blockedByVideo) throws IOException {
         StoredFields fields = searcher.storedFields();
         Copy first = null;
         for (ScoreDoc hit : searcher.search(new TermQuery(new Term("id", id)), TITLE_COPIES).scoreDocs) {
             Document doc = fields.document(hit.doc);
-            String keeper = keeper(doc, null), title = doc.get("t"); // an INNER copy never reaches the stream gate
+            String keeper = keeper(doc, null, blockedByVideo), title = doc.get("t"); // an INNER copy never reaches the stream gate
             if (keeper == null || title == null || title.isBlank()) continue;
             if (keeper.equals(preferredKey)) return new Copy(doc, keeper);
             if (first == null) first = new Copy(doc, keeper);
@@ -1123,10 +1136,15 @@ public class SearchIndex {
      * stored. `trace` (nullable) counts the stream gate's lookups.
      */
     private String keeper(Document doc, Trace trace) {
+        return keeper(doc, trace, true);
+    }
+
+    /** `blockedByVideo` false: a copy that only lends a catalog Video its duration, which its own Video document would hide. */
+    private String keeper(Document doc, Trace trace, boolean blockedByVideo) {
         String kind = doc.get("source");
         if (!"STREAM".equals(kind) && !"INNER".equals(kind)) return null;
         String id = doc.get("id");
-        if (videoIds.contains(id)) return null;
+        if (blockedByVideo && videoIds.contains(id)) return null;
         boolean stream = "STREAM".equals(kind); // the R18 gate applies to stored streams only
         Map<String, Admitted> sources = admittedSources;
         for (String key : doc.getValues("sourceKey")) {
