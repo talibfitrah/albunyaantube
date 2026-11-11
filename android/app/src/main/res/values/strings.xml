@@ -204,6 +204,9 @@
     <string name="update_download_and_install">Update now</string>
     <string name="update_check_up_to_date">FitrahTube is up to date.</string>
     <string name="update_check_failed">Couldn\'t check for updates. Please try again.</string>
+    <string name="update_required_title">Update required</string>
+    <string name="update_required_message">This version of FitrahTube is no longer supported. Please update to continue.</string>
+    <string name="update_required_button">Update</string>
     <string name="update_downloading">Downloading update…</string>
     <string name="update_preparing">Preparing to install…</string>
     <string name="update_download_failed">Download failed. Please try again.</string>

@@ -175,6 +175,9 @@
     <string name="update_download_and_install">تنزيل وتثبيت</string>
     <string name="update_check_up_to_date">أنت تستخدم أحدث إصدار.</string>
     <string name="update_check_failed">تعذر التحقق من التحديثات.</string>
+    <string name="update_required_title">التحديث مطلوب</string>
+    <string name="update_required_message">هذا الإصدار من فطرة تيوب لم يعد مدعومًا. يرجى التحديث للمتابعة.</string>
+    <string name="update_required_button">تحديث</string>
     <string name="update_downloading">جاري تنزيل التحديث…</string>
     <string name="update_preparing">جارٍ التحضير للتثبيت…</string>
     <string name="update_download_failed">فشل تنزيل التحديث.</string>
