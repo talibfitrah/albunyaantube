@@ -62,7 +62,7 @@ public final class ContentItemMapper {
      * content API).
      */
     public static ContentItemDto fromVideo(Video video) {
-        Integer durationSeconds = video.getDurationSeconds() != null && video.getDurationSeconds() > 0 ? video.getDurationSeconds() : null;
+        Integer durationSeconds = ContentItemDto.knownSeconds(video.getDurationSeconds());
         Integer uploadedDaysAgo = uploadedDaysAgo(video.getUploadedAt());
 
         // Category name will be null — populated by client-side lookup to avoid a

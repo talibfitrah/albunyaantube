@@ -39,7 +39,7 @@ public final class PublicDetails {
                                  Integer itemCount, List<String> excludedVideoIds) {}
 
     public static VideoDetail of(Video v) {
-        Integer duration = v.getDurationSeconds() != null && v.getDurationSeconds() > 0 ? v.getDurationSeconds() : null; // 0 = unknown
+        Integer duration = ContentItemDto.knownSeconds(v.getDurationSeconds());
         return new VideoDetail(v.getYoutubeId(), v.getTitle(), v.getDescription(), v.getThumbnailUrl(),
                 duration, v.getViewCount(), v.getChannelTitle(), v.allowsOffline());
     }

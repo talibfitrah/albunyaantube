@@ -817,7 +817,7 @@ public class SearchIndex {
         IndexableField seconds = doc.getField("d"), day = doc.getField("a");
         Integer daysAgo = day == null ? null
                 : (int) Math.max(0, LocalDate.now(ZoneOffset.UTC).toEpochDay() - day.numericValue().longValue());
-        ContentItemDto dto = ContentItemDto.video(id, doc.get("t"), null, seconds != null && seconds.numericValue().intValue() > 0 ? seconds.numericValue().intValue() : null,
+        ContentItemDto dto = ContentItemDto.video(id, doc.get("t"), null, ContentItemDto.knownSeconds(seconds == null ? null : seconds.numericValue()),
                 daysAgo, null, "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg", null, doc.get("c"), null);
         provenance(dto, keeper);
         return dto;
@@ -1288,7 +1288,7 @@ public class SearchIndex {
     /** A stream shown as a stream has no Video document, so no upload date. */
     static ContentItemDto streamDto(SearchableStream s) {
         return ContentItemDto.video(s.getStreamId(), s.getTitle(), null,
-                s.getDurationSeconds() != null && s.getDurationSeconds() > 0 ? s.getDurationSeconds().intValue() : null,
+                ContentItemDto.knownSeconds(s.getDurationSeconds()),
                 null, null, s.getThumbnailUrl(), s.getViewCount(), s.getChannelName(), null);
     }
 

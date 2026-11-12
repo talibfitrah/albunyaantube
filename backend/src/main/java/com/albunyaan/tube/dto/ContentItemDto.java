@@ -92,6 +92,11 @@ public class ContentItemDto {
         return dto;
     }
 
+    /** The one rule for "duration unknown": null or <= 0 (YouTube reports 0 for live/upcoming) goes out as null. */
+    public static Integer knownSeconds(Number seconds) {
+        return seconds != null && seconds.longValue() > 0 ? seconds.intValue() : null;
+    }
+
     public static ContentItemDto video(String id, String title, String category,
                                        Integer durationSeconds, Integer uploadedDaysAgo,
                                        String description, String thumbnailUrl, Long viewCount,
