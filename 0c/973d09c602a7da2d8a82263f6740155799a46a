@@ -1,0 +1,21 @@
+frontend/src/views/ContentLibraryView.vue
+  s_8a936fc306f37b::t_5671199185efab 857-861,891,1292,1334-1335,1386
+frontend/tests/ContentLibraryLoadedWindow.spec.ts
+  s_8a936fc306f37b::t_a248348a3b8ecf 268-288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c973d09c602a7da2d8a82263f6740155799a46a",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
