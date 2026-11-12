@@ -128,6 +128,19 @@ internal object SplashRouter {
         !signedIn && currentDestination == R.id.mainShellFragment
 
     /**
+     * An activity recreation ([restoring] = a saved instance state exists: process death,
+     * locale, uiMode or font change) rebuilds the back stack and never runs the splash, so it
+     * never met the minimum-version floor. [belowMinimum] is the cached gate (no network); a
+     * cold start ([restoring] false) leaves the floor to the splash.
+     */
+    fun restoreBlockedByMinVersion(restoring: Boolean, belowMinimum: () -> Boolean): Boolean =
+        restoring && belowMinimum()
+
+    /** Never re-route onto sign-in, and never off the update-required block. */
+    fun mayRouteToSignIn(currentDestination: Int?): Boolean =
+        currentDestination != R.id.signInFragment && currentDestination != R.id.updateRequiredFragment
+
+    /**
      * An actual SignedIn → SignedOut transition. A fresh activity's first value
      * (previous == null) never counts: a signed-out launch or rotation must not
      * poke PlaybackService or initialise CastContext on the main thread.

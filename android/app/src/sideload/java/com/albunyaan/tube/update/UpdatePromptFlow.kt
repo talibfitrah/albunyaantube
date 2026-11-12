@@ -131,6 +131,10 @@ class UpdatePromptFlow @Inject constructor(
         }
     }
 
+    /** Update-required screen: the same check-and-install path as Settings' manual check. */
+    override fun openRequiredUpdate(activity: Activity, lifecycleOwner: LifecycleOwner) =
+        runCheck(activity, lifecycleOwner)
+
     /**
      * Bounded check used by the splash gate. Returns the [UpdateInfo] or null on no-update,
      * network failure, or timeout — splash never wants to stall cold start waiting on GitHub.

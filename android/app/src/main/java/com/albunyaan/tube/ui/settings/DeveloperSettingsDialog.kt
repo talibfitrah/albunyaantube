@@ -108,17 +108,6 @@ class DeveloperSettingsDialog : DialogFragment() {
             featureFlags.setMpdPrefetchEnabled(if (enabled == BuildConfig.ENABLE_MPD_PREFETCH) null else enabled)
         }
 
-        addFeatureToggle(
-            contentView,
-            getString(R.string.dev_settings_ios_fetch_title),
-            getString(R.string.dev_settings_ios_fetch_desc),
-            featureFlags.isIosFetchEnabled,
-            BuildConfig.ENABLE_NPE_IOS_FETCH,
-            diagnostics["ios_fetch"]?.runtimeOverride
-        ) { enabled ->
-            featureFlags.setIosFetchEnabled(if (enabled == BuildConfig.ENABLE_NPE_IOS_FETCH) null else enabled)
-        }
-
         // Build default for generous crop is device-dependent (S25 Ultra = true, others = false).
         // Use diagnostics.buildDefault to get the true device-detected default, not the effective value.
         val cropBudgetDeviceDefault = diagnostics["generous_crop_budget"]?.buildDefault ?: false
@@ -133,7 +122,7 @@ class DeveloperSettingsDialog : DialogFragment() {
             featureFlags.setGenerousCropBudgetEnabled(if (enabled == cropBudgetDeviceDefault) null else enabled)
         }
 
-        // Add clear cache button (useful when toggling IOS_FETCH to force new extractions)
+        // Add clear cache button (useful after changing extraction settings)
         val clearCacheButton = TextView(context).apply {
             text = getString(R.string.dev_settings_clear_cache)
             setTextColor(context.getColor(R.color.primary_variant))

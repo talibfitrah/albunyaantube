@@ -44,6 +44,64 @@
 
 ---
 
+### Task 0: Android minimum-version gate (amendment, owner-approved 2026-11-11)
+
+Supersedes the Findings line "no raise the floor task exists" and the "Not in this plan" floor bullet: the owner
+approved adding the floor to Android 1.0.7. Installs older than 1.0.7 never read it (they cannot be forced); the
+floor protects every later release.
+
+**Mirror iOS** (`ios/FitrahTube/App/FitrahTubeApp.swift` `isUpdateRequired` + `UpdateRequiredView`,
+`ios/Packages/InnerTubeKit/Sources/InnerTubeKit/RemoteConfig.swift` `requiresUpdate`/`SemVer`,
+`ios/FitrahTube/App/AppContainer.swift:30-36` URL, `/ios-remote-config.json` `minAppVersion`).
+
+**Files:**
+- Create: `/android-remote-config.json` (repo root, beside `ios-remote-config.json`):
+  `{ "schemaVersion": 1, "minAppVersion": "1.0.7" }`. Not a field in `releases-meta.json`: that file parses as
+  `Map<String, Map<String,String>>` (`ReleaseSummaryFetcher`), so a string field would break every sideload summary,
+  and Play never fetches it.
+- Create (main): `android/app/src/main/java/com/albunyaan/tube/update/MinVersionGate.kt`
+  - pure, JVM-tested: `internal fun isBelowMinimum(installed: String?, minimum: String?): Boolean` (numeric-segment
+    compare like iOS `SemVer`: `"1.0.10" > "1.0.9"`, missing segment = 0, each segment = its leading digits or 0;
+    null/blank `installed` or `minimum` → false) and `internal fun parseMinAppVersion(body: String): String?`
+    (Moshi; null on any parse error, non-string or blank value).
+  - `@Singleton class MinVersionGate @Inject constructor(okHttpClient: OkHttpClient, @ApplicationContext context)`:
+    `suspend fun fetchAndDecide(installed: String): Boolean` (GET
+    `https://raw.githubusercontent.com/talibfitrah/albunyaantube/main/android-remote-config.json`, body cap 4 KiB,
+    non-2xx/IOException/oversize/parse failure → keep the cache untouched; a good value overwrites the cache; then
+    decide from the cache) and `fun decideFromCache(installed: String): Boolean`. Cache = one SharedPreferences key.
+    Never throws.
+- Create (main): `ui/UpdateRequiredFragment.kt` + `res/layout/fragment_update_required.xml` (one layout, centred
+  content with `maxWidth` so phone/sw600dp/sw720dp all work; `textAlignment="center"`/`viewStart` only, no
+  `gravity="left"`; tokens `spacing_*`), nav destination in `app_nav_graph.xml` + `action_splash_to_updateRequired`
+  (`popUpTo app_nav_graph inclusive`). Back exits the app. The button calls `updateGateway.openRequiredUpdate(...)`.
+- Modify: `update/UpdateGateway.kt`: add `fun openRequiredUpdate(activity: Activity, lifecycleOwner: LifecycleOwner)`.
+  - play `NoUpdateGateway`: start `ACTION_VIEW market://details?id=<context.packageName>`; on
+    `ActivityNotFoundException` start `https://play.google.com/store/apps/details?id=<packageName>`. Nothing else.
+    Update its KDoc (it is no longer fully inert; it never downloads, installs or names GitHub).
+  - sideload `UpdatePromptFlow`: delegate to its existing `runCheck(activity, lifecycleOwner)`.
+- Modify: `ui/SplashFragment.kt`: launch `minVersionGate.fetchAndDecide(BuildConfig.VERSION_NAME)` in parallel at
+  t=0 beside the update probe. Normal launch: await it bounded by the same `UPDATE_AWAIT_GRACE_MS` window; on timeout
+  use `decideFromCache`. Deep-link launch: `decideFromCache` only (no wait). Required → navigate to the
+  update-required destination instead of `routeAfterSplash` (and skip the sideload "update available" prompt).
+- Strings `update_required_title` / `_message` / `_button` in `values`, `values-ar`, `values-nl`, copied from the
+  iOS `app_update_required_*` xcstrings (en "Update required" / "This version of FitrahTube is no longer supported.
+  Please update to continue." / "Update"; ar "التحديث مطلوب" / "هذا الإصدار من فطرة تيوب لم يعد مدعومًا. يرجى التحديث
+  للمتابعة." / "تحديث"; nl "Update vereist" / "Deze versie van FitrahTube wordt niet meer ondersteund. Werk de app bij
+  om door te gaan." / "Bijwerken").
+- Test: `android/app/src/test/java/com/albunyaan/tube/update/MinVersionGateTest.kt` (compare table incl.
+  `1.0.10 vs 1.0.9`, equal, shorter/longer, blanks, garbage; parse good/garbage/missing/non-string; fetch with
+  MockWebServer: 200 good → cached + decided, 500/garbage/oversize with no cache → false, with a cached higher floor →
+  true).
+
+**Rules:** fail open (no good value ever seen → never block); no sideload-only class referenced from `src/main`
+or `src/play`; nothing user-visible says "YouTube" or "GitHub". Cold-start only (iOS also re-checks on foreground;
+`ponytail:` comment naming that ceiling).
+
+- [ ] **Step 1:** Write `MinVersionGateTest` first; run `GRADLE :app:testPlayDebugUnitTest --tests '*MinVersionGateTest*'`. Expected: FAIL (unresolved).
+- [ ] **Step 2:** Implement until it passes; wire splash, fragment, gateway, strings.
+- [ ] **Step 3:** Run `GRADLE :app:testPlayDebugUnitTest :app:testSideloadDebugUnitTest :app:assemblePlayDebug :app:assembleSideloadDebug`. Expected: BUILD SUCCESSFUL. Then prove the play dex has no updater: `$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer dex packages <play debug apk> | grep -E 'UpdatePromptFlow|UpdateChecker|ApkInstaller|ReleaseSummaryFetcher|InstallStatusActivity'` (or `dexdump`). Expected: no output.
+- [ ] **Step 4: Commit.** `[FEAT]: Android minimum-version gate`
+
 ### Task 1: Off-device proof gate (no repo change)
 
 **Files:** `/private/tmp/claude-501/-Users-farouqabouumar-Development-albunyaantube/88109bb3-6d83-4bb7-84d4-a5c4ff95482a/scratchpad/probe/Probe.java` (scratchpad only; recreate it from this session's copy if the scratchpad was cleaned)

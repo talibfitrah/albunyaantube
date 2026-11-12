@@ -4,7 +4,6 @@ import android.os.SystemClock
 import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
-import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.model.ContentType
 import java.io.IOException
@@ -37,8 +36,6 @@ class NewPipeExtractorClient(
     private val downloader: org.schabi.newpipe.extractor.downloader.Downloader,
     private val cache: MetadataCache,
     private val metrics: ExtractorMetricsReporter,
-    private val featureFlags: PlaybackFeatureFlags,
-    private val clientRotator: YoutubeClientRotator = YoutubeClientRotator(),
     /**
      * Supplies WebView-minted poTokens to the YouTube web client. Null in tests / contexts without
      * a WebView, in which case extraction proceeds without a token (the pre-poToken behavior).
@@ -127,43 +124,16 @@ class NewPipeExtractorClient(
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)
             val extractor = youtubeService.getStreamExtractor(handler)
-            // ANDROID-PLAYBACK-02 (root-cause fix): client selection is FAILURE-driven, not
-            // forceRefresh-driven. A post-seek HTTP 403 just needs fresh URLs from the SAME
-            // client; rotating IOS→ANDROID on every refresh collapsed the adaptive ladder to
-            // muxed 360p (the ANDROID client returns only itag 18). We stay on the client that
-            // last extracted successfully (currentClient) and only advance to the next client
-            // when an extraction actually fails — armed in the catch below via nextClient().
-            // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global
-            // state; it does not serialize concurrent fetchPage() executions. Acceptable since the
-            // single-flight GlobalStreamResolver makes concurrent same-video resolves rare.
-            val primaryClient: YoutubeClientRotator.Client
-            synchronized(NewPipeExtractorClient::class.java) {
-                if (featureFlags.isClientRotationEnabled) {
-                    primaryClient = clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled)
-                    applyClientSetting(primaryClient)
-                } else {
-                    primaryClient = clientRotator.initialClient(featureFlags.isIosFetchEnabled)
-                    applyIosFetchSetting()
-                }
-            }
             // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
             extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
             val urlGeneratedAt = clock()
-            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt, primaryClient.toExtractionClient())
-            if (resolved == null) {
-                // Client responded but stream mapping failed — reset rotator so the next
-                // retry starts fresh rather than advancing to the next rotation slot on a
-                // non-transport failure.
-                clientRotator.reset(videoId)
-                return@withContext null
-            }
+            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt, ExtractionClient.NEWPIPE_IOS)
+            if (resolved == null) return@withContext null
             // Live is never cached — see isStreamCacheUsable.
             if (!resolved.isLive) {
                 synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
             }
-            // Reset per-video rotation state — safe no-op if rotator was never advanced for this video
-            clientRotator.reset(videoId)
             metrics.onStreamResolveSuccess(videoId, clock() - start)
             resolved
         } catch (c: CancellationException) {
@@ -177,37 +147,16 @@ class NewPipeExtractorClient(
                 throwable.message?.contains("visitorData", ignoreCase = true) == true
             ) {
                 try {
-                    // Re-acquire the global client lock around applyClientSetting only —
-                    // narrowed to match the first-attempt path's scope upstream (apply is
-                    // inside the synchronized block; getStreamExtractor is not). A
-                    // concurrent resolveStreams() can still rotate the client between
-                    // the apply and the fetchPage() below, but that is the same race
-                    // accepted on the first attempt (callers tolerate it because
-                    // NewPipe toggles are rare and not driven by playback).
                     val retryHandler = streamLinkHandlerFactory.fromId(videoId)
-                    val retryClient: YoutubeClientRotator.Client
-                    synchronized(NewPipeExtractorClient::class.java) {
-                        if (featureFlags.isClientRotationEnabled) {
-                            // Honor the armed client (currentClient), not initialClient — a caller
-                            // retry may already have advanced IOS→ANDROID after a real failure, and
-                            // the visitorData retry must not silently revert to IOS.
-                            retryClient = clientRotator.currentClient(videoId, featureFlags.isIosFetchEnabled)
-                            applyClientSetting(retryClient)
-                        } else {
-                            retryClient = clientRotator.initialClient(featureFlags.isIosFetchEnabled)
-                            applyIosFetchSetting()
-                        }
-                    }
                     val retryExtractor = youtubeService.getStreamExtractor(retryHandler)
                     retryExtractor.fetchPage()
                     val retryInfo = StreamInfo.getInfo(retryExtractor)
                     val urlGeneratedAt = clock()
-                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt, retryClient.toExtractionClient())
+                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt, ExtractionClient.NEWPIPE_IOS)
                     if (resolved != null) {
                         synchronized(streamCacheLock) {
                             if (!resolved.isLive) streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
                         }
-                        clientRotator.reset(videoId)
                         metrics.onStreamResolveSuccess(videoId, clock() - start)
                         return@withContext resolved
                     }
@@ -219,12 +168,6 @@ class NewPipeExtractorClient(
                 } catch (_: Throwable) {
                     // Retry also failed; fall through to normal error handling
                 }
-            }
-            // ANDROID-PLAYBACK-02: a genuine extraction failure arms the next fallback client
-            // so the caller's retry advances IOS→ANDROID. Any successful extraction clears this
-            // via clientRotator.reset(videoId) on the success paths above.
-            if (featureFlags.isClientRotationEnabled) {
-                clientRotator.nextClient(videoId)
             }
             metrics.onStreamResolveFailure(videoId, throwable)
             if (throwable is IOException || throwable is ExtractionException) {
@@ -308,14 +251,6 @@ class NewPipeExtractorClient(
         runCatching {
             val handler = streamLinkHandlerFactory.fromId(id)
             val extractor = youtubeService.getStreamExtractor(handler)
-            // Apply runtime iOS fetch setting before extraction (enables toggle without restart).
-            // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global state.
-            // It does NOT guarantee that concurrent extractions observe the same value throughout
-            // their execution. Full serialization would be too costly. This is acceptable since
-            // toggles are rare (ops/debug only) and not toggled during playback.
-            synchronized(NewPipeExtractorClient::class.java) {
-                applyIosFetchSetting()
-            }
             StreamInfo.getInfo(extractor)
         }.map { info ->
             if (info.streamType == StreamType.NONE) return@map null
@@ -444,9 +379,6 @@ class NewPipeExtractorClient(
             add("playlist?list=$id")
         }
     }
-
-    private fun YoutubeClientRotator.Client.toExtractionClient(): ExtractionClient =
-        if (this == YoutubeClientRotator.Client.IOS) ExtractionClient.NEWPIPE_IOS else ExtractionClient.NEWPIPE_ANDROID
 
     private fun StreamInfo.toResolvedStreams(streamId: String, generatedAt: Long, extractionClient: ExtractionClient): ResolvedStreams? {
         // Combine both muxed AND video-only streams to get ALL qualities
@@ -931,49 +863,16 @@ class NewPipeExtractorClient(
                     "poToken provider registered (fallback): ${provider.javaClass.simpleName}"
                 )
             }
-            // Apply initial iOS fetch setting (runtime toggle applied before each extraction)
-            applyIosFetchSetting()
+            // IOS client off for every resolve: its audio 403s at ~40-50 s (probe 2026-11-11,
+            // docs/superpowers/plans/2026-11-11-android-playback-stop.md).
+            YoutubeStreamExtractor.setFetchIosClient(false)
         }
-    }
-
-    /**
-     * Apply the current iOS fetch setting from feature flags.
-     *
-     * PR6.2: iOS client fetch for better HLS manifest availability
-     * Build-time default: BuildConfig.ENABLE_NPE_IOS_FETCH (default OFF)
-     * Build-time config: local.properties: npe.ios.fetch.enabled=true
-     * Runtime override: PlaybackFeatureFlags.setIosFetchEnabled(true/false/null)
-     *
-     * WARNING: iOS fetch changes the HLS manifest source from YouTube's Android/Web
-     * endpoint to the iOS endpoint. HLS segment URLs expect iOS-like headers.
-     * SegmentDataSourceFactoryProvider uses iOS User-Agent for HLS to match.
-     *
-     * RUNTIME TOGGLE SEMANTICS:
-     * - Applied immediately before each new extraction (not retroactively to cached streams)
-     * - Cache hits bypass extraction entirely, so toggling won't affect already-cached streams
-     * - To force IOS_FETCH to affect a specific video, use forceRefresh=true or call clearStreamCache()
-     * - Do NOT toggle IOS_FETCH during active playback; toggle between videos for predictable behavior
-     * - Global static state: concurrent extractions see the same setting (last-write wins)
-     *
-     * This is called before each extraction to ensure runtime toggle changes take effect
-     * without requiring app restart.
-     */
-    private fun applyIosFetchSetting() {
-        val iosFetchEnabled = featureFlags.isIosFetchEnabled
-        YoutubeStreamExtractor.setFetchIosClient(iosFetchEnabled)
-        android.util.Log.i(ADAPTIVE_PROBE_TAG, "applyIosFetchSetting: fetchIosClient=$iosFetchEnabled")
-    }
-
-    private fun applyClientSetting(client: YoutubeClientRotator.Client) {
-        val useIos = client == YoutubeClientRotator.Client.IOS
-        YoutubeStreamExtractor.setFetchIosClient(useIos)
-        android.util.Log.i(ADAPTIVE_PROBE_TAG, "applyClientSetting: client=$client (fetchIosClient=$useIos)")
     }
 
     /**
      * Clear the stream URL cache.
      *
-     * Call this after changing IOS_FETCH or other extraction settings to ensure
+     * Call this after changing extraction settings to ensure
      * subsequent resolves use the new configuration. Without clearing, cached
      * entries continue to be used until TTL expiry (30 minutes).
      *
