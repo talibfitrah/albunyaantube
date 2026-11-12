@@ -125,9 +125,9 @@ describe('the queue lists everything pending, phone imports included', () => {
   });
 
   it('refreshes the by-user counts even when the tab changed before the decision returned', async () => {
-    getPendingSubmittersMock.mockResolvedValue([
-      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 1 }
-    ]);
+    getPendingSubmittersMock
+      .mockResolvedValueOnce([{ uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 1 }])
+      .mockResolvedValue([]);
     getPendingApprovalsMock.mockResolvedValue({
       items: [makeItem('b', 'Ahmeds Import', 'USER_IMPORT')],
       nextCursor: null
@@ -141,8 +141,9 @@ describe('the queue lists everything pending, phone imports included', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'By user (1)' }));
     finish();
 
-    // Ahmed's import is decided: the tally it showed must not stand.
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'By user (1)' })).toBeNull());
+    // Ahmed's import is decided while his tally is on screen: it is read again, not left standing.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'By user (0)' })).toBeTruthy());
+    expect(screen.queryByText('Ahmed')).toBeNull();
   });
 
   it('fetches exactly one page per load', async () => {

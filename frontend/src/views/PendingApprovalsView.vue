@@ -669,8 +669,12 @@ function removeFromQueue(done: { id: string; source?: string }[]) {
   const ids = done.map(item => item.id);
   const gone = new Set(ids);
   // Deciding a phone import, from either tab, moves the by-user counts. Judged from the decided
-  // items themselves: a tab switch while the request ran has emptied the list by now.
-  if (done.some(item => item.source === 'USER_IMPORT')) submitterCountsStale.value = true;
+  // items themselves: a tab switch while the request ran has emptied the list by now. Re-read at
+  // once if the people list is on screen; otherwise when it is next opened.
+  if (done.some(item => item.source === 'USER_IMPORT')) {
+    if (showingSubmitterList.value) loadSubmitters();
+    else submitterCountsStale.value = true;
+  }
   approvals.value = approvals.value.filter(item => !gone.has(item.id));
   const nextSelection = new Set(selectedIds.value);
   ids.forEach(id => {
