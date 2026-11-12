@@ -22,11 +22,13 @@ import javax.inject.Singleton
  * UPDATE_PACKAGES_WITHOUT_USER_ACTION are absent from the merged manifest. This class
  * exists only so shared code in `src/main` keeps compiling.
  *
- * Its one action is [openRequiredUpdate], which opens this app's Play Store page. It never
- * probes for, downloads or installs an update. Do not give it a "just check for a release
- * but don't install" path — Settings hides every update affordance when [hasUpdater] is
- * false, so a probe here would be a network call nothing can act on. Updates for this
- * flavor come from Play.
+ * Its one action is [openRequiredUpdate], which opens this app's Play Store page. This
+ * gateway itself makes no network call and never downloads or installs an update. Do not
+ * give it a "just check for a release but don't install" path — Settings hides every update
+ * affordance when [hasUpdater] is false, so a probe here would be a network call nothing can
+ * act on. Updates for this flavor come from Play. The minimum-version floor is separate: the
+ * shared [MinVersionGate] (src/main) reads the minimum-version file on cold start in both
+ * flavors.
  */
 @Singleton
 class NoUpdateGateway @Inject constructor() : UpdateGateway {

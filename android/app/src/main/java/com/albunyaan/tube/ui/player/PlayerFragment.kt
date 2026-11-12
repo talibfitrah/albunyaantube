@@ -2480,10 +2480,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             onStreamRefresh()
                             requestStreamRefreshAndResume("rate limited, retrying after ${backoffMs}ms")
                         } else {
-                            surfaceRecoveryExhausted()
-                            context?.let { ctx ->
-                                Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
-                            }
+                            surfaceStreamUnavailable()
                         }
                     }
                     return
