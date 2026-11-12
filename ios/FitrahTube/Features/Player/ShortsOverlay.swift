@@ -182,15 +182,19 @@ struct ShortsOverlay: View {
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
+                    // M5: a tap on the title is a stage tap (play/pause), as on Android. The iOS 26
+                    // simulator measured the text and the scrim below swallowing it (2026-11-12).
+                    .allowsHitTesting(false)
                     .accessibilityIdentifier("shorts.title")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.sm)
-        // Plan §6.11: overlay text on a scrim, never on bare video.
+        // Plan §6.11: overlay text on a scrim, never on bare video. Paint only: taps pass to the stage (M5).
         .background(
-            LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom),
-            in: RoundedRectangle(cornerRadius: Radius.thumbnail)
+            LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.thumbnail))
+                .allowsHitTesting(false)
         )
     }
 

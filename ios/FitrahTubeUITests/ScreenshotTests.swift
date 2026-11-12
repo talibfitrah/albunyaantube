@@ -99,7 +99,9 @@ final class ScreenshotTests: XCTestCase {
     /// R-G's two columns. Theme rides the app's own `settings.theme` row (`SettingsStore`), set
     /// through the `NSArgumentDomain` key it already persists under — no new debug hook needed.
     private static let locales = [
-        LocaleCase(key: "en", theme: "light", arguments: []),
+        // en pins its region too: the simulator inherits the host's (en_US@rg=nlzzzz here), and a
+        // Dutch region formats "1,2M" where the assertions expect en_US's "1.2M".
+        LocaleCase(key: "en", theme: "light", arguments: ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]),
         LocaleCase(key: "ar", theme: "dark", arguments: ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"]),
     ]
 
@@ -586,7 +588,14 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-b1task10-iphone-en-portrait", into: directory)
 
         // Compact vertical size class (iPhone landscape) hides the metadata panel (spec §6.11).
+        // Since B5 Task 3 (ruling 42) a landscape iPhone auto-enters fullscreen on a 16:9 video, which
+        // hides the toolbar too; the §6.11 rule is about the landscape COLUMN, reached by exiting
+        // fullscreen (ruling 45; `testPlayerB5Task4IPhone` covers fullscreen itself).
         XCUIDevice.shared.orientation = .landscapeLeft
+        let exitFullscreen = app.buttons["player.fullscreenExit"]
+        XCTAssertTrue(exitFullscreen.waitForExistence(timeout: 10), "b1-task10 iphone en landscape: fullscreen never engaged")
+        exitFullscreen.tap()
+        XCTAssertTrue(exitFullscreen.waitForNonExistence(timeout: 5), "b1-task10 iphone en landscape: fullscreen did not exit")
         settle(app, landscape: true)
         XCTAssertFalse(app.staticTexts["player.metadata.title"].exists,
                        "b1-task10 iphone en landscape: metadata must be hidden at compact vertical size class")
