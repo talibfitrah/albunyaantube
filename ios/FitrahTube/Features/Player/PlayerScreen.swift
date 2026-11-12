@@ -232,11 +232,12 @@ struct PlayerScreen: View {
         Task { await model.retry() }
     }
 
-    /// An Up Next tap is the user's Play (round 3, m2), then the queue jump. The hold goes at the tap, as Retry's.
-    static func playUpNext(_ model: PlayerViewModel, at index: Int) {
+    /// An Up Next tap is the user's Play (round 3, m2), then the queue jump. The hold goes at the tap, as Retry's. The
+    /// lock screen's next/previous track too (`PlayerHostView.trackSkip`), without the loading card.
+    static func playUpNext(_ model: PlayerViewModel, at index: Int, showLoading: Bool = true) {
         BackgroundPlaybackController.userAskedToPlay()
         model.heldByOpen = false
-        Task { await model.play(at: index) }
+        Task { await model.play(at: index, showLoading: showLoading) }
     }
 
     /// The Save button's gate question: the channel playback's own check asks about, so Save never

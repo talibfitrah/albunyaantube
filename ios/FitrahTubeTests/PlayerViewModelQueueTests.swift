@@ -223,6 +223,41 @@ struct PlayerViewModelQueueTests {
         #expect(vm.queue.items.isEmpty)
     }
 
+    /// The lock screen's next/previous (`PlayerHostView.trackSkip`): the neighbours of the lecture on screen, and a
+    /// skip that never shows the loading card -- a `.loading` hop dismantles the host and its audio session, which is
+    /// what keeps a locked phone playing.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenSkipPlaysTheNeighbourWithoutTheLoadingCard() async throws {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        #expect(vm.queueNeighbour(-1) == nil)
+        let next = try #require(vm.queueNeighbour(1))
+        resolver.hold("b")
+        let skip = Task { await vm.play(at: next, showLoading: false) }
+        await resolver.waitUntilCalled(count: 4)           // a, b, c at open; b on .player, held
+        #expect(vm.state != .loading)
+        resolver.release(id: "b")
+        await skip.value
+        #expect(vm.args.videoId == "b")
+        #expect(vm.queueNeighbour(-1) == 0)
+        #expect(vm.queueNeighbour(1) == 2)
+        #expect(vm.queueNeighbour(2) == nil)
+    }
+
+    /// Codex adversarial P2: with no loading card the outgoing lecture keeps playing while the skip resolves, so its
+    /// end can land meanwhile -- it is the end of the lecture on screen, not of the one the user skipped to.
+    @Test(.timeLimit(.minutes(1))) func theOutgoingLecturesEndDuringALockScreenSkipDoesNotAdvance() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        resolver.hold("b")
+        let skip = Task { await vm.play(at: 1, showLoading: false) }
+        await resolver.waitUntilCalled(count: 4)           // a, b, c at open; b on .player, held
+        await vm.playToEnd()                               // a ends under the skip
+        resolver.release(id: "b")
+        await skip.value
+        #expect(vm.advanceCalls == 0, "a's end advanced past the lecture the user skipped to")
+        #expect(vm.args.videoId == "b")
+    }
+
     @Test func queueEndedIsEquatableToItself() {
         // `StreamState.==` has a `default: return false` arm -- without an explicit tuple case the
         // assertion above would silently fail forever (reconciliation note 9's enumeration table).

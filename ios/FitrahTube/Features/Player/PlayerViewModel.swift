@@ -603,8 +603,9 @@ extension StreamState {
             return
         }
         // `isAdvancing`: one advance per end -- a second end posted for the same ended item (a
-        // `.resume` playing it while the advance is out) must not skip a lecture.
-        guard !safeMode, !queue.items.isEmpty, !isAdvancing else { return }
+        // `.resume` playing it while the advance is out) must not skip a lecture. `resolvedVideoId`: the end is the
+        // lecture on screen's -- a lock-screen skip keeps the outgoing one playing while the next resolves.
+        guard !safeMode, !queue.items.isEmpty, !isAdvancing, resolvedVideoId == args.videoId else { return }
         isAdvancing = true
         advanceSerial += 1
         let mine = advanceSerial
@@ -671,15 +672,22 @@ extension StreamState {
     }
 
     /// The Up Next tap (`PlayerViewModel.kt:355-387`). A deliberate user action, so this one DOES
-    /// show the loading card with the new thumbnail. Index-addressed (Cubic P2): a duplicate id in
-    /// the playlist must play the tapped occurrence, not the first one.
-    func play(at index: Int) async {
+    /// show the loading card with the new thumbnail -- unless `showLoading` is false: the lock screen's next/previous,
+    /// where a `.loading` hop would dismantle the host and its audio session. Index-addressed (Cubic P2): a duplicate
+    /// id in the playlist must play the tapped occurrence, not the first one.
+    func play(at index: Int, showLoading: Bool = true) async {
         guard let item = queue.select(at: index) else { return }
         swapArgs(to: item)
         consecutiveSkips = 0
-        await resolve(forceRefresh: false, kind: .player)
+        await resolve(forceRefresh: false, kind: .player, showLoading: showLoading)
         await prefetchUpcoming()
         await pageIfNeeded()
+    }
+
+    /// The loaded queue's index `offset` away from the lecture on screen (the lock screen's next/previous), if any.
+    func queueNeighbour(_ offset: Int) -> Int? {
+        let index = queue.index + offset
+        return queue.items.indices.contains(index) ? index : nil
     }
 
     /// The queue context rides along: playlistId/shuffled keep the queue alive across the hop;

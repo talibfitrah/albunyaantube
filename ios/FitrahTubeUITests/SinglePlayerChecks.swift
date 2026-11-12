@@ -42,13 +42,41 @@ final class SinglePlayerChecks: XCTestCase {
         try deepLinkLeavesOnePlayerPlaying(firstViaDebugRoute: true, between: .nothing)
     }
 
+    /// 2026-11-11 owner report: the lecture must keep playing with the screen locked or the app in the
+    /// background. The probe is read again in the foreground: a clock that sat still while away is a pause.
+    /// `first` (a kids video) plays the progressive file; `second` plays the adaptive stream, which used to be swapped
+    /// to its never-loading audio rendition in the background.
+    func testLecturePlaysOnWhileHome() throws { try lecturePlaysOnWhileAway(Self.first, locked: false) }
+    func testLecturePlaysOnWhileLocked() throws { try lecturePlaysOnWhileAway(Self.first, locked: true) }
+    func testAdaptiveLecturePlaysOnWhileLocked() throws { try lecturePlaysOnWhileAway(Self.second, locked: true) }
+
+    private func lecturePlaysOnWhileAway(_ video: String, locked: Bool) throws {
+        let app = launch(["-fitrah-route", "player", video])
+        XCTAssertTrue(waitPlaying(app, video: video), "lecture never played\n\(probes(app))")
+        let before = try XCTUnwrap(probes(app).first.flatMap { Self.field("time", in: $0) })
+        let away: TimeInterval = 20
+        if locked {
+            XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
+            Thread.sleep(forTimeInterval: away)
+            XCUIDevice.shared.press(.home)   // wakes the lock screen; with no passcode a second Home unlocks
+            Thread.sleep(forTimeInterval: 2)
+            XCUIDevice.shared.press(.home)
+        } else {
+            XCUIDevice.shared.press(.home)
+            Thread.sleep(forTimeInterval: away)
+        }
+        app.activate()
+        Thread.sleep(forTimeInterval: 2)
+        let after = probes(app)
+        print("BACKGROUNDPLAY locked=\(locked) before=\(before) after=" + after.joined(separator: " | "))
+        let now = try XCTUnwrap(after.first.flatMap { Self.field("time", in: $0) }, "no probe\n\(after)")
+        XCTAssertGreaterThanOrEqual(now - before, Int(away) - 4, "the clock stood still while away: \(after)")
+        XCTAssertEqual(after.first.flatMap { Self.field("playing", in: $0) }, 1, "not exactly one player playing: \(after)")
+        app.terminate()
+    }
+
     private func deepLinkLeavesOnePlayerPlaying(firstViaDebugRoute: Bool, between: Between) throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["-fitrah-fake-container", "-fitrah-fake-auth", "active", "-theme", "light",
-                               "-onboarding_completed", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-                               "-fitrah-api-base-url", "https://app.fitrahtube.com/", "-fitrah-route-probe", "YES"]
-            + (firstViaDebugRoute ? ["-fitrah-route", "player", Self.first] : [])
-        app.launch()
+        let app = launch(firstViaDebugRoute ? ["-fitrah-route", "player", Self.first] : [])
         if !firstViaDebugRoute {
             // `Router.open` holds a link that lands before the shell and pushes it once the shell is up.
             app.open(URL(string: "albunyaantube://video/\(Self.first)")!)
@@ -80,6 +108,15 @@ final class SinglePlayerChecks: XCTestCase {
         XCTAssertTrue(samples.allSatisfy { Self.field("playing", in: $0) == 1 },
                       "not exactly one player playing:\n" + samples.joined(separator: "\n"))
         app.terminate()
+    }
+
+    private func launch(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-fitrah-fake-container", "-fitrah-fake-auth", "active", "-theme", "light",
+                               "-onboarding_completed", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-fitrah-api-base-url", "https://app.fitrahtube.com/", "-fitrah-route-probe", "YES"] + extra
+        app.launch()
+        return app
     }
 
     private static func field(_ name: String, in probe: String) -> Int? {

@@ -641,14 +641,14 @@ struct PlayerHostTests {
         Self.postFailure(on: player)                       // dies under the user -> resume intent
         player.pause()                                     // what the failure does to the player
 
-        PlayerHostView.policyHandler(model: model, player: player, coordinator: coordinator)(.pause)
+        PlayerHostView.policyHandler(coordinator: coordinator)(.pause)
 
         try Self.swap(player, to: Self.unanswered, coordinator, model)
         #expect(player.timeControlStatus == .paused, "the failure's replacement overrode a pause")
     }
 
     /// Review M1: the resume intent is spent by the ONE replacement it was for. A later same-player
-    /// swap (the audio-only toggle, a background restore) after the user paused stays paused.
+    /// swap (the audio-only toggle) after the user paused stays paused.
     @Test(.timeLimit(.minutes(1))) func theResumeIntentIsSpentByTheFirstReplacement() async throws {
         let (model, player, coordinator) = try await Self.playingHarness()
         defer { coordinator.stopObserving(); player.pause() }
@@ -778,51 +778,6 @@ struct PlayerHostTests {
     @Test func audioOnlyAssetCarriesTheResolvedUserAgent() {
         // The itag 140 URL is IP+UA-bound exactly like the manifest; a bare asset 403s.
         #expect(PlayerHostView.assetOptions(userAgent: "UA")[AVURLAssetHTTPUserAgentKey] as? String == "UA")
-    }
-
-    // MARK: - Final review (IMP-1, MIN-4): what the background policy may and may not do synchronously
-
-    /// IMP-1: only the BACKGROUND half of the policy swaps the item here. `.restoreVideo` runs
-    /// against whatever `state` is live at action time -- and the pre-emptive TTL refresh can land
-    /// AFTER the 2 s foreground deadline, so a synchronous restore would replace the item once
-    /// against the stale `Resolved` and the foreground update pass would replace it a second time
-    /// against the fresh one, restarting playback from 0. One replace, owned by the update pass.
-    @Test func restoringVideoDoesNotReplaceTheItemSynchronously() throws {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let audio = URL(string: "https://127.0.0.1:9/a140")!
-        let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])))
-        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: true))
-        let audioItem = try #require(player.currentItem)
-
-        PlayerHostView.applyPolicyAction(.restoreVideo, state: state, player: player, model: nil)
-
-        #expect(player.currentItem === audioItem)
-        #expect((player.currentItem?.asset as? AVURLAsset)?.url == audio)
-    }
-
-    /// MIN-4: the synchronous background swap builds a NEW `AVPlayerItem`, and the recovery
-    /// observers (status KVO, failed-to-play-to-end, the periodic sampler) are per-item. Left on
-    /// the outgoing item, an audio-only stream that dies in the background would never fire the
-    /// recovery ladder.
-    @Test func theBackgroundSwapReArmsTheRecoveryObserversOnTheNewItem() throws {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let audio = URL(string: "https://127.0.0.1:9/a140")!
-        let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])))
-        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: false))
-        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
-        let videoItem = try #require(player.currentItem)
-        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false, playToEnd: .advance)
-        defer { coordinator.stopObserving() }
-
-        PlayerHostView.applyPolicyAction(.swapToAudioOnly, state: state, player: player,
-                                         model: nil, coordinator: coordinator)
-
-        #expect(player.currentItem !== videoItem)
-        #expect(coordinator.observedItem === player.currentItem)
-        // B5 Task 4 (live step 2 item 8 FAILED): the re-arm used `.none`, so an end-of-item that
-        // landed while backgrounded never advanced -- the audio-only item must keep the action the
-        // video item had, or background auto-advance (reconciliation note 2) is fiction.
-        #expect(coordinator.playToEnd == .advance)
     }
 
     /// I2 (B4 T2 fix round 2): the repeat-one loop. Real clip (`player-fixture.mp4`, the fake-player
@@ -1204,8 +1159,8 @@ struct PlayerHostTests {
     // MARK: - Task 5: the delegate wiring
 
     @Test func pipStateFlipsOnWillStartNotDidStart() {
-        // WILL, not DID: `.enteredBackground` reads `pictureInPictureActive`, and the ordering of
-        // the AVKit delegate callback against `didEnterBackgroundNotification` is not guaranteed.
+        // WILL, not DID: the HD stager and the foreground re-resolve read `pictureInPictureActive`, and the
+        // ordering of the AVKit delegate callback against the app's background transition is not guaranteed.
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
         let controller = AVPlayerViewController()
         coordinator.playerViewControllerWillStartPictureInPicture(controller)
@@ -1289,10 +1244,6 @@ struct PlayerHostTests {
         // CF-B2-15's cost cannot arise on this screen: with backgroundPlay false the policy is .pauses
         // for EVERY stream shape, itag 140 or not, so nothing pulls video for a screen nobody sees.
         #expect(AudioSessionPolicy.backgroundPolicy(backgroundPlay: false, pictureInPictureActive: false) == .pauses)
-        #expect(AudioSessionPolicy.decide(.enteredBackground, PlaybackPolicyContext(
-            backgroundPlay: false, userAudioOnly: false, audioOnlyAvailable: true,
-            pictureInPictureActive: false, wasPlayingBeforeInterruption: false,
-            autoSwappedToAudioOnly: false)) == .none)
     }
 
     /// I4 (B4 final review): the ONE read of the setting, `PlayerHostView.effectiveBackgroundPlay`,

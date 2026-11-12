@@ -3,55 +3,20 @@ import Testing
 @testable import FitrahTube
 
 @MainActor struct AudioSessionPolicyTests {
-    private func context(backgroundPlay: Bool = true, userAudioOnly: Bool = false,
-                         audioOnlyAvailable: Bool = true, pip: Bool = false, wasPlaying: Bool = true,
-                         autoSwapped: Bool = false) -> PlaybackPolicyContext {
-        PlaybackPolicyContext(backgroundPlay: backgroundPlay, userAudioOnly: userAudioOnly,
-                              audioOnlyAvailable: audioOnlyAvailable,
-                              pictureInPictureActive: pip, wasPlayingBeforeInterruption: wasPlaying,
-                              autoSwappedToAudioOnly: autoSwapped)
-    }
-
-    @Test func backgroundingSwapsToAudioOnlyWhenBackgroundPlayIsOn() {
-        #expect(AudioSessionPolicy.decide(.enteredBackground, context()) == .swapToAudioOnly)
-    }
-
-    @Test func backgroundingDoesNothingExtraWhenBackgroundPlayIsOff() {
-        // Ruling 34's pause is delivered by `backgroundPolicy`, not by this action.
-        #expect(AudioSessionPolicy.decide(.enteredBackground, context(backgroundPlay: false)) == .none)
-    }
-
-    @Test func backgroundingNeverSwapsWhileInPictureInPicture() {
-        #expect(AudioSessionPolicy.decide(.enteredBackground, context(pip: true)) == .none)
-    }
-
-    @Test func backgroundingDoesNotSwapWhenTheUserAlreadyChoseAudioOnly() {
-        #expect(AudioSessionPolicy.decide(.enteredBackground, context(userAudioOnly: true)) == .none)
-    }
-
-    /// The swap is gated at the SOURCE, not declined at the receiver: `handle()` sets
-    /// `autoSwappedToAudioOnly` the moment `.swapToAudioOnly` is decided, so a swap the player
-    /// cannot honour (rung 2, or a rung-1 stream YouTube gave no itag 140 for) would come back as a
-    /// spurious `.restoreVideo` on the next foreground. The policy must never emit it.
-    @Test func backgroundingDoesNotSwapWhenTheStreamHasNoAudioOnlyURL() {
-        #expect(AudioSessionPolicy.decide(.enteredBackground, context(audioOnlyAvailable: false)) == .none)
-    }
-
-    @Test func foregroundRestoresVideoOnlyAfterAnAutomaticSwap() {
-        #expect(AudioSessionPolicy.decide(.willEnterForeground, context(autoSwapped: true)) == .restoreVideo)
-        #expect(AudioSessionPolicy.decide(.willEnterForeground, context(autoSwapped: false)) == .none)
+    private func decide(_ event: PlaybackLifecycleEvent, wasPlaying: Bool = true) -> PlaybackPolicyAction {
+        AudioSessionPolicy.decide(event, wasPlayingBeforeInterruption: wasPlaying)
     }
 
     @Test func interruptionPausesAndResumesOnlyWhenItWasPlaying() {
-        #expect(AudioSessionPolicy.decide(.interruptionBegan, context()) == .pause)
-        #expect(AudioSessionPolicy.decide(.interruptionEnded(shouldResume: true), context(wasPlaying: true)) == .resume)
-        #expect(AudioSessionPolicy.decide(.interruptionEnded(shouldResume: true), context(wasPlaying: false)) == .none)
-        #expect(AudioSessionPolicy.decide(.interruptionEnded(shouldResume: false), context(wasPlaying: true)) == .none)
+        #expect(decide(.interruptionBegan) == .pause)
+        #expect(decide(.interruptionEnded(shouldResume: true), wasPlaying: true) == .resume)
+        #expect(decide(.interruptionEnded(shouldResume: true), wasPlaying: false) == .none)
+        #expect(decide(.interruptionEnded(shouldResume: false), wasPlaying: true) == .none)
     }
 
     @Test func headphoneUnplugPauses() {
-        #expect(AudioSessionPolicy.decide(.routeChanged(oldDeviceUnavailable: true), context()) == .pause)
-        #expect(AudioSessionPolicy.decide(.routeChanged(oldDeviceUnavailable: false), context()) == .none)
+        #expect(decide(.routeChanged(oldDeviceUnavailable: true)) == .pause)
+        #expect(decide(.routeChanged(oldDeviceUnavailable: false)) == .none)
     }
 
     @Test func backgroundPolicyFollowsTheSettingUnlessPiPIsActive() {

@@ -80,7 +80,7 @@ import Testing
                                         elapsed: 10, duration: 60, rate: 0) == nil)
     }
 
-    @Test func remoteCommandsExposePlayPauseAndSeekButNotNextOrPrevious() {
+    @Test func remoteCommandsExposePlayPauseAndSeek() {
         let player = AVPlayer()
         let controller = BackgroundPlaybackController(backgroundPlay: true)
         controller.attach(player: player)
@@ -91,11 +91,70 @@ import Testing
         #expect(center.changePlaybackPositionCommand.isEnabled)
         #expect(center.skipForwardCommand.isEnabled)
         #expect(center.skipBackwardCommand.isEnabled)
-        // B5 owns the queue; a dead next/prev on the lock screen is worse than none (ruling 28's
-        // "dead buttons are worse than absent ones", applied to transport).
-        #expect(center.nextTrackCommand.isEnabled == false)
-        #expect(center.previousTrackCommand.isEnabled == false)
         controller.detach()
+    }
+
+    /// 2026-11-11 owner ask: next/previous on the lock screen while a playlist plays. Enabled only for a lecture that
+    /// exists (ruling 28: a dead button is worse than an absent one), and a detached controller leaves them off.
+    @Test func trackCommandsFollowTheQueueNeighbours() {
+        let player = AVPlayer()   // the controller holds it weakly
+        let controller = BackgroundPlaybackController(backgroundPlay: true)
+        controller.attach(player: player)
+        let center = MPRemoteCommandCenter.shared()
+        #expect(center.nextTrackCommand.isEnabled == false)       // a single video: no neighbours
+        #expect(center.previousTrackCommand.isEnabled == false)
+
+        controller.onNextTrack = {}
+        #expect(center.nextTrackCommand.isEnabled)
+        #expect(center.previousTrackCommand.isEnabled == false)    // the playlist's first lecture
+        controller.onPreviousTrack = {}
+        #expect(center.previousTrackCommand.isEnabled)
+        controller.onNextTrack = nil                               // its last
+        #expect(center.nextTrackCommand.isEnabled == false)
+
+        controller.detach()
+        #expect(center.previousTrackCommand.isEnabled == false)
+        controller.onNextTrack = {}                                // a pass after detach owns nothing
+        #expect(center.nextTrackCommand.isEnabled == false)
+    }
+
+    /// Codex adversarial P2: the rail shell keeps a covered tab's player attached. Its update pass (a single video, so
+    /// no neighbours) must not switch off the playlist's next/previous that the newer player installed.
+    @Test func aCoveredControllerLeavesTheOwnersTrackCommandsAlone() {
+        let covered = AVPlayer(), playing = AVPlayer()
+        let single = BackgroundPlaybackController(backgroundPlay: true)
+        let playlist = BackgroundPlaybackController(backgroundPlay: true)
+        single.attach(player: covered)
+        playlist.attach(player: playing)
+        playlist.onNextTrack = {}
+        single.onNextTrack = nil
+        #expect(MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled)
+        playlist.detach()
+        single.detach()
+    }
+
+    /// Cold review P1: the lock screen is the PLAYING lecture's. A covered pass must not retitle it, and a covered player
+    /// that starts playing takes it back -- else next on the lock screen runs the newer screen's handler and starts a
+    /// second lecture under the one playing.
+    @Test func aCoveredPlayerThatStartsPlayingTakesTheLockScreenBack() throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let covered = AVPlayer(url: url), newer = AVPlayer()
+        let single = BackgroundPlaybackController(backgroundPlay: true)
+        let playlist = BackgroundPlaybackController(backgroundPlay: true)
+        defer { covered.pause(); playlist.detach(); single.detach() }
+        single.attach(player: covered)
+        playlist.attach(player: newer)
+        playlist.onNextTrack = {}
+        playlist.update(args: PlayerArgs(videoId: "b", title: "B"), state: ready())
+        single.update(args: PlayerArgs(videoId: "a", title: "A"), state: ready())   // the covered tab's pass
+        let title = { MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String }
+        #expect(title() == "B")
+
+        covered.play()
+        single.refreshNowPlaying()                         // its periodic observer's tick
+        #expect(title() == "A")
+        #expect(MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled == false)   // a single video
+        #expect(MPRemoteCommandCenter.shared().playCommand.isEnabled)
     }
 
     /// The one thing the simulator CAN prove about the lock screen: the dictionary is published
