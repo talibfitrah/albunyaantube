@@ -1,0 +1,27 @@
+android/app/src/test/java/com/albunyaan/tube/player/Forbidden403RecoveryTest.kt
+  s_8a936fc306f37b::t_41271e8b6cf357 48-49
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_8a936fc306f37b::t_ec5d578667cc60 268
+  s_8a936fc306f37b::t_b98ffde60065c3 2462-2463
+  s_8a936fc306f37b::t_e3a1e6e86c6d4d 260
+  s_8a936fc306f37b::t_32cff544506bb6 2524-2525
+  s_8a936fc306f37b::t_c54f26a7f6aaac 625-626
+android/app/src/main/java/com/albunyaan/tube/player/Forbidden403Recovery.kt
+  s_8a936fc306f37b::t_913e2477a8f036 45-50,53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "569b2c4acf0b19edb84a6fcb1fe54c66079c3e33",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
