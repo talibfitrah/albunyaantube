@@ -471,7 +471,8 @@ extension StreamState {
     /// recovery's resumed replacement (`Coordinator.observe`), an interruption's `.shouldResume`, a Short's loop, a cast
     /// session's resume (`apply`). Only the user's Play releases it: an Up Next or Retry tap (`PlayerScreen`), or the
     /// player seen starting again (its play button, PiP, the lock screen; the host's time observer). A back-navigation
-    /// therefore finds the screen paused, as it always did.
+    /// therefore finds the screen paused, as it always did. Also set by a pause while the next lecture still resolves
+    /// (a lock-screen skip, an auto-advance: `PlayerHostView.policyHandler`), so that lecture lands paused.
     var heldByOpen = false
     /// Every player screen's model, weakly: what a video open holds.
     static let all = NSHashTable<PlayerViewModel>.weakObjects()

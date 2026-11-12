@@ -325,7 +325,10 @@ import UIKit
             self?.act { $0.pause(); self?.onPolicyAction?(.pause) } ?? .commandFailed
         }
         _ = center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.act { $0.timeControlStatus == .paused ? $0.play() : $0.pause() } ?? .commandFailed
+            // The headset button's pause is a pause too (Cubic): it drops a failure's resume intent and holds a skip.
+            self?.act { player in
+                if player.timeControlStatus == .paused { player.play() } else { player.pause(); self?.onPolicyAction?(.pause) }
+            } ?? .commandFailed
         }
         center.skipForwardCommand.preferredIntervals = [10]
         center.skipBackwardCommand.preferredIntervals = [10]
