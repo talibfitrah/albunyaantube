@@ -14,6 +14,7 @@ import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.service.ContentReportService;
 import com.albunyaan.tube.service.ImportGraduationService;
 import com.albunyaan.tube.service.LibrarySearchSnapshot;
+import com.albunyaan.tube.service.LibrarySearchSnapshot.PageRead;
 import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
@@ -341,8 +342,8 @@ public class ContentLibraryController {
         return ResponseEntity.ok(response);
     }
 
-    /** Search matches as a {@link PageQuery}: the listing order, resuming strictly after the cursor. */
-    private static <T> PageQuery<T> inOrder(List<T> rows, boolean oldest,
+    /** Search matches as a {@link PageRead}: the listing order, resuming strictly after the cursor. */
+    private static <T> PageRead<T> inOrder(List<T> rows, boolean oldest,
                                             java.util.function.Function<T, com.google.cloud.Timestamp> createdAt,
                                             java.util.function.Function<T, String> id) {
         Comparator<T> asc = Comparator.comparing(createdAt).thenComparing(id);
@@ -392,12 +393,6 @@ public class ContentLibraryController {
                        Position skipTo) {
     }
 
-    @FunctionalInterface
-    private interface PageQuery<T> {
-        List<T> fetch(com.google.cloud.Timestamp afterCreatedAt, String afterId, int limit)
-                throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
-    }
-
     /**
      * A k-way merge of per-type cursor pages in createdAt order.
      *
@@ -408,8 +403,8 @@ public class ContentLibraryController {
      * type, whatever its depth, plus any archived run it moves past.</p>
      */
     private ContentLibraryResponse mergePage(Set<String> contentTypes, String status, boolean oldest,
-                                             ListingCursor at, int size, PageQuery<Channel> channels,
-                                             PageQuery<Playlist> playlists, PageQuery<Video> videos)
+                                             ListingCursor at, int size, PageRead<Channel> channels,
+                                             PageRead<Playlist> playlists, PageRead<Video> videos)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // "Approved" is live content, matching GET /totals: archived rows belong to the Archived page.
         boolean liveOnly = "approved".equalsIgnoreCase(status);
@@ -460,7 +455,7 @@ public class ContentLibraryController {
                               java.util.function.Function<T, com.google.cloud.Timestamp> createdAt,
                               java.util.function.Function<T, String> id,
                               java.util.function.Function<T, ContentItem> toItem,
-                              PageQuery<T> query)
+                              PageRead<T> query)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Position from = at.after.get(type);
         com.google.cloud.Timestamp afterAt = from == null ? null : from.timestamp();

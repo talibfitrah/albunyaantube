@@ -44,8 +44,9 @@ public class LibrarySearchSnapshot {
     private static final int LOAD_PAGE = 500;
     private static final long LATE_COMMIT_MS = 120_000;
 
+    /** A page of rows in createdAt order, strictly after the given position (null = from the start). */
     @FunctionalInterface
-    interface PageRead<T> {
+    public interface PageRead<T> {
         List<T> fetch(Timestamp afterCreatedAt, String afterId, int limit)
                 throws ExecutionException, InterruptedException, TimeoutException;
     }

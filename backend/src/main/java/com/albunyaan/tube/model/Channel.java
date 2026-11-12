@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
 import com.google.cloud.firestore.annotation.Exclude;
+import com.google.cloud.firestore.annotation.IgnoreExtraProperties;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.List;
  *
  * Collection: channels
  */
+@IgnoreExtraProperties   // stored docs still carry the dropped nameLower/keywordsLower fields
 public class Channel {
 
     @DocumentId
@@ -30,11 +32,6 @@ public class Channel {
      * Cached YouTube metadata
      */
     private String name;
-    /**
-     * Lowercase version of name for case-insensitive prefix queries.
-     * Auto-maintained by setName().
-     */
-    private String nameLower;
     private String description;
     private String thumbnailUrl;
     private Long subscribers;
@@ -131,12 +128,6 @@ public class Channel {
      * Optional field - can be null or empty.
      */
     private List<String> keywords;
-
-    /**
-     * Lowercase version of keywords for case-insensitive array-contains queries.
-     * Auto-maintained by setKeywords().
-     */
-    private List<String> keywordsLower;
 
     public Channel() {
         this.categoryIds = new ArrayList<>();
@@ -417,15 +408,6 @@ public class Channel {
 
     public void setName(String name) {
         this.name = name;
-        this.nameLower = name != null ? name.toLowerCase(java.util.Locale.ROOT) : null;
-    }
-
-    public String getNameLower() {
-        return nameLower;
-    }
-
-    public void setNameLower(String nameLower) {
-        this.nameLower = nameLower;
     }
 
     public String getDescription() {
@@ -507,17 +489,6 @@ public class Channel {
 
     public void setKeywords(List<String> keywords) {
         this.keywords = keywords;
-        this.keywordsLower = keywords != null
-                ? keywords.stream().filter(k -> k != null).map(k -> k.toLowerCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.toList())
-                : null;
-    }
-
-    public List<String> getKeywordsLower() {
-        return keywordsLower;
-    }
-
-    public void setKeywordsLower(List<String> keywordsLower) {
-        this.keywordsLower = keywordsLower;
     }
 }
 

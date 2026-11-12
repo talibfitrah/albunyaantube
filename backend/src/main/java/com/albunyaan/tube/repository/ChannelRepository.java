@@ -315,24 +315,6 @@ public class ChannelRepository {
     }
 
     /**
-     * Find approved channels by category ID with deterministic ordering.
-     * NOTE: This unbounded method is retained for backwards compatibility but
-     * callers should prefer a bounded query (e.g. findPageAfter) for quota safety.
-     *
-     * @param categoryId Category ID to filter by
-     * @return List of approved channels in the category, ordered by createdAt descending
-     */
-    public List<Channel> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
      * Find channels by category ID regardless of status (for status=all).
      * This allows admin Content Library to show pending/rejected items when filtering by category.
      *
