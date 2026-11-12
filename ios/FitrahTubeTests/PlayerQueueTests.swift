@@ -81,23 +81,8 @@ private func items(_ ids: [String]) -> [ContentItem] {
     var q = PlayerQueue.start(items: [], targetVideoId: nil, startIndex: 3, shuffled: false,
                               cursor: nil)
     #expect(q.current == nil)
-    #expect(q.advance() == nil)
+    #expect(q.select(at: q.index + 1) == nil)
     #expect(q.index == 0)
-}
-
-@Test func hasNextIsTrueWhenNothingIsQueuedButAPageRemains() {
-    let q = PlayerQueue.start(items: items(["a"]), targetVideoId: nil, startIndex: 0,
-                              shuffled: false, cursor: "P2")
-    #expect(q.upcoming.isEmpty)
-    #expect(q.hasNext)
-}
-
-@Test func advanceWalksForwardAndStopsAtTheEnd() {
-    var q = PlayerQueue.start(items: items(["a", "b"]), targetVideoId: nil, startIndex: 0,
-                              shuffled: false, cursor: nil)
-    #expect(q.advance()?.id == "b")
-    #expect(q.hasNext == false)
-    #expect(q.advance() == nil)               // `PlayerViewModel.kt:1920-1923`: playback stops
 }
 
 @Test func selectPlaysAnArbitraryQueuedItemAndRepositionsTheQueue() {
@@ -127,7 +112,7 @@ private func items(_ ids: [String]) -> [ContentItem] {
                               startIndex: 0, shuffled: false, cursor: "P2")
     #expect(q.upcoming.count == 6)
     #expect(q.needsPage == false)
-    _ = q.advance()
+    _ = q.select(at: 1)
     #expect(q.upcoming.count == 5)
     #expect(q.needsPage)
 }

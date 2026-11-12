@@ -19,7 +19,6 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
     var current: ContentItem? { items.indices.contains(index) ? items[index] : nil }
     var upcoming: ArraySlice<ContentItem> { items.dropFirst(index + 1) }
     var hasMorePages: Bool { cursor != nil && !pagingFailed }
-    var hasNext: Bool { !upcoming.isEmpty || hasMorePages }
     var needsPage: Bool { upcoming.count <= Self.pageThreshold && hasMorePages }
     var streamPrefetchTargets: [ContentItem] { Array(upcoming.prefix(Self.streamPrefetchCount)) }
 
@@ -51,13 +50,6 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
         var generator = SystemRandomNumberGenerator()
         return start(items: items, targetVideoId: targetVideoId, startIndex: startIndex,
                      shuffled: shuffled, cursor: cursor, using: &generator)
-    }
-
-    /// Next item, or nil at the end (`PlayerViewModel.kt:1920-1923`: playback stops).
-    mutating func advance() -> ContentItem? {
-        guard index + 1 < items.count else { return nil }
-        index += 1
-        return current
     }
 
     /// Up Next tap (`PlayerViewModel.kt:355-387`), index-addressed: a playlist can legitimately

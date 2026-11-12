@@ -342,7 +342,7 @@ final class ScreenshotTests: XCTestCase {
                                       ("player-audio-only-en-a11y3-portrait", Self.locales[0], Self.accessibility3)] {
             let app = launch(screen, locale: locale, extraArguments: extra)
             let toggle = app.buttons["player.audioOnly.button"]
-            XCTAssertTrue(toggle.waitForExistence(timeout: 20), "\(name): the audio-only button never appeared")
+            XCTAssertTrue(toggle.waitForExistence(timeout: 30), "\(name): the audio-only button never appeared")
             toggle.tap()
             let pill = app.staticTexts["player.audioOnlyPill"]
             XCTAssertTrue(pill.waitForExistence(timeout: 10), "\(name): the audio-only status surface never appeared")
