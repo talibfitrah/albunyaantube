@@ -160,12 +160,30 @@ export function useFocusTrap(containerRef: Ref<HTMLElement | null>, options: Foc
   }
 
   function deactivate(): void {
+    if (isActive.value) {
+      detachListeners();
+      isActive.value = false;
+    }
+    // Also when paused: the focus to hand back is still the one saved on activate (a no-op otherwise).
+    restoreFocus();
+  }
+
+  /** Stands aside for a dialog opened on top of this one: no focus restore; `resume` takes over again. */
+  function pause(): void {
     if (!isActive.value) {
       return;
     }
     detachListeners();
     isActive.value = false;
-    restoreFocus();
+  }
+
+  function resume(opts?: ActivateFocusTrapOptions): void {
+    if (isActive.value) {
+      return;
+    }
+    attachListeners();
+    isActive.value = true;
+    focusFirstFocusable(opts);
   }
 
   onBeforeUnmount(() => {
@@ -187,6 +205,8 @@ export function useFocusTrap(containerRef: Ref<HTMLElement | null>, options: Foc
   return {
     activate,
     deactivate,
+    pause,
+    resume,
     isActive
   };
 }

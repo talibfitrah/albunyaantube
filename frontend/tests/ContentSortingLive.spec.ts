@@ -35,12 +35,21 @@ vi.mock('@/services/sortOrder', async (importOriginal) => ({
   ]),
   addContentToCategorySort: (...a: unknown[]) => add.fn(...a),
   getCategoryContentOrder: () => svc.getCategoryContentOrder(),
-  getApprovedContent: () => Promise.resolve({ truncated: false, items: svc.approved() })
+  getApprovedContent: () => Promise.resolve(svc.approved())
 }));
 vi.mock('@/services/liveChannels', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/liveChannels')>()),
   getLiveStatus: () => status.fn()
 }));
+
+vi.mock('@/components/exclusions/ChannelDetailModal.vue', () => ({ default: {
+  props: ['open', 'channelId', 'channelYoutubeId'], emits: ['close'],
+  template: '<div v-if="open" data-testid="channel-detail">{{ channelId }}|{{ channelYoutubeId }}<button @click="$emit(\'close\')">close-detail</button></div>'
+} }));
+vi.mock('@/components/exclusions/PlaylistDetailModal.vue', () => ({ default: {
+  props: ['open', 'playlistId', 'playlistYoutubeId'], emits: ['close'],
+  template: '<div v-if="open" data-testid="playlist-detail">{{ playlistId }}|{{ playlistYoutubeId }}<button @click="$emit(\'close\')">close-detail</button></div>'
+} }));
 
 const ok = () => Promise.resolve({
   suspectSince: '2026-10-17T01:20:00Z',
@@ -141,7 +150,7 @@ describe('Content Sorting on a live category (spec §8)', () => {
       mount();
       await fireEvent.click(await screen.findByText('Channels Live'));
       await fireEvent.click(await screen.findByText(/Add Content/));
-      await fireEvent.click(await screen.findByText('Some channel'));
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Some channel' }));
       await fireEvent.click(screen.getByText('Add to Category'));
       return () => reject(refusal());
     };
@@ -179,7 +188,7 @@ describe('Content Sorting on a live category (spec §8)', () => {
     mount();
     await fireEvent.click(await screen.findByText('Channels Live'));
     await fireEvent.click(await screen.findByText(/Add Content/));
-    await fireEvent.click(await screen.findByText('Some channel'));
+    await fireEvent.click(await screen.findByRole('checkbox', { name: 'Some channel' }));
     await fireEvent.click(screen.getByText('Add to Category'));
     await fireEvent.click(screen.getByText('Cancel'));
     await fireEvent.click(await screen.findByText('Other'));
@@ -198,6 +207,32 @@ describe('Content Sorting on a live category (spec §8)', () => {
 
     expect(await screen.findByText('Some channel')).toBeInTheDocument();
     expect(screen.getByText('Some playlist')).toBeInTheDocument();
+  });
+
+  it('the add picker counts every approved item, as the Library does, and says why some cannot be added', async () => {
+    status.fn.mockImplementation(ok);
+    svc.approved.mockReturnValueOnce([
+      { id: 'channel_UCa', type: 'channel', youtubeId: 'UCa', title: 'Zad', thumbnailUrl: null, visibility: 'PUBLIC' },
+      { id: 'doc-1', type: 'video', youtubeId: 'vid00000001', title: 'A stream', thumbnailUrl: null, visibility: 'PUBLIC' },
+      { id: 'ch-p', type: 'channel', youtubeId: 'UCp', title: 'Granted', thumbnailUrl: null, visibility: 'PERSONAL' },
+      { id: 'ch-9', type: 'channel', youtubeId: 'UCz', title: 'Some channel', thumbnailUrl: null, visibility: 'PUBLIC' }
+    ]);
+    mount();
+    await fireEvent.click(await screen.findByText('Other'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+    await screen.findByText('Some channel');
+    const dialog = within(screen.getByRole('dialog'));
+    const tab = (label: string) =>
+      dialog.getByRole('button', { name: new RegExp(`^${label}`) }).textContent!.replace(/\s+/g, ' ').trim();
+
+    // The headline is the approved total; the two already filed and the personal grant are named, not hidden.
+    expect([tab('All'), tab('Channels'), tab('Videos')]).toEqual(['All 4', 'Channels 3', 'Videos 1']);
+    expect(dialog.getByText('2 already in this category · 1 limited to specific users')).toBeInTheDocument();
+    expect(document.querySelectorAll('.add-content-item').length).toBe(1);
+    expect(dialog.queryByText('Granted')).toBeNull();
+
+    await fireEvent.click(dialog.getByRole('button', { name: /^Videos/ }));
+    expect(dialog.getByText('1 already in this category')).toBeInTheDocument();
   });
 
   it('the add picker renders more rows on scroll until every item is reachable (no fixed cap)', async () => {
@@ -284,7 +319,7 @@ describe('Content Sorting on a live category (spec §8)', () => {
     mount();
     await fireEvent.click(await screen.findByText('Channels Live'));
     await fireEvent.click(await screen.findByText(/Add Content/));
-    await fireEvent.click(await screen.findByText('Some channel'));
+    await fireEvent.click(await screen.findByRole('checkbox', { name: 'Some channel' }));
     await fireEvent.click(screen.getByText('Add to Category'));
     await fireEvent.click(screen.getByText('Cancel'));
     const before = await svc.getCategoryContentOrder();
@@ -298,5 +333,82 @@ describe('Content Sorting on a live category (spec §8)', () => {
     await new Promise(r => setTimeout(r, 20));
 
     expect(screen.getByText('Late channel')).toBeInTheDocument();
+  });
+});
+
+describe('Content Sorting add-content: see a channel or playlist before adding it', () => {
+  const openPicker = async () => {
+    status.fn.mockImplementation(ok);
+    mount();
+    await fireEvent.click(await screen.findByText('Other'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+    await screen.findByText('Some channel');
+  };
+
+  it("clicking a channel's title opens its detail window and does not select it", async () => {
+    await openPicker();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+
+    expect(screen.getByTestId('channel-detail')).toHaveTextContent('ch-9|UCz');
+    expect(screen.queryByText(/selected/i)).toBeNull();
+  });
+
+  it("clicking a playlist's thumbnail opens its detail window and does not select it", async () => {
+    await openPicker();
+    const row = screen.getByText('Some playlist').closest('.add-content-item')!;
+
+    await fireEvent.click(row.querySelector('.add-content-thumb')!);
+
+    expect(screen.getByTestId('playlist-detail')).toHaveTextContent('pl-9|');
+    expect((row.querySelector('input[type=checkbox]') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('the rest of the row still selects, and the picker stays open behind a closed detail window', async () => {
+    await openPicker();
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+    await fireEvent.click(screen.getByText('close-detail'));
+    expect(screen.queryByTestId('channel-detail')).toBeNull();
+
+    const row = screen.getByText('Some channel').closest('.add-content-item')!;
+    await fireEvent.click(row.querySelector('.type-badge')!);
+
+    expect((row.querySelector('input[type=checkbox]') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('opens from the keyboard, lets focus into the detail window, and hands it back on close', async () => {
+    await openPicker();
+    const title = screen.getByRole('button', { name: 'Some channel' });
+    title.focus();
+    await fireEvent.click(title); // what Enter / Space do on a native button
+
+    const close = screen.getByText('close-detail');
+    close.focus();
+    expect(document.activeElement).toBe(close); // the picker's focus trap must not pull it back
+
+    await fireEvent.click(close);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Some channel' }));
+  });
+
+  it('Escape closes the detail window, not the picker, and focus returns to the title', async () => {
+    await openPicker();
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    expect(screen.queryByTestId('channel-detail')).toBeNull();
+    expect(screen.getByText('Add Content to Category')).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Some channel' }));
+  });
+
+  it('the covered picker cannot be reached while the detail window is open', async () => {
+    await openPicker();
+    const picker = document.querySelector('.modal-container[role="dialog"]')!;
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+    expect(picker).toHaveAttribute('inert');
+
+    await fireEvent.click(screen.getByText('close-detail'));
+    expect(picker).not.toHaveAttribute('inert');
   });
 });

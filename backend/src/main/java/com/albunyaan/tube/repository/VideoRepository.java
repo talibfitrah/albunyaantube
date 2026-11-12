@@ -303,34 +303,6 @@ public class VideoRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Find videos by category ID with limit (bounded query).
-     * This prevents quota exhaustion for large categories.
-     *
-     * @param categoryId Category ID to filter by
-     * @param limit Maximum number of results
-     * @return List of approved videos in the category
-     */
-    public List<Video> findByCategoryId(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
     /**
      * Find videos by category ID regardless of status (for status=all).
      * This allows admin Content Library to show pending/rejected items when filtering by category.
@@ -342,26 +314,6 @@ public class VideoRepository {
     public List<Video> findByCategoryIdAllStatus(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Find videos by category ID and specific status.
-     * This allows admin Content Library to filter by both category and status.
-     *
-     * @param categoryId Category ID to filter by
-     * @param status Status to filter by (APPROVED, PENDING, REJECTED)
-     * @param limit Maximum number of results
-     * @return List of videos matching both category and status
-     */
-    public List<Video> findByCategoryIdAndStatus(String categoryId, String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", status)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get();
@@ -460,43 +412,6 @@ public class VideoRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    /**
-     * Search videos by normalized titleLower field for case-insensitive prefix matching.
-     * This is the preferred search method as it supports case-insensitive queries.
-     *
-     * @param queryLower Lowercase search prefix
-     * @param limit Maximum number of results
-     * @return List of matching videos
-     */
-    public List<Video> searchByTitleLower(String queryLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("titleLower")
-                .startAt(queryLower)
-                .endAt(queryLower + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Search videos by keyword using array-contains on keywordsLower.
-     * Finds videos where any keyword exactly matches the query (case-insensitive).
-     * Complements prefix-based title search for improved recall.
-     *
-     * @param keywordLower Lowercase keyword to search for
-     * @param limit Maximum number of results
-     * @return List of matching videos
-     */
-    public List<Video> searchByKeyword(String keywordLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereArrayContains("keywordsLower", keywordLower)
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
         CatalogChanged.await(result, timeoutProperties.getWrite(), events, "VIDEO", id);
@@ -544,6 +459,19 @@ public class VideoRepository {
         return findAll(timeoutProperties.getDefaultMaxResults());
     }
 
+    /** One page of the admin Content Library; see {@link ChannelRepository#findPageAfter}. */
+    public List<Video> findPageAfter(String status, String category, boolean oldest,
+                                     com.google.cloud.Timestamp afterCreatedAt, String afterId, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Query.Direction dir = oldest ? Query.Direction.ASCENDING : Query.Direction.DESCENDING;
+        Query query = getCollection();
+        if (status != null) query = query.whereEqualTo("status", status);
+        if (category != null) query = query.whereArrayContains("categoryIds", category);
+        query = query.orderBy("createdAt", dir).orderBy(com.google.cloud.firestore.FieldPath.documentId(), dir);
+        if (afterCreatedAt != null) query = query.startAfter(afterCreatedAt, afterId);
+        return query.limit(limit).get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
     /**
      * Find all videos with a specific limit.
      *
@@ -568,44 +496,6 @@ public class VideoRepository {
      */
     public List<QueryDocumentSnapshot> findAllUnordered() throws ExecutionException, InterruptedException, TimeoutException {
         return getCollection().get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
-    }
-
-    /**
-     * Find all videos ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested.
-     *
-     * @param limit Maximum number of results
-     * @return List of videos ordered oldest-first
-     */
-    public List<Video> findAllOrderByCreatedAtAsc(int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .orderBy("createdAt", Query.Direction.ASCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Find videos by status ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested with status filter.
-     *
-     * Note: Requires Firestore composite index: status (ASC) + createdAt (ASC)
-     * Index definition in firestore.indexes.json:
-     *   { "collectionGroup": "videos", "queryScope": "COLLECTION",
-     *     "fields": [{"fieldPath": "status", "order": "ASCENDING"},
-     *                {"fieldPath": "createdAt", "order": "ASCENDING"}] }
-     *
-     * @param status Status to filter by
-     * @param limit Maximum number of results
-     * @return List of videos ordered oldest-first
-     */
-    public List<Video> findByStatusOrderByCreatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", status)
-                .orderBy("createdAt", Query.Direction.ASCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
     // ==================== Display Order Methods ====================

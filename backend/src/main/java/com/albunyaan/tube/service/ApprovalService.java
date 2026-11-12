@@ -76,113 +76,44 @@ public class ApprovalService {
         this.liveCategoryGuard = liveCategoryGuard;
     }
 
-    /**
-     * Get pending approvals with filters and pagination.
-     * Uses CursorUtils for opaque, URL-safe cursor tokens.
-     *
-     * For mixed-type queries (type=null), uses a merge-sort approach with
-     * separate cursors for each collection to ensure monotonic pagination.
-     */
-    /**
-     * Which half of the review queue a caller wants.
-     *
-     * <p>Submissions arrive on two paths that are reviewed differently: a moderator adding
-     * content through the dashboard, and someone importing in bulk from their phone. Every row
-     * records which, so the two separate cleanly.
-     */
-    public enum SourceScope {
-        /** Everything except phone imports. Submissions from before we recorded a source land here. */
-        MODERATOR_QUEUE,
-        /** Only phone imports — the by-user tab and its per-person drill-down. */
-        USER_IMPORTS
-    }
-
     /** Marker written on a submission that came in through the phone's import flow. */
     private static final String USER_IMPORT_SOURCE = "USER_IMPORT";
 
     /**
      * Pages to look through before handing back a short page.
      *
-     * <p>Filtering a single fetched page and stopping is what let the queue return nothing while
-     * more pages waited behind it. Bounded so a queue made entirely of the other kind cannot walk
-     * the whole collection in one request.
+     * <p>Filtering a single fetched page and stopping is what let the drill-down return nothing
+     * while more pages waited behind it. Bounded so a person whose pending rows are all moderator
+     * picks cannot walk the whole collection in one request.
      */
     private static final int MAX_SOURCE_FILTER_PAGES = 10;
 
     /**
-     * Split the queue by where a submission came from.
+     * One person's pending phone imports. Backs the by-user drill-down, whose count comes from the
+     * imports roll-up — showing them anything else there would contradict it.
      *
-     * <p>Done here rather than in the browser: filtering after the fact let a page come back empty
-     * with more behind it, and left the pending badge counting rows the queue did not show.
-     * Firestore cannot express "source is not X" — an inequality skips documents missing the field
-     * entirely, which is exactly the older rows that must not disappear — so the predicate is
-     * applied to fetched pages and the fetch continues until the page is filled.
-     *
-     * <p>May return up to twice {@code limit}: the page that crosses the threshold is kept whole
-     * rather than trimmed, because trimming would need a cursor for the trim point and dropping
-     * the remainder would skip items outright. Nothing is lost or repeated, and the caller is an
-     * append-as-you-scroll list that does not depend on an exact page size.
+     * <p>Firestore cannot express "source is X or missing", so the filter is applied to fetched
+     * pages and the fetch continues until the page is filled. May return up to twice
+     * {@code limit}: the page that crosses the threshold is kept whole, so nothing is lost or
+     * repeated without a cursor for a trim point.
      */
-    public CursorPageDto<PendingApprovalDto> getPendingApprovals(
-            String type,
-            String category,
-            Integer limit,
-            String cursor,
-            SourceScope scope) throws ExecutionException, InterruptedException, TimeoutException {
-
-        if (scope == null) {
-            return getPendingApprovals(type, category, limit, cursor);
-        }
-
-        int pageSize = Math.min((limit != null && limit > 0) ? limit : 20, 100);
-        List<PendingApprovalDto> kept = new ArrayList<>();
-        String next = cursor;
-
-        for (int page = 0; page < MAX_SOURCE_FILTER_PAGES && kept.size() < pageSize; page++) {
-            CursorPageDto<PendingApprovalDto> fetched = getPendingApprovals(type, category, pageSize, next);
-            for (PendingApprovalDto dto : fetched.getData()) {
-                if (inScope(scope, dto.getSource())) {
-                    kept.add(dto);
-                }
-            }
-            next = fetched.getPageInfo() != null ? fetched.getPageInfo().getNextCursor() : null;
-            if (next == null) {
-                break;
-            }
-        }
-
-        CursorPageDto<PendingApprovalDto> response = new CursorPageDto<>();
-        response.setData(kept);
-        response.setPageInfo(new CursorPageDto.PageInfo(next));
-        return response;
-    }
-
-    /**
-     * One person's pending submissions, narrowed to a source. Backs the by-user drill-down, whose
-     * count comes from the imports roll-up — showing them anything else there would contradict it.
-     */
-    public CursorPageDto<PendingApprovalDto> getMySubmissionsInScope(
+    public CursorPageDto<PendingApprovalDto> getPendingImportsBy(
             String submittedBy,
             String type,
             Integer limit,
-            String cursor,
-            SourceScope scope) throws ExecutionException, InterruptedException, TimeoutException {
-
-        if (scope == null) {
-            return getMySubmissions(submittedBy, "PENDING", type, limit, cursor);
-        }
+            String cursor) throws ExecutionException, InterruptedException, TimeoutException {
 
         int pageSize = Math.min((limit != null && limit > 0) ? limit : 20, 100);
         List<PendingApprovalDto> kept = new ArrayList<>();
         String next = cursor;
 
-        // Same fill loop as the queue: filtering one fetched page and stopping hands back an
-        // empty page with more behind it, which reads as "this person has nothing".
+        // Filtering one fetched page and stopping hands back an empty page with more behind it,
+        // which reads as "this person has nothing".
         for (int page = 0; page < MAX_SOURCE_FILTER_PAGES && kept.size() < pageSize; page++) {
             CursorPageDto<PendingApprovalDto> fetched =
                     getMySubmissions(submittedBy, "PENDING", type, pageSize, next);
             for (PendingApprovalDto dto : fetched.getData()) {
-                if (inScope(scope, dto.getSource())) {
+                if (USER_IMPORT_SOURCE.equalsIgnoreCase(dto.getSource())) {
                     kept.add(dto);
                 }
             }
@@ -198,12 +129,13 @@ public class ApprovalService {
         return filtered;
     }
 
-    /** A missing source means the row predates source tracking: it belongs to the moderator queue. */
-    private static boolean inScope(SourceScope scope, String source) {
-        boolean isUserImport = USER_IMPORT_SOURCE.equalsIgnoreCase(source);
-        return scope == SourceScope.USER_IMPORTS ? isUserImport : !isUserImport;
-    }
-
+    /**
+     * Get pending approvals with filters and pagination.
+     * Uses CursorUtils for opaque, URL-safe cursor tokens.
+     *
+     * For mixed-type queries (type=null), uses a merge-sort approach with
+     * separate cursors for each collection to ensure monotonic pagination.
+     */
     public CursorPageDto<PendingApprovalDto> getPendingApprovals(
             String type,
             String category,

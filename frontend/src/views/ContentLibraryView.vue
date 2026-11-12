@@ -5,8 +5,8 @@
         <h1 class="heading">{{ t('contentLibrary.heading') }}</h1>
         <p class="subtitle">{{ t('contentLibrary.subtitle') }}</p>
         <!-- Registry-wide totals from the server for the selected status, independent of the
-             other filters and of the fetch bound, so they stay exact even when the result list is
-             truncated. The caption names the status they count. -->
+             other filters and of how much of the list is loaded. The caption names the status
+             they count; the total is the figure Pending Approvals and the Dashboard show. -->
         <div v-if="registryTotals" class="registry-totals-block">
           <p class="registry-totals-caption">{{ t('contentLibrary.totalsCaption', { status: totalsStatusLabel }) }}</p>
           <dl class="registry-totals">
@@ -21,6 +21,10 @@
             <div class="registry-total">
               <dt>{{ t('contentLibrary.totalsVideos') }}</dt>
               <dd>{{ formatNumber(registryTotals.videos, locale) }}</dd>
+            </div>
+            <div class="registry-total">
+              <dt>{{ t('contentLibrary.totalsAll') }}</dt>
+              <dd>{{ formatNumber(registryTotals.channels + registryTotals.playlists + registryTotals.videos, locale) }}</dd>
             </div>
           </dl>
         </div>
@@ -185,12 +189,7 @@
           <p class="empty-message">{{ t('contentLibrary.empty') }}</p>
         </div>
 
-        <!-- Truncation Warning Banner -->
         <template v-else>
-          <div v-if="isTruncated" class="truncation-warning">
-            <span class="warning-icon">⚠️</span>
-            <span>{{ t('contentLibrary.truncatedWarning') }}</span>
-          </div>
 
         <!-- Mobile/Tablet Card Grid (only render on mobile/tablet) -->
         <div v-if="!isDesktop" class="content-cards">
@@ -396,7 +395,7 @@
         <!-- Load More Button -->
         <div v-if="hasMoreContent && !isLoadingMore && !loadMoreError && !paginationDisabled" class="load-more-container">
           <button type="button" class="btn-load-more" @click="loadMoreContent">
-            {{ t('contentLibrary.loadMore', { current: content.length, total: totalItemsFromServer }) }}
+            {{ t('contentLibrary.loadMore', { current: content.length }) }}
           </button>
         </div>
 
@@ -638,12 +637,7 @@ const hasOrderChanges = ref(false);
 const isSavingOrder = ref(false);
 const originalOrder = ref<string[]>([]); // Track original order to detect changes
 
-// Truncation warning - true when server limited results to prevent excessive Firestore reads
-const isTruncated = ref(false);
-
-// Reorder safety - tracks whether the current view can safely be reordered
-// Reorder is unsafe when: truncated, paginated (totalItems > displayed), search active, filters active, or non-approved items visible
-const totalItemsFromServer = ref(0);
+// Reorder is unsafe when: more rows to load, search active, filters active, or non-approved items visible
 // Registry-wide per-type totals for the selected status. Null until loaded, and left null on
 // failure — the header simply doesn't render rather than blocking or breaking the listing.
 const registryTotals = ref<contentLibraryService.RegistryTotals | null>(null);
@@ -651,11 +645,8 @@ const registryTotals = ref<contentLibraryService.RegistryTotals | null>(null);
 // don't belong to while a newer request is in flight.
 const registryTotalsStatus = ref('all');
 const isReorderSafe = computed(() => {
-  // Cannot reorder if results are truncated (server hit safety limit)
-  if (isTruncated.value) return false;
-
   // Cannot reorder if there are more items than displayed (pagination)
-  if (totalItemsFromServer.value > content.value.length) return false;
+  if (hasMoreContent.value) return false;
 
   // Cannot reorder if search is active (affects which items are visible)
   if (searchQuery.value.trim()) return false;
@@ -679,8 +670,7 @@ const isReorderSafe = computed(() => {
 
 // Reason why reorder is disabled (for tooltip)
 const reorderDisabledReason = computed(() => {
-  if (isTruncated.value) return 'contentLibrary.reorderDisabledTruncated';
-  if (totalItemsFromServer.value > content.value.length) return 'contentLibrary.reorderDisabledPaginated';
+  if (hasMoreContent.value) return 'contentLibrary.reorderDisabledPaginated';
   if (searchQuery.value.trim()) return 'contentLibrary.reorderDisabledSearch';
   if (filters.value.types.length > 0) return 'contentLibrary.reorderDisabledFilters';
   if (filters.value.category) return 'contentLibrary.reorderDisabledFilters';
@@ -864,10 +854,18 @@ function sortContentLocally() {
   }
 }
 
-// Track what sort was used for last server fetch
-let lastServerSort = 'date-desc';
+/**
+ * The request of the newest listing, set when it goes out: its later pages resume its cursor with
+ * these params, and a sort change compares against the order it asked for, not one still landing.
+ */
+let listingParams: Record<string, any> = { sort: 'newest' };
 
-function handleSortChange() {
+async function handleSortChange() {
+  // The client-side sorts order the whole list, so first load whatever Load More has not yet.
+  if (paginationDisabled.value && hasMoreContent.value) {
+    await loadContent();
+  }
+
   // Custom order: sort by displayOrder (client-side)
   if (sortBy.value === 'custom') {
     sortContentLocally();
@@ -889,9 +887,8 @@ function handleSortChange() {
 
   // Date sorts: only refetch if the server sort direction changed
   const newServerSort = sortBy.value === 'date-asc' ? 'oldest' : 'newest';
-  const oldServerSort = lastServerSort === 'date-asc' ? 'oldest' : 'newest';
 
-  if (newServerSort !== oldServerSort || content.value.length === 0) {
+  if (newServerSort !== listingParams.sort || content.value.length === 0) {
     loadContent();
   } else {
     // Already have data with correct server sort, just re-sort locally
@@ -1186,23 +1183,19 @@ async function toggleOfflineAllowed(item: ContentItem) {
 }
 
 // Data Loading
-// Max items for custom sort mode to enable reordering.
-// Must not exceed backend's page size cap (100) since ContentLibraryController caps at Math.min(size, 100).
-// Reorder safety is enforced by isReorderSafe computed: disabled when truncated or totalItems > displayed.
-const CUSTOM_SORT_MAX_ITEMS = 100;
+// Page size for the client-side sorts, which load every page up front: the backend's cap (100).
+const CLIENT_SORT_PAGE_SIZE = 100;
 const PAGE_SIZE = 25;
 
-// Infinite scroll state
-// Pages the derived one has to step over. Deriving from the loaded count assumes the loaded rows
-// are the server's leading rows; content added ahead of them breaks that, and the derived page
-// then lands on rows already held. Without this the button would ask for that same page forever.
-let pageDrift = 0;
+// Infinite scroll state. The server's cursor is the position after the last row it served, so a
+// row added or removed above it shifts nothing; null once the last page has been loaded.
+let nextCursor: string | null = null;
 const isLoadingMore = ref(false);
 const hasMoreContent = ref(false);
 const loadMoreError = ref<string | null>(null);
 
-// Name sorts and custom sort need all items loaded at once (no infinite scroll)
-// because client-side sorting produces incorrect visual order with incremental page loads
+// Name sorts and custom sort hold every item (no Load More), because a client-side order is only
+// right over the whole list: loadContent() follows the cursor to the end for them.
 const paginationDisabled = computed(() =>
   sortBy.value === 'custom' || sortBy.value === 'name-asc' || sortBy.value === 'name-desc'
 );
@@ -1284,29 +1277,23 @@ function updateLoadedItems(items: BulkActionItem[], patch?: (item: ContentItem) 
     patch(item);
     return stillMatchesFilters(item);
   });
-  totalItemsFromServer.value = Math.max(0, totalItemsFromServer.value - (before - content.value.length));
 
-  // Two ways a removal can leave rows the admin has no way to ask for: an emptied list, since the
-  // Load More button sits inside the list's non-empty branch; and the client-side sorts, which
-  // have no such button at all and hold one fixed page of a longer list. Refill for those, and
-  // only those — keeping the window otherwise is the whole point of patching it in place.
-  const removedRows = before > content.value.length;
-  const refillable = paginationDisabled.value || content.value.length === 0;
+  // A removal that empties the list leaves the admin no way to ask for the rows still out there,
+  // since the Load More button sits inside the list's non-empty branch. Refill for that, and only
+  // that — keeping the window otherwise is the whole point of patching it in place.
   // Not while one is already running: a grouped assignment calls this once per group, and each
   // would ask for the whole list again. The request in flight is retired by the later groups'
   // writes and re-issued once from the settled state, so it covers them.
-  if (removedRows && refillable && !isLoading.value
-      && content.value.length < totalItemsFromServer.value) {
+  if (before > content.value.length && content.value.length === 0 && hasMoreContent.value && !isLoading.value) {
     loadContent();
   }
 }
 
-function buildContentParams(page: number): Record<string, any> {
-  const pageSize = paginationDisabled.value ? CUSTOM_SORT_MAX_ITEMS : PAGE_SIZE;
+function buildContentParams(): Record<string, any> {
+  const pageSize = paginationDisabled.value ? CLIENT_SORT_PAGE_SIZE : PAGE_SIZE;
 
   const params: Record<string, any> = {
     status: filters.value.status,
-    page,
     size: pageSize
   };
 
@@ -1338,13 +1325,22 @@ async function loadContent() {
   error.value = null;
   loadMoreError.value = null;
   hasMoreContent.value = false;
-  pageDrift = 0;
+  nextCursor = null;
   clearThumbnailState();
 
   try {
-    const params = buildContentParams(0);
-
-    const response = await apiClient.get('/api/admin/content', { params });
+    // One listing: its later pages keep the order and filters its cursor was cut in, even if the
+    // sort changes meanwhile (a cursor resumed in the other direction serves the wrong rows).
+    const params = buildContentParams();
+    listingParams = params;
+    let response = await apiClient.get('/api/admin/content', { params });
+    const rows: ContentItem[] = response.data.content.map(mapContentItem);
+    // The client-side sorts have no Load More, and their order is only right over every row, so
+    // they follow the cursor to the end before showing anything.
+    while (paginationDisabled.value && response.data.nextCursor && myVersion === requestVersion) {
+      response = await apiClient.get('/api/admin/content', { params: { ...params, cursor: response.data.nextCursor } });
+      rows.push(...response.data.content.map(mapContentItem));
+    }
 
     // Discard stale response if filters/search changed while request was in flight
     if (myVersion !== requestVersion) return;
@@ -1357,27 +1353,10 @@ async function loadContent() {
       return;
     }
 
-    content.value = response.data.content.map(mapContentItem);
+    content.value = rows;
 
-    // Track what sort we used for this fetch
-    lastServerSort = sortBy.value === 'date-asc' ? 'date-asc' : 'date-desc';
-
-    // Update truncation state from server response
-    isTruncated.value = response.data.truncated === true;
-
-    // Track total items for reorder safety check
-    totalItemsFromServer.value = response.data.totalItems ?? content.value.length;
-
-    // Determine if there are more pages to load (disabled for client-side sorts)
-    if (!paginationDisabled.value) {
-      hasMoreContent.value = content.value.length < totalItemsFromServer.value;
-    }
-
-    // Warn if custom sort mode has incomplete results
-    if (sortBy.value === 'custom' && !isReorderSafe.value) {
-      console.warn(`Custom sort: reorder disabled. Reason: ${reorderDisabledReason.value}. ` +
-        `Showing ${content.value.length} of ${totalItemsFromServer.value} items.`);
-    }
+    nextCursor = response.data.nextCursor ?? null;
+    hasMoreContent.value = nextCursor !== null;
 
     // Apply client-side sort if needed (for name sorts, or to ensure consistency)
     sortContentLocally();
@@ -1400,28 +1379,17 @@ async function loadMoreContent() {
   if (isLoadingMore.value || !hasMoreContent.value || paginationDisabled.value) return;
 
   const myVersion = requestVersion; // Capture current version (don't increment — loadContent owns that)
-  const loadedBefore = content.value.length;
   isLoadingMore.value = true;
   loadMoreError.value = null;
-  // Derived from what is loaded rather than counted: deleting a row shifts every later row up
-  // by one in the server's offset paging, so the next counted page would step over that many.
-  // Re-requesting the overlap costs one page round-trip to gain the rows past it, and skips none.
-  const nextPage = Math.floor(content.value.length / PAGE_SIZE) + pageDrift;
 
   try {
-    const params = buildContentParams(nextPage);
-    const response = await apiClient.get('/api/admin/content', { params });
+    const response = await apiClient.get('/api/admin/content', { params: { ...listingParams, cursor: nextCursor } });
 
     // Discard stale response if a new loadContent() was triggered while this was in flight
     if (myVersion !== requestVersion) return;
 
-    // Rows left the list while this page was in flight, so the offsets it was computed for have
-    // moved: the row on its boundary now falls between what is held and what it carries, where
-    // nothing would ask for it again. Drop it whole — the next request is derived from where the
-    // list then stands, and covers that row. A write that removed nothing leaves offsets alone,
-    // so the page is still good.
-    if (content.value.length !== loadedBefore) return;
-
+    // The page holds only rows past the cursor, which the admin has not loaded and so cannot have
+    // changed meanwhile; a local write to the loaded rows leaves it valid.
     const loaded = new Set(content.value.map(item => `${item.type}:${item.id}`));
     const newItems = response.data.content
       .map(mapContentItem)
@@ -1429,14 +1397,8 @@ async function loadMoreContent() {
 
     content.value.push(...newItems);
 
-    totalItemsFromServer.value = response.data.totalItems ?? totalItemsFromServer.value;
-    hasMoreContent.value = content.value.length < totalItemsFromServer.value;
-
-    // Every row that page carried was already held, so the page after it is the next one that can
-    // add anything — stepping over it skips nothing and keeps the loaded window.
-    if (newItems.length === 0 && hasMoreContent.value) {
-      pageDrift += 1;
-    }
+    nextCursor = response.data.nextCursor ?? null;
+    hasMoreContent.value = nextCursor !== null;
   } catch (err: any) {
     if (myVersion !== requestVersion) return;
     console.error('Failed to load more content:', err);
@@ -1605,7 +1567,7 @@ function handleDragEnd(event: DragEvent) {
 // Save custom order to backend
 async function saveOrder() {
   // Block reorder when view is not safe for reordering
-  // (truncated, paginated, filtered, or search active)
+  // (paginated, filtered, or search active)
   if (!hasOrderChanges.value || isSavingOrder.value || !isReorderSafe.value) return;
 
   isSavingOrder.value = true;
@@ -2040,24 +2002,6 @@ onUnmounted(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-/* Truncation Warning */
-.truncation-warning {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1rem;
-  background: var(--color-warning-bg, #fef3cd);
-  border: 1px solid var(--color-warning-border, #ffc107);
-  border-radius: 0.5rem;
-  color: var(--color-warning-text, #856404);
-  font-size: 0.875rem;
-}
-
-.truncation-warning .warning-icon {
-  flex-shrink: 0;
 }
 
 /* Mobile Card Grid */

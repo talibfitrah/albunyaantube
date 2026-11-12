@@ -1,10 +1,6 @@
 /**
- * The category picker used to assemble its options by paging `/api/admin/content` in a loop that
- * could not terminate on its own: the server's `totalPages` describes its current fetch window,
- * and that window grows by one page per content type each round, so the target outran the loop
- * and it ran to a 20-page safety cap. Offset paging re-read every earlier row each time.
- *
- * The guard is the request count: one call, to the endpoint that answers the picker's question.
+ * The category picker's options: every approved item, the same set the Library counts as
+ * approved. The server pages them by cursor with no ceiling; the client follows the cursor to the end.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getApprovedContent } from '@/services/sortOrder';
@@ -12,57 +8,44 @@ import apiClient from '@/services/api/client';
 
 vi.mock('@/services/api/client');
 
+const item = (id: string) =>
+  ({ type: 'channel', id, title: `Channel ${id}`, thumbnailUrl: `https://img/${id}`, youtubeId: `UC${id}`, visibility: 'PUBLIC' });
+
 describe('getApprovedContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('asks once, on the picker endpoint', async () => {
-    vi.mocked(apiClient.get).mockResolvedValue({
-      data: {
-        items: [
-          { type: 'channel', id: 'c1', title: 'A Channel', thumbnailUrl: 'https://img/c1', youtubeId: 'UCc1' }
-        ],
-        truncated: false
-      }
-    } as never);
+  it('follows the cursor until the server says nothing is left', async () => {
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: { items: [item('c1'), item('c2')], nextCursor: 'k1' } } as never)
+      .mockResolvedValueOnce({ data: { items: [item('c3')], nextCursor: null } } as never);
 
-    const result = await getApprovedContent();
+    const items = await getApprovedContent();
 
-    expect(apiClient.get).toHaveBeenCalledTimes(1);
-    expect(apiClient.get).toHaveBeenCalledWith('/api/admin/content/approved-picker');
-    expect(result.items).toHaveLength(1);
-    expect(result.truncated).toBe(false);
+    expect(items.map(i => i.id)).toEqual(['c1', 'c2', 'c3']);
+    expect(apiClient.get).toHaveBeenCalledTimes(2);
+    expect(apiClient.get).toHaveBeenNthCalledWith(1, '/api/admin/content/approved-picker', { params: {} });
+    expect(apiClient.get).toHaveBeenNthCalledWith(2, '/api/admin/content/approved-picker', { params: { cursor: 'k1' } });
   });
 
-  it('keeps both fields the thumbnail falls back through', async () => {
+  it('keeps both fields the thumbnail falls back through, and the visibility', async () => {
     // getThumbnailUrl() reads thumbnailUrl first and otherwise builds a URL from youtubeId.
-    // Dropping either would blank the thumbnails for part of the list while still "looking" fine.
     vi.mocked(apiClient.get).mockResolvedValue({
-      data: {
-        items: [{ type: 'video', id: 'v1', title: 'A Video', thumbnailUrl: null, youtubeId: 'ytv1' }],
-        truncated: false
-      }
+      data: { items: [{ type: 'video', id: 'v1', title: 'A Video', thumbnailUrl: null, youtubeId: 'ytv1', visibility: 'PERSONAL' }] }
     } as never);
 
-    const item = (await getApprovedContent()).items[0];
+    const [first] = await getApprovedContent();
 
-    expect(item).toHaveProperty('thumbnailUrl');
-    expect(item.youtubeId).toBe('ytv1');
-  });
-
-  it('passes the server truncation flag through so the picker can say the list is partial', async () => {
-    vi.mocked(apiClient.get).mockResolvedValue({ data: { items: [], truncated: true } } as never);
-
-    expect((await getApprovedContent()).truncated).toBe(true);
+    expect(first).toHaveProperty('thumbnailUrl');
+    expect(first.youtubeId).toBe('ytv1');
+    expect(first.visibility).toBe('PERSONAL');
   });
 
   it('survives a response with no body fields', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: {} } as never);
 
-    const result = await getApprovedContent();
-
-    expect(result.items).toEqual([]);
-    expect(result.truncated).toBe(false);
+    expect(await getApprovedContent()).toEqual([]);
+    expect(apiClient.get).toHaveBeenCalledTimes(1);
   });
 });

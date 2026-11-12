@@ -51,14 +51,14 @@
       <button
         type="button"
         :class="['filter-tab', { active: adminTab === 'queue' }]"
-        @click="tabChosen = true; selectAdminTab('queue')"
+        @click="selectAdminTab('queue')"
       >
         {{ t('approvals.tabs.queue') }}<template v-if="queueCount !== null"> ({{ formatNumber(queueCount) }})</template>
       </button>
       <button
         type="button"
         :class="['filter-tab', { active: adminTab === 'byUser' }]"
-        @click="tabChosen = true; selectAdminTab('byUser')"
+        @click="selectAdminTab('byUser')"
       >
         {{ t('approvals.tabs.byUser') }}<template v-if="importCount !== null"> ({{ formatNumber(importCount) }})</template>
       </button>
@@ -196,7 +196,9 @@
             />
             <span class="content-type">{{ t(`approvals.types.${item.type}`) }}</span>
             <span v-if="item.source === 'USER_IMPORT'" class="source-badge source-user-import">
-              {{ t('approvals.sourceUserImport') }}
+              {{ selectedSubmitter || isModeratorView
+                ? t('approvals.sourceUserImport')
+                : t('approvals.phoneImportBy', { name: item.submittedByLabel || t('approvals.unknown') }) }}
             </span>
           </div>
           <div class="card-header-right">
@@ -450,8 +452,6 @@ const statusFilter = ref<SubmissionStatus>('PENDING');
  * ordinary users, which are reviewed per person.
  */
 const adminTab = ref<'queue' | 'byUser'>('queue');
-/** Set once the admin picks a tab or changes a filter, so the on-load switch never overrides their work. */
-const tabChosen = ref(false);
 const submitters = ref<PendingSubmitter[]>([]);
 const selectedSubmitter = ref<PendingSubmitter | null>(null);
 const submittersError = ref<string | null>(null);
@@ -479,10 +479,8 @@ async function loadSubmitters() {
 /**
  * How many phone imports are waiting, across everybody.
  *
- * Summed from the by-user roll-up, which scans a bounded number of pending documents. Past that
- * bound this under-counts, so the Queue tab label — which subtracts it from an exact total — would
- * over-report by however many imports went uncounted. Bounded by a queue depth far past what a
- * person reviews by hand, and the server logs when it hits it.
+ * Summed from the by-user roll-up, which scans a bounded number of pending documents, so past that
+ * bound it under-counts; the server logs when it hits it.
  */
 const userImportTotal = computed(() =>
   submitters.value.reduce((sum, s) => sum + s.pendingCount, 0)
@@ -667,9 +665,16 @@ function clearSelection() {
  * loaded, so acting on the 100th item sent them back to the top. Splicing leaves the scroll
  * position untouched and costs one request fewer per action.
  */
-function removeFromQueue(ids: string[]) {
-  if (ids.length && selectedSubmitter.value) submitterCountsStale.value = true;
+function removeFromQueue(done: { id: string; source?: string }[]) {
+  const ids = done.map(item => item.id);
   const gone = new Set(ids);
+  // Deciding a phone import, from either tab, moves the by-user counts. Judged from the decided
+  // items themselves: a tab switch while the request ran has emptied the list by now. Re-read at
+  // once if the people list is on screen; otherwise when it is next opened.
+  if (done.some(item => item.source === 'USER_IMPORT')) {
+    if (showingSubmitterList.value) loadSubmitters();
+    else submitterCountsStale.value = true;
+  }
   approvals.value = approvals.value.filter(item => !gone.has(item.id));
   const nextSelection = new Set(selectedIds.value);
   ids.forEach(id => {
@@ -757,11 +762,9 @@ const importCount = computed(() =>
     ? null
     : userImportTotal.value
 );
-/** Admin queue size: the exact total minus the imports; null unless both numbers are trustworthy. */
+/** The queue lists everything pending, phone imports included; null while there is no exact total. */
 const queueCount = computed(() =>
-  totalPending.value === null || countUnavailable.value || importCount.value === null
-    ? null
-    : Math.max(0, totalPending.value - importCount.value)
+  totalPending.value === null || countUnavailable.value ? null : totalPending.value
 );
 
 const categoriesError = ref<string | null>(null);
@@ -819,9 +822,6 @@ async function loadApprovals(append = false) {
           type: contentType.value,
           category: categoryFilter.value || undefined,
           submittedBy: selectedSubmitter.value?.uid,
-          // The queue is moderator submissions only; phone imports live in the by-user tab.
-          // Applied server-side, so a page never comes back empty with more waiting behind it.
-          scope: selectedSubmitter.value ? undefined : 'MODERATOR_QUEUE',
           cursor
         });
         if (token !== approvalsLoadToken) return;
@@ -849,7 +849,6 @@ async function loadApprovals(append = false) {
 }
 
 function handleFilterChange() {
-  tabChosen.value = true;
   // The selection refers to the list being replaced. Keeping it would leave the bulk bar
   // claiming "3 selected" over cards that are no longer loaded, with buttons that do nothing.
   clearSelection();
@@ -870,7 +869,7 @@ async function handleApprove(item: any) {
   processingId.value = item.id;
   try {
     await approveItem(item.id, item.type, categoryOverride);
-    removeFromQueue([item.id]);
+    removeFromQueue([item]);
     loadPendingCount();
   } catch (err) {
     // A live-category refusal (spec §8) is about this item only: toast it and keep the queue on screen.
@@ -890,7 +889,7 @@ async function bulkApprove() {
   if (!batch.length) return;
 
   const chosen = bulkCategory.value;
-  const approved: string[] = [];
+  const approved: { id: string; source?: string }[] = [];
   let failed = 0;
   let firstError: string | null = null;
 
@@ -899,7 +898,7 @@ async function bulkApprove() {
     await runBounded(batch, BULK_CONCURRENCY, async item => {
       try {
         await approveItem(item.id, item.type, categoryOverrideFor(item, chosen));
-        approved.push(item.id);
+        approved.push(item);
       } catch (err) {
         // One rejection from the server must not abandon the rest of the batch — but a batch
         // where everything failed must still say why, not just how many.
@@ -932,7 +931,7 @@ async function handleApprovePersonal(item: any) {
   processingId.value = item.id;
   try {
     await approveItem(item.id, item.type, undefined, undefined, 'PERSONAL');
-    removeFromQueue([item.id]);
+    removeFromQueue([item]);
     loadPendingCount();
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.approveError');
@@ -970,7 +969,7 @@ async function handleReject() {
 
   // The reason is optional. Blank means "no feedback", not "OTHER".
   const reason = rejectReason.value.trim() || undefined;
-  const rejected: string[] = [];
+  const rejected: { id: string; source?: string }[] = [];
   let failed = 0;
 
   isRejecting.value = true;
@@ -982,7 +981,7 @@ async function handleReject() {
     await runBounded(targets, BULK_CONCURRENCY, async item => {
       try {
         await rejectItemApi(item.id, item.type, reason);
-        rejected.push(item.id);
+        rejected.push(item);
       } catch (err) {
         failed += 1;
         // Keep the server's words for the reviewer — "already reviewed in another tab" is
@@ -1051,17 +1050,11 @@ async function loadPendingCount() {
   }
 }
 
-onMounted(async () => {
+onMounted(() => {
   loadCategories();
   loadApprovals();
-  const counted = loadPendingCount();
-  if (isModeratorView.value) return;
-  // Needed by the Queue tab label too, which subtracts the imports it no longer lists.
-  await Promise.all([counted, loadSubmitters()]);
-  // An empty queue must not hide imports that are waiting on the other tab.
-  if (!tabChosen.value && adminTab.value === 'queue' && queueCount.value === 0 && (importCount.value ?? 0) > 0) {
-    selectAdminTab('byUser');
-  }
+  loadPendingCount();
+  if (!isModeratorView.value) loadSubmitters();
 });
 </script>
 

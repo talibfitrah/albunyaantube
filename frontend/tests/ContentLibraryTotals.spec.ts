@@ -76,6 +76,18 @@ describe('ContentLibraryView registry totals', () => {
     expect(screen.getByText('In the registry: Approved')).toBeInTheDocument();
   });
 
+  it('shows the status total beside the per-type counts, matching the Pending Approvals queue', async () => {
+    const { container } = renderView();
+    await waitFor(() => expect(screen.getByText('4,321')).toBeInTheDocument());
+
+    // Production on 2026-11-11: 313 + 7 + 762 pending = the 1,082 the Pending Approvals page shows.
+    fetchRegistryTotalsMock.mockResolvedValue({ channels: 313, playlists: 7, videos: 762 });
+    await fireEvent.click(container.querySelector('input[name="status"][value="pending"]') as HTMLInputElement);
+
+    await waitFor(() => expect(screen.getByText('1,082')).toBeInTheDocument());
+    expect(screen.getByText('Total')).toBeInTheDocument();
+  });
+
   it('hides the totals rather than showing another status\'s numbers when a refresh fails', async () => {
     const { container } = renderView();
     await waitFor(() => expect(screen.getByText('4,321')).toBeInTheDocument());

@@ -2,7 +2,7 @@
  * [ADMIN-IMPORT-01] PendingApprovalsView — user-import badge + the optional category on approve
  *
  * Tests:
- * 1. A USER_IMPORT item renders the "User import" badge.
+ * 1. A USER_IMPORT item in the queue renders the "Phone import · <name>" badge.
  * 2. A non-USER_IMPORT item does not render the badge.
  * 3. Approve is available whether or not the item has a category.
  * 4. An uncategorised item approved with no category sends no override.
@@ -107,11 +107,11 @@ describe('PendingApprovalsView — User-import badge', () => {
     ]);
   });
 
-  it('renders "User import" badge for a USER_IMPORT item', async () => {
+  it('marks a USER_IMPORT item in the queue as a phone import', async () => {
     await renderView([makeItem({ source: 'USER_IMPORT' })]);
 
     await waitFor(() => {
-      expect(screen.getByText('User import')).toBeTruthy();
+      expect(screen.getByText(/^Phone import · /)).toBeTruthy();
     });
   });
 
@@ -121,8 +121,8 @@ describe('PendingApprovalsView — User-import badge', () => {
     await waitFor(() => {
       // Item renders (channel type badge visible)
       expect(screen.getByText('Channel')).toBeTruthy();
-      // But User import badge is absent
-      expect(screen.queryByText('User import')).toBeNull();
+      // But the phone-import badge is absent
+      expect(screen.queryByText(/Phone import/)).toBeNull();
     });
   });
 
@@ -130,7 +130,7 @@ describe('PendingApprovalsView — User-import badge', () => {
     await renderView([makeItem({ categories: ['cat-1'] })]);
 
     await waitFor(() => {
-      expect(screen.queryByText('User import')).toBeNull();
+      expect(screen.queryByText(/Phone import/)).toBeNull();
     });
   });
 });

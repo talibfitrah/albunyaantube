@@ -73,15 +73,13 @@ class ApprovalControllerTest {
     void pending_withSubmittedBy_returnsThatPersonsPendingQueue() throws Exception {
         CursorPageDto<PendingApprovalDto> page = new CursorPageDto<>();
         page.setData(java.util.List.of());
-        when(approvalService.getMySubmissionsInScope("uid-ahmed", null, 20, null,
-                ApprovalService.SourceScope.USER_IMPORTS)).thenReturn(page);
+        when(approvalService.getPendingImportsBy("uid-ahmed", null, 20, null)).thenReturn(page);
 
-        controller.getPendingApprovals(null, null, 20, null, "uid-ahmed", null, mockUser);
+        controller.getPendingApprovals(null, null, 20, null, "uid-ahmed", mockUser);
 
         // Narrowed to that person's imports, so the card count matches the by-user tally.
-        verify(approvalService).getMySubmissionsInScope("uid-ahmed", null, 20, null,
-                ApprovalService.SourceScope.USER_IMPORTS);
-        verify(approvalService, never()).getPendingApprovals(any(), any(), any(), any(), any());
+        verify(approvalService).getPendingImportsBy("uid-ahmed", null, 20, null);
+        verify(approvalService, never()).getPendingApprovals(any(), any(), any(), any());
     }
 
     /** With no submitter named, the queue behaves exactly as before. */
@@ -89,12 +87,12 @@ class ApprovalControllerTest {
     void pending_withoutSubmittedBy_returnsTheWholeQueue() throws Exception {
         CursorPageDto<PendingApprovalDto> page = new CursorPageDto<>();
         page.setData(java.util.List.of());
-        when(approvalService.getPendingApprovals(any(), any(), any(), any(), any())).thenReturn(page);
+        when(approvalService.getPendingApprovals(any(), any(), any(), any())).thenReturn(page);
 
-        controller.getPendingApprovals(null, null, 20, null, null, null, mockUser);
+        controller.getPendingApprovals(null, null, 20, null, null, mockUser);
 
-        verify(approvalService).getPendingApprovals(null, null, 20, null, null);
-        verify(approvalService, never()).getMySubmissionsInScope(any(), any(), any(), any(), any());
+        verify(approvalService).getPendingApprovals(null, null, 20, null);
+        verify(approvalService, never()).getPendingImportsBy(any(), any(), any(), any());
     }
 
     @Test
@@ -109,33 +107,33 @@ class ApprovalControllerTest {
         expectedResult.setData(Arrays.asList(approval1));
         expectedResult.setPageInfo(new CursorPageDto.PageInfo("cursor_abc"));
 
-        when(approvalService.getPendingApprovals(any(), any(), any(), any(), any()))
+        when(approvalService.getPendingApprovals(any(), any(), any(), any()))
                 .thenReturn(expectedResult);
 
         // Act
         ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
-                controller.getPendingApprovals("CHANNEL", null, 20, null, null, null, mockUser);
+                controller.getPendingApprovals("CHANNEL", null, 20, null, null, mockUser);
 
         // Assert
         assertEquals(200, response.getStatusCodeValue());
         assertNotNull(response.getBody());
         assertEquals(1, response.getBody().getData().size());
         assertEquals("channel_1", response.getBody().getData().get(0).getId());
-        verify(approvalService).getPendingApprovals("CHANNEL", null, 20, null, null);
+        verify(approvalService).getPendingApprovals("CHANNEL", null, 20, null);
     }
 
     @Test
     void testGetPendingApprovals_WithFilters() throws Exception {
         // Arrange
         CursorPageDto<PendingApprovalDto> expectedResult = new CursorPageDto<>();
-        when(approvalService.getPendingApprovals(any(), any(), any(), any(), any()))
+        when(approvalService.getPendingApprovals(any(), any(), any(), any()))
                 .thenReturn(expectedResult);
 
         // Act
-        controller.getPendingApprovals("PLAYLIST", "category_1", 10, "cursor_123", null, null, mockUser);
+        controller.getPendingApprovals("PLAYLIST", "category_1", 10, "cursor_123", null, mockUser);
 
         // Assert
-        verify(approvalService).getPendingApprovals("PLAYLIST", "category_1", 10, "cursor_123", null);
+        verify(approvalService).getPendingApprovals("PLAYLIST", "category_1", 10, "cursor_123");
     }
 
     @Test
@@ -282,12 +280,12 @@ class ApprovalControllerTest {
     @Test
     void testGetPendingApprovals_InvalidCursor_Returns400() throws Exception {
         // Arrange
-        when(approvalService.getPendingApprovals(any(), any(), any(), eq("bad-cursor"), any()))
+        when(approvalService.getPendingApprovals(any(), any(), any(), eq("bad-cursor")))
                 .thenThrow(new IllegalArgumentException("Invalid cursor format"));
 
         // Act
         ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
-                controller.getPendingApprovals(null, null, 20, "bad-cursor", null, null, mockUser);
+                controller.getPendingApprovals(null, null, 20, "bad-cursor", null, mockUser);
 
         // Assert
         assertEquals(400, response.getStatusCodeValue());
@@ -296,12 +294,12 @@ class ApprovalControllerTest {
     @Test
     void testGetPendingApprovals_InvalidType_Returns400() throws Exception {
         // Arrange
-        when(approvalService.getPendingApprovals(eq("INVALID"), any(), any(), any(), any()))
+        when(approvalService.getPendingApprovals(eq("INVALID"), any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("Invalid type: INVALID"));
 
         // Act
         ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
-                controller.getPendingApprovals("INVALID", null, 20, null, null, null, mockUser);
+                controller.getPendingApprovals("INVALID", null, 20, null, null, mockUser);
 
         // Assert
         assertEquals(400, response.getStatusCodeValue());
@@ -389,12 +387,12 @@ class ApprovalControllerTest {
     @Test
     void testGetPendingApprovals_ServiceUnavailable_Returns503() throws Exception {
         // Arrange - service throws unexpected exception
-        when(approvalService.getPendingApprovals(any(), any(), any(), any(), any()))
+        when(approvalService.getPendingApprovals(any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("Firestore timeout"));
 
         // Act
         ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
-                controller.getPendingApprovals(null, null, 20, null, null, null, mockUser);
+                controller.getPendingApprovals(null, null, 20, null, null, mockUser);
 
         // Assert - must return 503, NOT 200 with empty data
         assertEquals(503, response.getStatusCodeValue());

@@ -17,6 +17,8 @@ import org.mockito.quality.Strictness;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
@@ -50,8 +52,8 @@ class ContentLibraryOfflineAllowedTest {
         v.setStatus("APPROVED");
         v.setCreatedAt(Timestamp.ofTimeSecondsAndNanos(1_000, 0));
         v.setOfflineAllowed(stored);
-        when(videoRepository.findAll(anyInt())).thenReturn(List.of(v));
-        return controller.getContent("video", "all", null, null, "newest", 0, 20)
+        when(videoRepository.findPageAfter(any(), any(), anyBoolean(), any(), any(), anyInt())).thenReturn(List.of(v));
+        return controller.getContent("video", "all", null, null, "newest", null, 20)
                 .getBody().content.get(0).offlineAllowed;
     }
 
