@@ -1,6 +1,7 @@
 package com.albunyaan.tube.player
 
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import kotlinx.coroutines.delay
 
 internal enum class Forbidden403Step { REFRESH, PLAY_MUXED, EXHAUSTED }
 
@@ -51,3 +52,26 @@ internal fun hasMuxedFallback(resolved: ResolvedStreams?): Boolean =
  */
 internal fun counts403(failureType: StreamRequestTelemetry.FailureType, inSeekWindow: Boolean): Boolean =
     failureType == StreamRequestTelemetry.FailureType.UNKNOWN_403 && !inSeekWindow
+
+/**
+ * Run a delayed 403 recovery only if [videoId] is still the current video ([currentVideoId]). The state that
+ * chose the recovery belongs to the video that 403'd; after a switch it would refresh, or pin to 360p, the next one.
+ */
+internal suspend fun afterBackoff(delayMs: Long, videoId: String?, currentVideoId: () -> String?, recover: () -> Unit) {
+    delay(delayMs)
+    if (currentVideoId() == videoId) recover()
+}
+
+/**
+ * How long after the last counted 403 another one is a repeat. The field repeat comes ~50 s after the resume.
+ * ponytail: fixed window; widen it if the repeat is ever seen later than this.
+ */
+private const val REPEAT_403_WINDOW_MS = 5 * 60_000L
+
+/**
+ * The per-stream counted-403 total ([counts403]) after one more at [nowMs]. A 403 more than [REPEAT_403_WINDOW_MS]
+ * after the last counted one starts over at 1: the refresh in between worked (an IP-bound URL dies on a network
+ * switch), so it must not pin a long lecture to 360p.
+ */
+internal fun next403Count(count: Int, lastAtMs: Long, nowMs: Long): Int =
+    if (count > 0 && nowMs - lastAtMs <= REPEAT_403_WINDOW_MS) count + 1 else 1

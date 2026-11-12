@@ -79,6 +79,8 @@ import com.albunyaan.tube.player.Forbidden403Step
 import com.albunyaan.tube.player.next403Step
 import com.albunyaan.tube.player.counts403
 import com.albunyaan.tube.player.hasMuxedFallback
+import com.albunyaan.tube.player.afterBackoff
+import com.albunyaan.tube.player.next403Count
 import com.albunyaan.tube.player.applyCaptionStyle
 import com.albunyaan.tube.player.normalizeSubtitleCue
 import com.albunyaan.tube.data.report.ReportTargetType
@@ -257,10 +259,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * Counted HTTP 403s ([counts403]) on [forbidden403StreamId]. Unlike the listener's
      * streamRefreshCount it survives a resume, so a stream that plays ~40 s and 403s again on
      * fresh URLs is seen as a repeat ([next403Step] plays muxed). Resets when a different
-     * stream is prepared, on the three manual retry buttons and in onDestroyView.
+     * stream is prepared, on the three manual retry buttons and in onDestroyView, and starts over
+     * when a 403 comes long after the last one ([next403Count]; [forbidden403AtMs] is its time).
      */
     private var forbidden403StreamId: String? = null
     private var forbidden403Count = 0
+    private var forbidden403AtMs = 0L
 
     /**
      * Stream pinned to its muxed track by [playMuxedFromCurrentStreams]. Kept apart from
@@ -2421,7 +2425,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
             // Asked of the source that 403'd, before requestStreamRefreshAndResume claims the gate.
             val inSeekWindow = seekTransientErrorGate.isInSeekTransientWindow(preparedAdaptiveType)
-            if (counts403(failureType, inSeekWindow)) forbidden403Count++
+            if (counts403(failureType, inSeekWindow)) {
+                val now = android.os.SystemClock.elapsedRealtime()
+                forbidden403Count = next403Count(forbidden403Count, forbidden403AtMs, now)
+                forbidden403AtMs = now
+            }
             // An uncounted 403 reads as a first one: it refreshes while the episode budget lasts.
             val forbidden403s = maxOf(forbidden403Count, 1)
 
@@ -2459,6 +2467,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // lets it change.
             val playingMuxed = !preparedIsAdaptive
             val hasMuxed = currentHasMuxedFallback()
+            val currentVideoId = { viewModel.state.value.currentItem?.streamId }
             fun recover403(reason: String, count403s: Int = forbidden403s) =
                 when (next403Step(count403s, currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
                     Forbidden403Step.REFRESH -> {
@@ -2503,12 +2512,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     }
 
                     lifecycleOwner.lifecycleScope.launch {
-                        delay(backoffMs)
-                        if (currentStreamRefreshCount < maxStreamRefreshes) {
-                            onStreamRefresh()
-                            requestStreamRefreshAndResume("rate limited, retrying after ${backoffMs}ms")
-                        } else {
-                            surfaceStreamUnavailable()
+                        afterBackoff(backoffMs, videoId, currentVideoId) {
+                            if (currentStreamRefreshCount < maxStreamRefreshes) {
+                                onStreamRefresh()
+                                requestStreamRefreshAndResume("rate limited, retrying after ${backoffMs}ms")
+                            } else {
+                                surfaceStreamUnavailable()
+                            }
                         }
                     }
                     return
@@ -2536,11 +2546,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     android.util.Log.w("PlayerFragment", "Unknown 403/HTTP error, attempting refresh after ${backoffMs}ms")
 
                     lifecycleOwner.lifecycleScope.launch {
-                        delay(backoffMs)
-                        // The user may have switched video during the backoff: the state captured
-                        // above belongs to the 403'd video, so act only if it is still current.
-                        if (viewModel.state.value.currentItem?.streamId != videoId) return@launch
-                        recover403("HTTP $httpResponseCode (${failureType.name})")
+                        afterBackoff(backoffMs, videoId, currentVideoId) {
+                            recover403("HTTP $httpResponseCode (${failureType.name})")
+                        }
                     }
                     return
                 }

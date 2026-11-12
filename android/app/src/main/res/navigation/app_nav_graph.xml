@@ -43,7 +43,7 @@
                 app:argType="boolean"
                 android:defaultValue="false" />
         </action>
-        <!-- Below the minimum version (MinVersionGate): pop everything so Back exits. -->
+        <!-- Below the minimum version (MinVersionGate): pop everything, so nothing is under it. -->
         <action
             android:id="@+id/action_splash_to_updateRequired"
             app:destination="@id/updateRequiredFragment"

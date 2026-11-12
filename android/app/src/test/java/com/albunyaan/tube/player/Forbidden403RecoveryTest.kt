@@ -9,6 +9,10 @@ import com.albunyaan.tube.player.StreamRequestTelemetry.FailureType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class Forbidden403RecoveryTest {
@@ -47,4 +51,26 @@ class Forbidden403RecoveryTest {
     @Test fun `URL expiry is not counted`() = assertFalse(counts403(FailureType.URL_EXPIRED, inSeekWindow = false))
     @Test fun `rate-limited 403 is not counted`() = assertFalse(counts403(FailureType.RATE_LIMITED, inSeekWindow = false))
     @Test fun `geo-restricted 403 is not counted`() = assertFalse(counts403(FailureType.GEO_RESTRICTED, inSeekWindow = false))
+
+    // next403Count: a repeat is a 403 soon after the last counted one (the field repeat comes ~50 s after a resume).
+    @Test fun `the first counted 403 is one`() = assertEquals(1, next403Count(0, lastAtMs = 0, nowMs = 10_000))
+    @Test fun `a 403 a minute after the last one is a repeat`() = assertEquals(2, next403Count(1, lastAtMs = 0, nowMs = 60_000))
+    // Two network switches an hour apart in a long lecture: each refresh worked, so neither pins 360p.
+    @Test fun `a 403 an hour after the last one starts over`() = assertEquals(1, next403Count(1, lastAtMs = 0, nowMs = 3_600_000))
+
+    // afterBackoff: a delayed 403 recovery acts only on the video that 403'd.
+    @Test fun `a backoff recovery runs while the 403'd video is still current`() = runTest {
+        var ran = false
+        afterBackoff(1_500, "V2Brp_esIVI", { "V2Brp_esIVI" }) { ran = true }
+        assertTrue(ran)
+    }
+    @Test fun `a backoff recovery is dropped when the user switched video meanwhile`() = runTest {
+        var current = "V2Brp_esIVI"
+        var ran = false
+        launch { afterBackoff(8_000, "V2Brp_esIVI", { current }) { ran = true } }
+        advanceTimeBy(1_000)
+        current = "xc7keR2piUM"
+        advanceUntilIdle()
+        assertFalse(ran)
+    }
 }
