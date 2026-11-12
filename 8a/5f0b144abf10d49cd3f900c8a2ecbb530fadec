@@ -1,0 +1,35 @@
+android/app/src/test/java/com/albunyaan/tube/player/DashSourceBuilderTest.kt
+  s_8a936fc306f37b::t_97fc524d7e83e7 413
+android/app/src/test/java/com/albunyaan/tube/player/MultiRepresentationMpdGeneratorTest.kt
+  s_8a936fc306f37b::t_97fc524d7e83e7 433-434
+android/app/src/main/java/com/albunyaan/tube/player/PlaybackFeatureFlags.kt
+  s_8a936fc306f37b::t_8ecda2bab64695 61-68,71-80,134-136,148,161,164,167,170,173,228,245-246,275-276
+android/app/src/test/java/com/albunyaan/tube/data/extractor/DubAudioEnumeratorTest.kt
+  s_8a936fc306f37b::t_97fc524d7e83e7 13
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_8a936fc306f37b::t_29f00c431e3f3d 125,137,156-160,162,164-169
+  s_8a936fc306f37b::t_8b878591938b26 161,163
+  s_8a936fc306f37b::t_485a56a9fb4773 170-171
+android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt
+  s_8a936fc306f37b::t_97fc524d7e83e7 115
+android/app/src/test/java/com/albunyaan/tube/data/extractor/ExtractionClientTest.kt
+  s_8a936fc306f37b::t_97fc524d7e83e7 40-41
+android/app/src/test/java/com/albunyaan/tube/player/PlaybackFeatureFlagsTest.kt
+  s_8a936fc306f37b::t_b6f4f4cfe590cd 109-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8a5f0b144abf10d49cd3f900c8a2ecbb530fadec",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
