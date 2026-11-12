@@ -241,6 +241,7 @@ class PublicContentCacheKeyTest {
         Video video = new Video("vNewest");
         video.setId("v1");
         video.setStatus("APPROVED");
+        video.setDurationSeconds(120); // a known SHORT length: unknown length matches no length filter
         when(videos.findByStatus("APPROVED")).thenReturn(List.of(video));
     }
 

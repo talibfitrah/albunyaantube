@@ -371,6 +371,7 @@ class PublicContentServiceTabOrderTest {
         v.setTitle(title);
         v.setCategoryIds(categoryIds);
         v.setStatus("APPROVED");
+        v.setDurationSeconds(120); // a known SHORT length: unknown length matches no length filter
         return v;
     }
 
