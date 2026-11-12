@@ -263,6 +263,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var forbidden403Count = 0
 
     /**
+     * Stream pinned to its muxed track by [playMuxedFromCurrentStreams]. Kept apart from
+     * [adaptiveFailedForCurrentStream] (cleared on every refresh so adaptive is retried) because
+     * this pin must survive the next refresh. Cleared on a different stream, the two manual
+     * retry buttons and onDestroyView.
+     */
+    private var muxedPinnedStreamId: String? = null
+
+    /**
      * Minimal buffering-stall watchdog (replaces the old multi-step recovery
      * stall ladder). When the player sits in STATE_BUFFERING past a threshold and the
      * current stream is unchanged, route through the battle-tested re-resolve path
@@ -619,6 +627,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.playerRefreshStreamButton.setOnClickListener {
             // Reset adaptive fallback flag - manual refresh should retry adaptive
             adaptiveFailedForCurrentStream = null
+            muxedPinnedStreamId = null
             forbidden403Count = 0
             // Manual refresh: ALWAYS invalidate MPD first, regardless of rate limit.
             // This is intentional - user-initiated refresh should clear stale URLs even if
@@ -639,6 +648,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             viewModel.clearRecoveringState()
             // Reset adaptive fallback flag - manual retry should retry adaptive
             adaptiveFailedForCurrentStream = null
+            muxedPinnedStreamId = null
             forbidden403Count = 0
             // Manual retry: ALWAYS invalidate MPD first, regardless of rate limit.
             // Same reasoning as refresh button - user action clears stale URLs.
@@ -889,6 +899,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         preparedQualityCapHeight = null
         factorySelectedVideoTrack = null
         adaptiveFailedForCurrentStream = null
+        muxedPinnedStreamId = null
         forbidden403StreamId = null
         forbidden403Count = 0
         lastMetadataSyncedItemId = null
@@ -2236,7 +2247,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     /**
      * Rebuild the current stream as its muxed progressive track from the streams already in
-     * hand (sticky [adaptiveFailedForCurrentStream]) and resume at the same position. No
+     * hand (sticky [muxedPinnedStreamId]) and resume at the same position. No
      * extraction, so it never calls [PlayerViewModel.forceRefreshForAutoRecovery] or spends
      * the rate limiter. See [next403Step].
      */
@@ -2247,7 +2258,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             "PlayerFragment",
             "Playing muxed track for $streamId at ${currentPlayer.currentPosition}ms: $reason"
         )
-        adaptiveFailedForCurrentStream = streamId
+        muxedPinnedStreamId = streamId
         captureResumeAndResetPrepared(
             streamId,
             currentPlayer.currentPosition.coerceAtLeast(0L),
@@ -2914,7 +2925,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val isQualitySwitch = isQualityChange || isAudioModeChange
 
         // Check if adaptive failed for this stream previously (sticky fallback)
-        val forceProgressive = adaptiveFailedForCurrentStream == streamState.streamId
+        val forceProgressive = adaptiveFailedForCurrentStream == streamState.streamId ||
+            muxedPinnedStreamId == streamState.streamId
 
         // Check if the currently prepared source matches what we would create
         when (val cacheHit = checkCacheHit(key, state, selection, resolved, forceProgressive)) {
@@ -2950,15 +2962,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Phase 1B: Reset playback start time for HLS early 403 detection
             streamPlaybackStartTimeMs = 0L
 
-            // Reset sticky fallback flag for adaptive streams. A refresh nulls preparedStreamKey
-            // too, so keep the flag while it names this same stream (a 403 muxed fallback must
-            // survive the next refresh); a different stream gets adaptive again.
-            if (adaptiveFailedForCurrentStream != null && adaptiveFailedForCurrentStream != streamState.streamId) {
+            // Reset sticky fallback flag for adaptive streams
+            if (adaptiveFailedForCurrentStream != null) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
                 adaptiveFailedForCurrentStream = null
             }
             // A refresh nulls preparedStreamKey too, so the 403 state is cleared only when the
             // prepared stream really changes (A, B, then A again starts fresh).
+            if (muxedPinnedStreamId != streamState.streamId) muxedPinnedStreamId = null
             if (forbidden403StreamId != streamState.streamId) {
                 forbidden403StreamId = streamState.streamId
                 forbidden403Count = 0
