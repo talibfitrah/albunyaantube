@@ -6,6 +6,7 @@
 
 import apiClient from './api/client';
 import { toast } from '@/utils/toast';
+import { parseBackendTimestamp } from '@/utils/formatters';
 import type { PendingApprovalDto, ApprovalRequestDto, RejectionRequestDto } from '@/types/api';
 import type { CursorPage } from '@/types/pagination';
 
@@ -118,7 +119,8 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
     subscriberCount,
     videoCount,
     categories,
-    submittedAt: dto.submittedAt || new Date().toISOString(),
+    // Spring sends a Firestore Timestamp as {seconds, nanos}; '' (not "now") when absent.
+    submittedAt: parseBackendTimestamp(dto.submittedAt)?.toISOString() ?? '',
     submittedBy: dto.submittedBy || '',
     // The backend resolves the submitter against the user registry and puts the name and email
     // on the DTO; the OpenAPI schema hasn't been regenerated to declare them, hence the index

@@ -1026,7 +1026,7 @@ function getCategoryName(categoryId: string): string {
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
-  return date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
 }
 
 function formatNumber(num: number): string {

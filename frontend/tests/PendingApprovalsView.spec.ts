@@ -76,6 +76,7 @@ function makeItem(overrides: {
   id?: string;
   categories?: string[];
   source?: string;
+  submittedAt?: string;
 } = {}) {
   return {
     id: overrides.id ?? 'item-1',
@@ -85,7 +86,7 @@ function makeItem(overrides: {
     description: '',
     thumbnailUrl: '',
     categories: overrides.categories ?? [],
-    submittedAt: '2024-01-01T00:00:00Z',
+    submittedAt: overrides.submittedAt ?? '2024-01-01T00:00:00Z',
     submittedBy: 'user@example.com',
     source: overrides.source,
     status: 'PENDING' as const
@@ -132,6 +133,23 @@ describe('PendingApprovalsView — User-import badge', () => {
     await waitFor(() => {
       expect(screen.queryByText(/Phone import/)).toBeNull();
     });
+  });
+});
+
+describe('PendingApprovalsView — submitted date', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getPendingCountMock.mockResolvedValue(1);
+    getAllCategoriesMock.mockResolvedValue([]);
+  });
+
+  it('shows nothing, not "Invalid Date", when a row has no submitted time', async () => {
+    await renderView([makeItem({ source: 'USER_IMPORT', submittedAt: '' })]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/^Phone import · /)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
   });
 });
 

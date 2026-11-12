@@ -11,6 +11,24 @@ describe('ApprovalService', () => {
   });
 
   describe('getPendingApprovals', () => {
+    it('maps a {seconds, nanos} submittedAt to an ISO string, and a missing one to empty', async () => {
+      // Spring serialises com.google.cloud.Timestamp as {seconds, nanos}.
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: {
+          data: [
+            { id: 'v-1', type: 'VIDEO', title: 'Imported', submittedAt: { seconds: 1794466800, nanos: 234000000 }, submittedBy: 'u' },
+            { id: 'v-2', type: 'VIDEO', title: 'No date', submittedBy: 'u' }
+          ],
+          pageInfo: { nextCursor: null, hasNext: false }
+        }
+      });
+
+      const result = await getPendingApprovals();
+
+      expect(result.items[0].submittedAt).toBe(new Date(1794466800234).toISOString());
+      expect(result.items[1].submittedAt).toBe('');
+    });
+
     it('should fetch pending approvals from the canonical endpoint', async () => {
       const mockApprovals = [
         {
