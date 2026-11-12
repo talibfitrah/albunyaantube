@@ -53,6 +53,14 @@ class AboutLogoLayoutTest {
     @Test
     fun phoneShowsBrandLogo() = assertBrandLogo(inflateLogo())
 
+    /** The 800 px master in density-less drawable/ decoded as mdpi: 3200 px (~41 MB) at xxxhdpi. */
+    @Test
+    @Config(qualifiers = "xxxhdpi")
+    fun logoBitmapIsNotUpscaledOnDecode() {
+        val bitmap = (inflateLogo().drawable as android.graphics.drawable.BitmapDrawable).bitmap
+        assertTrue("logo decoded at ${bitmap.width} px", bitmap.width <= 800)
+    }
+
     @Test
     @Config(qualifiers = "sw600dp")
     fun tabletShowsBrandLogo() = assertBrandLogo(inflateLogo())
