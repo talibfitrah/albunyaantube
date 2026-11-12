@@ -67,8 +67,7 @@ public class ApprovalController {
      * - category: category ID (optional)
      * - limit: page size (default 20)
      * - cursor: pagination cursor (optional)
-     * - scope: MODERATOR_QUEUE|USER_IMPORTS (optional; omit for everything)
-     * - submittedBy: one person's imports — the by-user drill-down (optional)
+     * - submittedBy: one person's phone imports — the by-user drill-down (optional)
      */
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/pending")
@@ -78,7 +77,6 @@ public class ApprovalController {
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String cursor,
             @RequestParam(required = false) String submittedBy,
-            @RequestParam(required = false) String scope,
             @AuthenticationPrincipal FirebaseUserDetails user)
             throws ExecutionException, InterruptedException, TimeoutException {
 
@@ -94,18 +92,12 @@ public class ApprovalController {
                 if (category != null && !category.isBlank()) {
                     throw new IllegalArgumentException("category cannot be combined with submittedBy");
                 }
-                // The drill-down is a person's imports by definition. Accepting a scope here and
-                // ignoring it would answer a different question than the caller asked.
-                ApprovalService.SourceScope requested = parseScope(scope);
-                if (requested != null && requested != ApprovalService.SourceScope.USER_IMPORTS) {
-                    throw new IllegalArgumentException("submittedBy is only valid with scope=USER_IMPORTS");
-                }
-                return ResponseEntity.ok(approvalService.getMySubmissionsInScope(
-                        submittedBy, type, limit, cursor, ApprovalService.SourceScope.USER_IMPORTS));
+                return ResponseEntity.ok(approvalService.getPendingImportsBy(submittedBy, type, limit, cursor));
             }
 
+            // Everything pending, phone imports included: the Queue tab lists them all.
             CursorPageDto<PendingApprovalDto> result = approvalService.getPendingApprovals(
-                    type, category, limit, cursor, parseScope(scope));
+                    type, category, limit, cursor);
 
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException e) {
@@ -115,17 +107,6 @@ public class ApprovalController {
             log.error("Failed to get pending approvals - type={}, category={}, cursor={}",
                     type, category, cursor, e);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
-        }
-    }
-
-    private static ApprovalService.SourceScope parseScope(String scope) {
-        if (scope == null || scope.isBlank()) {
-            return null;
-        }
-        try {
-            return ApprovalService.SourceScope.valueOf(scope.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid scope: must be MODERATOR_QUEUE or USER_IMPORTS");
         }
     }
 

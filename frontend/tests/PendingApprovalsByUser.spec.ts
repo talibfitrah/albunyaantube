@@ -2,8 +2,8 @@
  * PendingApprovalsView — the by-user tab.
  *
  * Reviewing bulk imports from ordinary users is per-person work ("what did Ahmed send me"),
- * which a flat chronological queue cannot express. User imports move to their own tab, listed by
- * submitter with a count; the main queue keeps the moderator-curated submissions.
+ * which a flat chronological queue cannot express. The by-user tab lists them by submitter with a
+ * count; the main queue lists everything pending, phone imports included and marked as such.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/vue';
@@ -15,12 +15,13 @@ const getPendingSubmittersMock = vi.fn();
 const getMySubmissionsMock = vi.fn();
 const getPendingCountMock = vi.fn();
 const getAllCategoriesMock = vi.fn();
+const approveItemMock = vi.fn();
 
 vi.mock('@/services/approvalService', () => ({
   getPendingApprovals: (...args: unknown[]) => getPendingApprovalsMock(...args),
   getPendingSubmitters: (...args: unknown[]) => getPendingSubmittersMock(...args),
   getMySubmissions: (...args: unknown[]) => getMySubmissionsMock(...args),
-  approveItem: vi.fn().mockResolvedValue(undefined),
+  approveItem: (...args: unknown[]) => approveItemMock(...args),
   rejectItem: vi.fn().mockResolvedValue(undefined),
   getPendingCount: () => getPendingCountMock()
 }));
@@ -69,23 +70,58 @@ beforeEach(() => {
   getAllCategoriesMock.mockResolvedValue([{ id: 'cat-1', label: 'Education', subcategories: [] }]);
   getPendingSubmittersMock.mockResolvedValue([]);
   getPendingApprovalsMock.mockResolvedValue({ items: [], nextCursor: null });
+  approveItemMock.mockResolvedValue(undefined);
 });
 
-describe('the queue and the by-user tab are cleanly split', () => {
-  it('asks the server for moderator submissions only', async () => {
+describe('the queue lists everything pending, phone imports included', () => {
+  it('asks the server for every pending item and marks the phone imports with who sent them', async () => {
     getPendingApprovalsMock.mockResolvedValue({
-      items: [makeItem('a', 'Moderator Pick', 'MODERATOR')],
+      items: [makeItem('a', 'Moderator Pick', 'MODERATOR'), makeItem('b', 'Ahmeds Import', 'USER_IMPORT')],
+      nextCursor: null
+    });
+
+    const { container } = await renderView();
+
+    await waitFor(() => expect(screen.getByText('Ahmeds Import')).toBeTruthy());
+    expect(getPendingApprovalsMock.mock.calls[0][0].scope).toBeUndefined();
+    const badges = container.querySelectorAll('.source-user-import');
+    expect(badges.length).toBe(1);
+    expect(badges[0].textContent?.trim()).toBe('Phone import · Ahmed');
+  });
+
+  it('approves a phone import from the queue exactly as the by-user tab does', async () => {
+    getPendingApprovalsMock.mockResolvedValue({
+      items: [makeItem('b', 'Ahmeds Import', 'USER_IMPORT')],
       nextCursor: null
     });
 
     await renderView();
+    await waitFor(() => expect(screen.getByText('Ahmeds Import')).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: /approve for this user/i }));
 
-    await waitFor(() => expect(screen.getByText('Moderator Pick')).toBeTruthy());
-    // Server-side. Filtering a fetched page in the browser let the list come back empty with
-    // more pages behind it, and left the pending badge counting rows the queue never showed.
-    expect(getPendingApprovalsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ scope: 'MODERATOR_QUEUE' })
-    );
+    await waitFor(() => expect(approveItemMock).toHaveBeenCalledWith('b', 'channel', undefined, undefined, 'PERSONAL'));
+    await waitFor(() => expect(screen.queryByText('Ahmeds Import')).toBeNull());
+  });
+
+  it('refreshes the by-user counts after a phone import is decided in the queue', async () => {
+    getPendingSubmittersMock.mockResolvedValue([
+      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 1 }
+    ]);
+    getPendingApprovalsMock.mockResolvedValue({
+      items: [makeItem('b', 'Ahmeds Import', 'USER_IMPORT')],
+      nextCursor: null
+    });
+
+    await renderView();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'By user (1)' })).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: /approve for this user/i }));
+    await waitFor(() => expect(screen.queryByText('Ahmeds Import')).toBeNull());
+    // The tally it showed is out of date now: no number until the roll-up is read again.
+    expect(screen.getByRole('button', { name: 'By user' })).toBeTruthy();
+
+    getPendingSubmittersMock.mockResolvedValue([]);
+    await fireEvent.click(screen.getByRole('button', { name: 'By user' }));
+    await waitFor(() => expect(getPendingSubmittersMock).toHaveBeenCalledTimes(2));
   });
 
   it('fetches exactly one page per load', async () => {
@@ -100,9 +136,9 @@ describe('the queue and the by-user tab are cleanly split', () => {
     expect(getPendingApprovalsMock).toHaveBeenCalledTimes(1);
   });
 
-  it('badges everything pending and splits it across the tab labels', async () => {
-    // 12 pending in total, 5 of them phone imports. The header says 12, the same number as the
-    // Dashboard and the Content Library "Pending" totals; the tabs say which part each one lists.
+  it('labels the queue with everything pending and the by-user tab with the imports', async () => {
+    // 12 pending in total, 5 of them phone imports. The header and the Queue tab say 12, the same
+    // number as the Dashboard and the Content Library "Pending" totals: the queue lists them all.
     getPendingCountMock.mockResolvedValue(12);
     getPendingSubmittersMock.mockResolvedValue([
       { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 3 },
@@ -115,7 +151,7 @@ describe('the queue and the by-user tab are cleanly split', () => {
 
     const { container } = await renderView();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /queue \(7\)/i })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /queue \(12\)/i })).toBeTruthy());
     expect(screen.getByRole('button', { name: /by user \(5\)/i })).toBeTruthy();
     expect(container.querySelector('.stat-value')?.textContent).toBe('12');
   });
@@ -177,13 +213,11 @@ describe('the by-user tab', () => {
     await waitFor(() => expect(screen.getByText('Ahmed')).toBeTruthy());
     await fireEvent.click(screen.getByText('Ahmed'));
 
-    // The drill-down shows the person's imports — the source filter that hides them from the
-    // main queue must not hide them here too — and still marks them as user imports.
+    // The drill-down shows the person's imports, still marked as user imports.
     await waitFor(() => expect(screen.getByText('Ahmeds Import')).toBeTruthy());
     expect(screen.getByText('User import')).toBeTruthy();
-    // The drill-down is that person's imports; the queue scope must not narrow it further.
     expect(getPendingApprovalsMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ submittedBy: 'uid-ahmed', scope: undefined })
+      expect.objectContaining({ submittedBy: 'uid-ahmed' })
     );
   });
 
@@ -199,49 +233,8 @@ describe('the by-user tab', () => {
   });
 });
 
-describe('waiting imports are never hidden behind an empty queue', () => {
-  it('opens on the by-user tab when the queue is empty and imports wait', async () => {
-    getPendingCountMock.mockResolvedValue(5);
-    getPendingSubmittersMock.mockResolvedValue([
-      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
-    ]);
-
-    await renderView();
-
-    await waitFor(() => expect(screen.getByText('Ahmed')).toBeTruthy());
-    expect(screen.getByRole('button', { name: 'Queue (0)' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'By user (5)' }).classList.contains('active')).toBe(true);
-  });
-
-  it('neither switches nor claims an empty queue when the total is unavailable', async () => {
-    getPendingCountMock.mockResolvedValue(-1);
-    getPendingSubmittersMock.mockResolvedValue([
-      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
-    ]);
-
-    await renderView();
-
-    await waitFor(() => expect(screen.getByRole('button', { name: 'By user (5)' })).toBeTruthy());
-    const queueTab = screen.getByRole('button', { name: 'Queue' });
-    expect(queueTab.classList.contains('active')).toBe(true);
-  });
-
-  it('does not switch when the admin changed a filter while the counts loaded', async () => {
-    getPendingCountMock.mockResolvedValue(5);
-    let releaseSubmitters!: (v: unknown) => void;
-    getPendingSubmittersMock.mockReturnValue(new Promise(r => { releaseSubmitters = r; }));
-
-    await renderView();
-    await fireEvent.click(screen.getByRole('button', { name: 'Playlists' }));
-    releaseSubmitters([{ uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }]);
-
-    await waitFor(() => expect(screen.getByRole('button', { name: 'By user (5)' })).toBeTruthy());
-    await new Promise(r => setTimeout(r, 50)); // let the on-load switch run if it is going to
-    expect(screen.getByRole('button', { name: 'Queue (0)' }).classList.contains('active')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Playlists' }).classList.contains('active')).toBe(true);
-  });
-
-  it('a late queue reply never replaces the submitter list opened after the switch', async () => {
+describe('stale replies', () => {
+  it('a late queue reply never replaces the submitter list opened after a tab switch', async () => {
     getPendingCountMock.mockResolvedValue(5);
     getPendingSubmittersMock.mockResolvedValue([
       { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
@@ -252,6 +245,7 @@ describe('waiting imports are never hidden behind an empty queue', () => {
       .mockResolvedValue({ items: [makeItem('x', 'Ahmeds Import', 'USER_IMPORT')], nextCursor: null });
 
     await renderView();
+    await fireEvent.click(screen.getByRole('button', { name: /by user/i }));
     await waitFor(() => expect(screen.getByText('Ahmed')).toBeTruthy());
     await fireEvent.click(screen.getByText('Ahmed'));
     await waitFor(() => expect(screen.getByText('Ahmeds Import')).toBeTruthy());
@@ -259,23 +253,5 @@ describe('waiting imports are never hidden behind an empty queue', () => {
     releaseQueue({ items: [], nextCursor: null });
     await new Promise(r => setTimeout(r, 50));
     expect(screen.getByText('Ahmeds Import')).toBeTruthy();
-  });
-
-  it('stays on the queue when it has items of its own', async () => {
-    getPendingCountMock.mockResolvedValue(7);
-    getPendingSubmittersMock.mockResolvedValue([
-      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
-    ]);
-    getPendingApprovalsMock.mockResolvedValue({
-      items: [makeItem('a', 'Moderator Pick', 'MODERATOR')],
-      nextCursor: null
-    });
-
-    await renderView();
-
-    await waitFor(() => expect(screen.getByText('Moderator Pick')).toBeTruthy());
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Queue (2)' })).toBeTruthy());
-    expect(screen.getByRole('button', { name: 'Queue (2)' }).classList.contains('active')).toBe(true);
-    expect(screen.getByText('Moderator Pick')).toBeTruthy();
   });
 });

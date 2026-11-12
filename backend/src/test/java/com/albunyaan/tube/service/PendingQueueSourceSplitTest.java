@@ -28,13 +28,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * The review queue holds two kinds of work that are reviewed differently: content a moderator
- * added through the dashboard, and bulk imports sent from people's phones. Every submission
- * records which path it came in on, so the two can be separated cleanly.
+ * The review queue lists everything pending. The by-user drill-down lists one person's phone
+ * imports: every submission records which path it came in on, so those separate cleanly.
  *
- * <p>The split is done here rather than in the browser. Filtering a fetched page client-side let
- * the queue hand back a page with nothing on it while more pages waited behind it, and made the
- * pending badge count rows the queue did not show.
+ * <p>The drill-down filter is applied here rather than in the browser. Filtering a fetched page
+ * client-side let it hand back a page with nothing on it while more pages waited behind it.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -71,9 +69,9 @@ class PendingQueueSourceSplitTest {
         return c;
     }
 
-    /** One page of pending channels, with no page behind it. */
+    /** One page of the person's pending channels, with no page behind it. */
     private void stubOnePage(Channel... items) throws Exception {
-        when(approvalRepository.findPendingChannelsWithCursor(anyInt(), any()))
+        when(approvalRepository.findChannelsBySubmitterAndStatus(any(), any(), anyInt(), any()))
                 .thenReturn(new ApprovalRepository.PaginatedResult<>(List.of(items), null, false));
     }
 
@@ -84,70 +82,46 @@ class PendingQueueSourceSplitTest {
     }
 
     @Test
-    void theModeratorQueueLeavesOutPhoneImports() throws Exception {
-        stubOnePage(channel("mod", "MODERATOR"), channel("imported", "USER_IMPORT"));
+    void theQueueListsEverythingPendingPhoneImportsIncluded() throws Exception {
+        when(approvalRepository.findPendingChannelsWithCursor(anyInt(), any()))
+                .thenReturn(new ApprovalRepository.PaginatedResult<>(List.of(
+                        channel("mod", "MODERATOR"), channel("imported", "USER_IMPORT"), channel("legacy", null)),
+                        null, false));
 
-        var page = approvalService.getPendingApprovals(
-                "CHANNEL", null, 20, null, ApprovalService.SourceScope.MODERATOR_QUEUE);
+        var page = approvalService.getPendingApprovals("CHANNEL", null, 20, null);
 
-        assertEquals(List.of("mod"), idsFrom(page));
+        assertEquals(List.of("mod", "imported", "legacy"), idsFrom(page));
     }
 
     @Test
-    void aSubmissionFromBeforeWeRecordedTheSourceStaysInTheModeratorQueue() throws Exception {
-        // Those rows predate source tracking. The queue is where they have always appeared, and
-        // it is the view that hides nothing — sending them to the by-user tab instead would make
-        // them reachable only through a list they cannot be grouped into.
-        stubOnePage(channel("legacy", null), channel("imported", "USER_IMPORT"));
+    void theDrillDownShowsOnlyThatPersonsPhoneImports() throws Exception {
+        // A row from before we recorded the source is not an import: it was never counted as one.
+        stubOnePage(channel("mod", "MODERATOR"), channel("imported", "USER_IMPORT"), channel("legacy", null));
 
-        var page = approvalService.getPendingApprovals(
-                "CHANNEL", null, 20, null, ApprovalService.SourceScope.MODERATOR_QUEUE);
-
-        assertEquals(List.of("legacy"), idsFrom(page));
-    }
-
-    @Test
-    void theByUserViewShowsOnlyPhoneImports() throws Exception {
-        stubOnePage(channel("mod", "MODERATOR"), channel("imported", "USER_IMPORT"));
-
-        var page = approvalService.getPendingApprovals(
-                "CHANNEL", null, 20, null, ApprovalService.SourceScope.USER_IMPORTS);
+        var page = approvalService.getPendingImportsBy("uid-ahmed", "CHANNEL", 20, null);
 
         assertEquals(List.of("imported"), idsFrom(page));
     }
 
     @Test
-    void noScopeAsksForEverything() throws Exception {
-        stubOnePage(channel("mod", "MODERATOR"), channel("imported", "USER_IMPORT"), channel("legacy", null));
-
-        var page = approvalService.getPendingApprovals("CHANNEL", null, 20, null, null);
-
-        assertEquals(3, page.getData().size());
-    }
-
-    @Test
     void keepsFetchingRatherThanHandingBackAPageWithNothingOnIt() throws Exception {
-        // Filtering one page at a time is what let the queue show its empty state above a
-        // "Load more" button: the first page was all imports, and nobody looked further.
         java.util.concurrent.atomic.AtomicInteger call = new java.util.concurrent.atomic.AtomicInteger();
-        when(approvalRepository.findPendingChannelsWithCursor(anyInt(), any())).thenAnswer(inv ->
+        when(approvalRepository.findChannelsBySubmitterAndStatus(any(), any(), anyInt(), any())).thenAnswer(inv ->
                 call.getAndIncrement() == 0
-                        ? new ApprovalRepository.PaginatedResult<>(List.of(channel("i1", "USER_IMPORT")), "cursor-1", true)
-                        : new ApprovalRepository.PaginatedResult<>(List.of(channel("mod", "MODERATOR")), null, false));
+                        ? new ApprovalRepository.PaginatedResult<>(List.of(channel("mod", "MODERATOR")), "cursor-1", true)
+                        : new ApprovalRepository.PaginatedResult<>(List.of(channel("i1", "USER_IMPORT")), null, false));
 
-        var page = approvalService.getPendingApprovals(
-                "CHANNEL", null, 20, null, ApprovalService.SourceScope.MODERATOR_QUEUE);
+        var page = approvalService.getPendingImportsBy("uid-ahmed", "CHANNEL", 20, null);
 
-        assertTrue(idsFrom(page).contains("mod"), "the queue gave up before reaching a moderator item");
-        assertEquals(2, call.get(), "should have gone past the all-imports page");
+        assertTrue(idsFrom(page).contains("i1"), "the drill-down gave up before reaching an import");
+        assertEquals(2, call.get(), "should have gone past the page with no imports");
     }
 
     @Test
-    void stopsWhenTheQueueRunsOutRatherThanLoopingForever() throws Exception {
-        stubOnePage(channel("i1", "USER_IMPORT"));
+    void stopsWhenThePersonsQueueRunsOutRatherThanLoopingForever() throws Exception {
+        stubOnePage(channel("mod", "MODERATOR"));
 
-        var page = approvalService.getPendingApprovals(
-                "CHANNEL", null, 20, null, ApprovalService.SourceScope.MODERATOR_QUEUE);
+        var page = approvalService.getPendingImportsBy("uid-ahmed", "CHANNEL", 20, null);
 
         assertTrue(page.getData().isEmpty());
     }
