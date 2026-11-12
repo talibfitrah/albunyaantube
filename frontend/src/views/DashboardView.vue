@@ -72,7 +72,7 @@ import { useI18n } from 'vue-i18n';
 import { useDashboardMetrics } from '@/composables/useDashboardMetrics';
 import type { DashboardCard } from '@/composables/useDashboardMetrics';
 import type { DashboardTimeframe } from '@/types/dashboard';
-import { formatDateTime, formatNumber } from '@/utils/formatters';
+import { formatDateTime, formatNumber, parseBackendTimestamp } from '@/utils/formatters';
 import ErrorRetry from '@/components/common/ErrorRetry.vue';
 
 const { t, locale } = useI18n();
@@ -166,8 +166,9 @@ function buildDisplayCards(source: DashboardCard[], localeCode: string) {
         ? 'dashboard.cards.validationError'
         : 'dashboard.cards.validationCompleted';
 
-      const lastRun = metric.lastRunAt
-        ? formatDateTime(metric.lastRunAt, localeCode)
+      const lastRunAt = parseBackendTimestamp(metric.lastRunAt);
+      const lastRun = lastRunAt
+        ? formatDateTime(lastRunAt.toISOString(), localeCode)
         : t('dashboard.cards.validationNever');
 
       return {

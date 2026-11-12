@@ -60,6 +60,21 @@ describe('DashboardView', () => {
     expect(screen.getByText('48')).toBeInTheDocument();
   });
 
+  it('renders a {seconds, nanos} validation lastRunAt as a date, not as JSON', async () => {
+    // Spring serialises com.google.cloud.Timestamp as {seconds, nanos}, not an ISO string.
+    const response = structuredClone(baseResponse);
+    (response.data.videoValidation as { lastRunAt: unknown }).lastRunAt = { seconds: 1794466800, nanos: 234000000 };
+    fetchDashboardMetricsMock.mockResolvedValue(response);
+
+    renderDashboard();
+
+    const expected = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(
+      new Date(1794466800234)
+    );
+    expect(await screen.findByText(`Last run: ${expected}`)).toBeInTheDocument();
+    expect(screen.queryByText(/seconds/)).toBeNull();
+  });
+
   it('displays warnings surfaced by the API', async () => {
     const responseWithWarning = structuredClone(baseResponse);
     responseWithWarning.meta.warnings = ['STALE_DATA'];
