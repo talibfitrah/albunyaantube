@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/ui/settings/DeveloperSettingsDialog.kt
+  s_8a936fc306f37b::t_fb36f770de4f67 125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30a503b499a36da830bb1b12180af908f780beae",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
