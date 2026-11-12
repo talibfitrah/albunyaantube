@@ -1,0 +1,66 @@
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_8a936fc306f37b::t_2525551b853cd9 884
+  s_8a936fc306f37b::t_9b6dbf0b5e5419 264-265,269-272
+  s_8a936fc306f37b::t_ecc2753ac65586 905-907
+  s_8a936fc306f37b::t_9e2ef5473b1714 20
+  s_8a936fc306f37b::t_a66e42f1abb0bf 1012,1014,1017-1024
+  s_8a936fc306f37b::t_ba4e57b7eec2f7 1025
+ios/FitrahTube/Features/Player/BackgroundPlaybackController.swift
+  s_8a936fc306f37b::t_159710d7df317b 44,52
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/TVAdaptive.swift
+  s_8a936fc306f37b::t_80b80f7acda888 170-179
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_8a936fc306f37b::t_0634f28316fd04 529,532-534
+  s_8a936fc306f37b::t_a3682321d78cdf 291,295
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/LiveResolveTests.swift
+  s_8a936fc306f37b::t_93f3848435861d 108-109,112-118
+  s_8a936fc306f37b::t_dcd369b055ee8a 88-90
+  s_8a936fc306f37b::t_795b84d8078b26 86-87,91-107,110-111,119-120
+  s_8a936fc306f37b::t_e62959276ba873 1
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_8a936fc306f37b::t_d4eb6c4169a6ae 1806-1807
+  s_8a936fc306f37b::t_6fe53b1f68aa44 528-530,532-534
+  s_8a936fc306f37b::t_df38e4898b839f 1851
+  s_8a936fc306f37b::t_dc711134b6550d 1773
+  s_8a936fc306f37b::t_9200ca77e2a672 1792
+  s_8a936fc306f37b::t_4278e85e540868 1844-1850
+  s_8a936fc306f37b::t_a8034dc17497ef 676-677,685,690,693-695,700-701,707
+  s_8a936fc306f37b::t_75f9e527383eb5 678-679,681,684,691-692,696-699,702-706,708-709
+ios/FitrahTubeTests/PlayerViewModelTests.swift
+  s_8a936fc306f37b::t_a487ea38ec9821 187-192
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_8a936fc306f37b::t_90f368a9eba962 855-859
+  s_8a936fc306f37b::t_21c610e2fbec16 236-237,240
+  s_8a936fc306f37b::t_8518741cb651d6 717-720,728-732
+ios/FitrahTube/Features/Player/HDStager.swift
+  s_8a936fc306f37b::t_8f0cc46db328fd 56-57,60,62
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_8a936fc306f37b::t_b4737c5b5b6163 807-823
+ios/FitrahTubeTests/HDStagerTests.swift
+  s_8a936fc306f37b::t_ebad2a876a9576 20-24,61-63,66-68
+ios/FitrahTubeTests/PlayerViewModelQueueTests.swift
+  s_8a936fc306f37b::t_117a18d2abc7d3 311-363
+  s_8a936fc306f37b::t_feb51cbab663b7 364-412
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Models.swift
+  s_8a936fc306f37b::t_2d737cc4ecdb28 88-92
+ios/FitrahTubeTests/PlayerHostTests.swift
+  s_8a936fc306f37b::t_786b215e30e32f 748-756,764-782
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverUpgradeTests.swift
+  s_8a936fc306f37b::t_9ebdfd3e28cc80 135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "72663ec9554206be14f02bf96a652451e10d33ae",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
