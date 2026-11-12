@@ -192,6 +192,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
         coordinator.stopMonitoring()
         coordinator.model?.currentItem = nil
         coordinator.model?.currentPlayer = nil
+        // A PiP window can keep the controller (and the lock screen) past this: its next/previous would change lecture
+        // under a window still playing the old one, with no host left to swap it in.
+        coordinator.background.onNextTrack = nil
+        coordinator.background.onPreviousTrack = nil
         // Task 5: the audio-session detach and the player release are the two things a live PiP
         // window still needs, so they go through the policy instead of running unconditionally.
         coordinator.finishTeardown(of: controller, hostDismantled: true)
@@ -210,7 +214,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     }
 
     /// Task 4: republish the lock-screen surface on every pass -- which is every item replacement
-    /// too (the audio-only swap in and out, a recovery `replaceCurrentItem`, a quality pick all
+    /// too (the audio-only toggle, a recovery `replaceCurrentItem`, a quality pick all
     /// arrive through `updateUIViewController`), not just the first prepare. A state with nothing
     /// playable retracts the surface instead of leaving the previous video's metadata standing.
     private func applyNowPlaying(context: Context) {
@@ -226,104 +230,45 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // Read live on every pass (ruling 34): a Background-play flip made in Settings while the
         // player is open must take effect on the next background transition, not on the next launch.
         background.backgroundPlay = effectiveBackgroundPlay
-        background.userAudioOnly = model.audioOnly
-        background.audioOnlyAvailable = PlayerViewModel.audioOnlyAvailable(for: state)
-        background.onPolicyAction = Self.policyHandler(model: model, player: player,
-                                                       coordinator: context.coordinator)
-        // CF-B1-3: awaited by the controller BEFORE the foreground policy runs (and skipped while
-        // PiP is live), so the restore above builds its item from the freshly resolved stream.
+        background.onPolicyAction = Self.policyHandler(coordinator: context.coordinator)
+        // CF-B1-3 (skipped by the controller while PiP is live).
         background.onWillEnterForeground = { [weak model] in
             await model?.reResolveIfExpiring()
         }
+        background.onNextTrack = Self.trackSkip(model, by: 1)
+        background.onPreviousTrack = Self.trackSkip(model, by: -1)
         context.coordinator.adopt(model)
         background.attach(player: player)
     }
 
-    /// `BackgroundPlaybackController.onPolicyAction`, built here rather than inline above so the
-    /// tests drive the REAL production closure. Fix round 2: the inline version never passed the
-    /// coordinator, so `applyPolicyAction`'s `coordinator:` defaulted to nil in the app and MIN-4's
-    /// observer re-arm ran only in the tests that passed one by hand -- every real swap left the
-    /// recovery observers on the outgoing item.
+    /// `BackgroundPlaybackController.onPolicyAction`, built here so the tests drive the REAL production closure. Weak:
+    /// the controller is owned by the coordinator, so a strong one would close the cycle.
     ///
-    /// Fix round 1, C2: the handler must never swap against a stale `state`. It is REASSIGNED on
-    /// every update pass, and it reads `model.state` at ACTION time rather than capturing this
-    /// pass's copy -- Task 6's pre-emptive re-resolve settles between the foreground notification
-    /// and the `.restoreVideo` it produces, and SwiftUI has not re-run the host by then, so a
-    /// captured copy would restore the very URL the refresh just replaced.
+    /// Cubic A6: the controller has paused the player, but a failure already had, so a replacement built during its
+    /// re-resolve cannot read this pause off the player. Drop the failure's resume intent instead: a stall's replacement
+    /// follows the live state. Headphones out, the remote pause, and an interruption iOS ends without `.shouldResume`
+    /// (fix r5 N4-1); an interruption's begin reports no `.pause`, and its end resumes the replacement when iOS says so
+    /// (fix r4 N-2).
     ///
-    /// Every capture is weak: the controller is owned by the coordinator, so a strong coordinator
-    /// here would close the cycle coordinator -> controller -> handler -> coordinator.
-    static func policyHandler(model: PlayerViewModel?, player: AVPlayer?,
-                              coordinator: Coordinator?) -> (PlaybackPolicyAction) -> Void {
-        { [weak model, weak player, weak coordinator] action in
-            guard let model else { return }
-            Self.applyPolicyAction(action, state: model.state, player: player, model: model,
-                                   coordinator: coordinator)
+    /// A pause while the next lecture still resolves (a lock-screen skip, an auto-advance) is that lecture's too: the
+    /// hold keeps the builder from starting it (`heldByOpen`), and the user's Play releases it.
+    static func policyHandler(coordinator: Coordinator?) -> (PlaybackPolicyAction) -> Void {
+        { [weak coordinator] action in
+            guard action == .pause, let coordinator else { return }
+            coordinator.dropResumeIntent()
+            if let model = coordinator.model, model.hostVideoId != model.args.videoId { model.heldByOpen = true }
         }
     }
 
-    /// The `.swapToAudioOnly` / `.restoreVideo` half of the background policy, split out of the
-    /// closure above so `BackgroundPlaybackControllerTests` can drive the real wiring end to end
-    /// (T2-1) instead of only the pure decision table.
-    ///
-    /// ponytail: an automatic background swap costs one re-buffer going in and one coming out (both
-    /// are local URL swaps, no network). Accepted: spec §10 asks for the itag 140 swap on background
-    /// so the phone stops pulling video segments off-screen. Skipped: the "or when backgrounded on
-    /// cellular" variant from plan §6.5 -- the setting already carries user intent.
-    static func applyPolicyAction(_ action: PlaybackPolicyAction, state: StreamState,
-                                  player: AVPlayer?, model: PlayerViewModel?,
-                                  coordinator: Coordinator? = nil) {
-        switch action {
-        case .swapToAudioOnly, .restoreVideoNow:
-            // Fix round 1, C2: `model.audioOnly` alone only SCHEDULES a SwiftUI update, and there
-            // is no guarantee `updateUIViewController` runs before the app suspends -- the phone
-            // could keep pulling video segments for the whole background stint, which is the one
-            // thing this swap exists to stop. So the BACKGROUND swap happens here, synchronously,
-            // on the live player. `player(for:replacing:audioOnly:)` reuses that same `AVPlayer`
-            // (position and playWhenReady carried across by its own replace path); it never builds
-            // a second one.
-            //
-            // Fix round 2: `.restoreVideoNow` is the mirror image and shares this path for the same
-            // reason -- it is the auto-PiP undo, emitted mid-home-swipe, and a window opened over
-            // the itag 140 item is black until the user comes back. (The ORDINARY foreground
-            // restore is `.restoreVideo` below, which stays deferred.)
-            let audioOnly = action == .swapToAudioOnly
-            if let player {
-                _ = Self.player(for: state, replacing: player, audioOnly: audioOnly, onRefused: model?.hdRefusalHook(for: state.resolved))
-                // MIN-4 (final review): that replace built a NEW `AVPlayerItem`, and every recovery
-                // observer (status KVO, failed-to-play-to-end, the wall-clock stall sampler) is
-                // per-item -- left on the outgoing one, an audio-only stream that dies in the
-                // background would never reach the recovery ladder. Same hook
-                // `updateUIViewController` uses; it no-ops if the pair is already the observed one.
-                // B5 Task 4: re-arm with the action the outgoing item HAD (`.advance` on the main
-                // player) -- `.none` here silently lost background auto-advance, the very thing
-                // reconciliation note 2 promises. `.shorts` never reaches this path anyway
-                // (`AudioSessionPolicy.decide(.enteredBackground, …)` needs backgroundPlay true).
-                if let item = player.currentItem, let coordinator {
-                    coordinator.observe(item: item, player: player, model: model, isLive: state.isLive,
-                                        playToEnd: coordinator.playToEnd)
-                }
-            }
-            model?.audioOnly = audioOnly
-        case .restoreVideo:
-            // IMP-1 (final review): NO synchronous replace on the way back. The foreground
-            // transition runs this on a 2 s deadline, so a TTL refresh can still be in flight --
-            // swapping here against the state of the moment and then letting the update pass swap
-            // again against the refreshed one is two `replaceCurrentItem` calls, and the second
-            // restarts playback from 0. One replace, owned by the foreground update pass, against
-            // whichever `Resolved` is current when it runs. Nothing is being pulled in the
-            // meantime that the user did not ask for: the player is still on the audio rendition.
-            model?.audioOnly = false
-        case .pause:
-            // Cubic A6: the controller has paused the player, but a failure already had, so a
-            // replacement built during its re-resolve cannot read this pause off the player. Drop
-            // the failure's resume intent instead: a stall's replacement follows the live state.
-            // Headphones out, the remote pause, and an interruption iOS ends without `.shouldResume`
-            // (fix r5 N4-1); an interruption's begin reports no `.pause`, and its end resumes the
-            // replacement when iOS says so (fix r4 N-2).
-            coordinator?.dropResumeIntent()
-        default:
-            return
+    /// The lock screen's next/previous lecture: the queue neighbour `offset` away, else nil (the button is disabled).
+    /// An Up Next pick without the loading card: a `.loading` hop dismantles this host, and with it the audio session
+    /// that keeps a locked phone playing. The neighbour is read again at the press: a skip that lands before SwiftUI
+    /// reruns this pass must not replay the index it captured.
+    static func trackSkip(_ model: PlayerViewModel, by offset: Int) -> (() -> Void)? {
+        guard model.queueNeighbour(offset) != nil else { return nil }
+        return { [weak model] in
+            guard let model, let index = model.queueNeighbour(offset) else { return }
+            PlayerScreen.playUpNext(model, at: index, showLoading: false)
         }
     }
 
@@ -421,9 +366,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private var failedToEndObserver: NSObjectProtocol?
         /// B4: the repeat-one loop (`.restart`); B5: the auto-advance (`.advance`). Per item.
         private var endObserver: NSObjectProtocol?
-        /// The action the current item was armed with, so the background audio-only swap re-arms
-        /// the replacement item with the SAME one (B5 Task 4: `.none` there lost background
-        /// auto-advance).
+        /// The action the current item was armed with (the HD stager's `loops`).
         private(set) var playToEnd: PlayToEndAction = .none
         /// B5: the video the last build/update pass was for (`shouldPreservePosition`).
         var lastVideoId: String?
@@ -471,7 +414,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// a teardown drops it (`stopObserving`): whatever replaced the dead item owns the screen.
         private var parkedFailure: (event: RecoveryEvent, status: Int?)?
         /// Headphones out, a remote pause, or an interruption's end without `.shouldResume` while
-        /// recovery's re-resolve is out (`applyPolicyAction(.pause)`, Cubic A6; fix r5 N4-1). Not an
+        /// recovery's re-resolve is out (`policyHandler`, Cubic A6; fix r5 N4-1). Not an
         /// interruption's begin (fix r4 N-2).
         func dropResumeIntent() { resumeOnNextItem = false }
 
@@ -545,17 +488,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
         // MARK: - AVPlayerViewControllerDelegate (Task 5)
 
-        /// WILL, not DID: `AudioSessionPolicy.decide(.enteredBackground, …)` reads
-        /// `pictureInPictureActive`, and the ordering of this callback against
-        /// `didEnterBackgroundNotification` is not guaranteed -- flipping it on the DID callback
-        /// would let an auto-PiP background transition be read as a plain background and swap the
-        /// item to audio-only, blanking the PiP window it just opened.
+        /// WILL, not DID: the HD stager and the foreground re-resolve read `pictureInPictureActive`, and the ordering
+        /// of this callback against the app's background transition is not guaranteed.
         func playerViewControllerWillStartPictureInPicture(_ controller: AVPlayerViewController) {
             background.pictureInPictureActive = true
-            // IMP-2 (final review): flipping the flag only stops a FUTURE swap. When
-            // `didEnterBackgroundNotification` won the race, the item is ALREADY the itag 140 audio
-            // rendition and the window AVKit is opening would have no video track to show.
-            background.undoAutoSwapIfAny()
         }
 
         func playerViewControllerDidStopPictureInPicture(_ controller: AVPlayerViewController) {
@@ -600,8 +536,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
         func observe(item: AVPlayerItem, player: AVPlayer, model: PlayerViewModel?, isLive: Bool,
                      playToEnd: PlayToEndAction) {
-            // Optional so the background swap's re-arm (MIN-4) can go through this one path without
-            // carrying a VM it has no reason to know about; a nil never CLEARS the live one.
+            // Optional for the tests that drive the observers without a VM; a nil never CLEARS the live one.
             if let model { self.model = model }
             guard item !== observedItem || player !== observedPlayer else { return }
             // Recovery's replacement on the same player: the builder's `wasPlaying` read the failure's
@@ -1077,7 +1012,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         switch stream {
         case .hls(let url, _, let audioOnlyURL, _, _):
             // The `?? url` fallback is belt-and-braces: `PlayerViewModel.audioOnlyAvailable` hides
-            // the toggle (and gates the automatic swap) when there is no itag 140 URL, so a true
+            // the toggle when there is no itag 140 URL, so a true
             // `audioOnly` with a nil rendition should be unreachable -- and if it ever is reached,
             // video is the right thing to keep playing.
             return audioOnly ? (audioOnlyURL ?? url) : url

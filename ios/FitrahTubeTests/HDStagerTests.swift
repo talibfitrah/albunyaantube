@@ -347,7 +347,7 @@ struct HDStagerTests {
 
     // MARK: - fix round 1
 
-    /// The background audio swap and its undo rebuild the HD item on a NEW asset; its loader still reports a refused
+    /// The audio-only toggle off rebuilds the HD item on a NEW asset; its loader still reports a refused
     /// `sidx` (R42), through the view model's hook, which holds only `HDUpgrade`.
     @Test func aRebuiltHDAssetStillReportsARefusal() async throws {
         let reports = Reports()
@@ -356,7 +356,8 @@ struct HDStagerTests {
                                  hd: HDUpgrade(upgrade: { _ in nil }, failed: { _ in }, refused: { reports.refuse() }))
         let state = StreamState.ready(Self.hd())
         let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: true))
-        PlayerHostView.applyPolicyAction(.restoreVideoNow, state: state, player: player, model: vm)
+        _ = PlayerHostView.player(for: state, replacing: player, audioOnly: false,
+                                  onRefused: vm.hdRefusalHook(for: state.resolved))
         let hook = try #require(Self.refusalHook(of: player.currentItem))
         hook()
         for _ in 0..<100 where reports.refused == 0 { try await Task.sleep(for: .milliseconds(5)) }

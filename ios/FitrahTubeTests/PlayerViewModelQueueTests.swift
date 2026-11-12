@@ -223,6 +223,91 @@ struct PlayerViewModelQueueTests {
         #expect(vm.queue.items.isEmpty)
     }
 
+    /// The lock screen's next/previous (`PlayerHostView.trackSkip`): the neighbours of the lecture on screen, and a
+    /// skip that never shows the loading card -- a `.loading` hop dismantles the host and its audio session, which is
+    /// what keeps a locked phone playing.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenSkipPlaysTheNeighbourWithoutTheLoadingCard() async throws {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        #expect(vm.queueNeighbour(-1) == nil)
+        let next = try #require(vm.queueNeighbour(1))
+        resolver.hold("b")
+        let skip = Task { await vm.play(at: next, showLoading: false) }
+        await resolver.waitUntilCalled(count: 4)           // a, b, c at open; b on .player, held
+        #expect(vm.state != .loading)
+        resolver.release(id: "b")
+        await skip.value
+        #expect(vm.args.videoId == "b")
+        #expect(vm.queueNeighbour(-1) == 0)
+        #expect(vm.queueNeighbour(1) == 2)
+        #expect(vm.queueNeighbour(2) == nil)
+    }
+
+    /// Codex adversarial P2: with no loading card the outgoing lecture keeps playing while the skip resolves, so its
+    /// end can land meanwhile -- it is the end of the lecture on screen, not of the one the user skipped to.
+    @Test(.timeLimit(.minutes(1))) func theOutgoingLecturesEndDuringALockScreenSkipDoesNotAdvance() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        resolver.hold("b")
+        let skip = Task { await vm.play(at: 1, showLoading: false) }
+        await resolver.waitUntilCalled(count: 4)           // a, b, c at open; b on .player, held
+        await vm.playToEnd()                               // a ends under the skip
+        resolver.release(id: "b")
+        await skip.value
+        #expect(vm.advanceCalls == 0, "a's end advanced past the lecture the user skipped to")
+        #expect(vm.args.videoId == "b")
+    }
+
+    /// `PlayerHostView.trackSkip`: nil at the queue's edge (the lock-screen button is off), the user's Play, and the
+    /// neighbour read again at each press -- the closure outlives a skip until SwiftUI reruns the host.
+    @Test(.timeLimit(.minutes(1))) func theLockScreensNextReadsTheQueueAtEachPress() async throws {
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        #expect(PlayerHostView.trackSkip(vm, by: -1) == nil)
+        let next = try #require(PlayerHostView.trackSkip(vm, by: 1))
+        vm.heldByOpen = true
+        next()
+        while vm.args.videoId != "b" { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(vm.heldByOpen == false)
+        next()                                             // the same closure, not rebuilt
+        while vm.args.videoId != "c" { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(vm.queueNeighbour(1) == nil)
+    }
+
+    /// Codex review P2: the outgoing lecture keeps playing while a skip resolves, so the lock screen's pause lands on it;
+    /// the next lecture must land held, not start under that pause.
+    @Test(.timeLimit(.minutes(1))) func aPauseWhileASkipResolvesHoldsTheNextLecture() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        coordinator.adopt(vm)
+        let policy = PlayerHostView.policyHandler(coordinator: coordinator)
+        policy(.pause)
+        #expect(vm.heldByOpen == false)                    // nothing pending: the player's own pause is all it takes
+        resolver.hold("b")
+        let skip = Task { await vm.play(at: 1, showLoading: false) }
+        await resolver.waitUntilCalled(count: 4)           // a, b, c at open; b on .player, held
+        policy(.pause)
+        #expect(vm.heldByOpen)
+        resolver.release(id: "b")
+        await skip.value
+    }
+
+    /// Codex review P2: a list holding the same lecture twice. Without the loading card the host keeps the item, so the
+    /// pick must start it over rather than carry on from where the first occurrence was.
+    @Test(.timeLimit(.minutes(1))) func pickingTheSameLectureFurtherDownStartsItOver() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "a", "b"])
+        await vm.open()
+        let player = AVPlayer(url: url)
+        vm.currentPlayer = player
+        await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        #expect(player.currentTime().seconds > 0.5)
+        await vm.play(at: 1, showLoading: false)
+        #expect(vm.queue.index == 1)
+        #expect(player.currentTime().seconds < 0.1)
+    }
+
     @Test func queueEndedIsEquatableToItself() {
         // `StreamState.==` has a `default: return false` arm -- without an explicit tuple case the
         // assertion above would silently fail forever (reconciliation note 9's enumeration table).
