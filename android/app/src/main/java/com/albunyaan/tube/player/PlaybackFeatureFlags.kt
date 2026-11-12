@@ -58,15 +58,25 @@ class PlaybackFeatureFlags @Inject constructor(
         const val KEY_NEVER_FREEZE_ABR = "never_freeze_abr"
         const val KEY_TTL_WATCHER = "ttl_watcher"
 
-        /** Set of all valid override keys for validation */
-        private val VALID_KEYS = setOf(
-            KEY_MPD_PREFETCH,
-            KEY_GENEROUS_CROP_BUDGET,
-            KEY_PREDICTIVE_PREFETCH,
-            KEY_SEGMENT_PRELOAD,
-            KEY_NEVER_FREEZE_ABR,
-            KEY_TTL_WATCHER
+        /** Every flag and its build-time default: the one list clear/validate/diagnostics read. */
+        private val BUILD_DEFAULTS: Map<String, () -> Boolean> = linkedMapOf(
+            KEY_MPD_PREFETCH to { BuildConfig.ENABLE_MPD_PREFETCH },
+            KEY_GENEROUS_CROP_BUDGET to ::isSamsungS25Ultra,
+            KEY_PREDICTIVE_PREFETCH to { BuildConfig.ENABLE_PREDICTIVE_PREFETCH },
+            KEY_SEGMENT_PRELOAD to { BuildConfig.ENABLE_SEGMENT_PRELOAD },
+            KEY_NEVER_FREEZE_ABR to { BuildConfig.ENABLE_NEVER_FREEZE_ABR },
+            KEY_TTL_WATCHER to { BuildConfig.ENABLE_TTL_WATCHER }
         )
+
+        /** Set of all valid override keys for validation */
+        private val VALID_KEYS = BUILD_DEFAULTS.keys
+
+        /**
+         * Detect Samsung Galaxy S25 Ultra by model number prefix.
+         * SM-S938 covers all regional variants (SM-S938B, SM-S938U, SM-S938N, etc.).
+         */
+        private fun isSamsungS25Ultra(): Boolean =
+            android.os.Build.MODEL.contains("SM-S938", ignoreCase = true)
 
         /**
          * Special value indicating "use build-time default".
@@ -121,14 +131,9 @@ class PlaybackFeatureFlags @Inject constructor(
      * Internal method to clear overrides without logging (used during migration).
      */
     private fun clearAllOverridesInternal() {
-        prefs.edit()
-            .remove(KEY_MPD_PREFETCH)
-            .remove(KEY_GENEROUS_CROP_BUDGET)
-            .remove(KEY_PREDICTIVE_PREFETCH)
-            .remove(KEY_SEGMENT_PRELOAD)
-            .remove(KEY_NEVER_FREEZE_ABR)
-            .remove(KEY_TTL_WATCHER)
-            .apply()
+        val editor = prefs.edit()
+        VALID_KEYS.forEach { editor.remove(it) }
+        editor.apply()
     }
 
     /**
@@ -140,7 +145,7 @@ class PlaybackFeatureFlags @Inject constructor(
      * Build-time default: [BuildConfig.ENABLE_MPD_PREFETCH]
      */
     val isMpdPrefetchEnabled: Boolean
-        get() = resolveFlag(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH)
+        get() = resolveFlag(KEY_MPD_PREFETCH)
 
     /**
      * Whether generous crop budget (20%) is used for fullscreen aspect ratio.
@@ -153,19 +158,19 @@ class PlaybackFeatureFlags @Inject constructor(
      * Runtime override via developer options or remote config for fleet-wide control.
      */
     val isGenerousCropBudgetEnabled: Boolean
-        get() = resolveFlag(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra())
+        get() = resolveFlag(KEY_GENEROUS_CROP_BUDGET)
 
     val isPredictivePrefetchEnabled: Boolean
-        get() = resolveFlag(KEY_PREDICTIVE_PREFETCH, BuildConfig.ENABLE_PREDICTIVE_PREFETCH)
+        get() = resolveFlag(KEY_PREDICTIVE_PREFETCH)
 
     val isSegmentPreloadEnabled: Boolean
-        get() = resolveFlag(KEY_SEGMENT_PRELOAD, BuildConfig.ENABLE_SEGMENT_PRELOAD)
+        get() = resolveFlag(KEY_SEGMENT_PRELOAD)
 
     val isNeverFreezeAbrEnabled: Boolean
-        get() = resolveFlag(KEY_NEVER_FREEZE_ABR, BuildConfig.ENABLE_NEVER_FREEZE_ABR)
+        get() = resolveFlag(KEY_NEVER_FREEZE_ABR)
 
     val isTtlWatcherEnabled: Boolean
-        get() = resolveFlag(KEY_TTL_WATCHER, BuildConfig.ENABLE_TTL_WATCHER)
+        get() = resolveFlag(KEY_TTL_WATCHER)
 
     /**
      * Set a runtime override for MPD prefetch.
@@ -220,14 +225,7 @@ class PlaybackFeatureFlags @Inject constructor(
      * Only clears known feature flag keys, leaving any other preferences untouched.
      */
     fun clearAllOverrides() {
-        prefs.edit()
-            .remove(KEY_MPD_PREFETCH)
-            .remove(KEY_GENEROUS_CROP_BUDGET)
-            .remove(KEY_PREDICTIVE_PREFETCH)
-            .remove(KEY_SEGMENT_PRELOAD)
-            .remove(KEY_NEVER_FREEZE_ABR)
-            .remove(KEY_TTL_WATCHER)
-            .apply()
+        clearAllOverridesInternal()
         Log.i(TAG, "All overrides cleared - reverting to build-time defaults")
     }
 
@@ -244,16 +242,8 @@ class PlaybackFeatureFlags @Inject constructor(
      * Get a diagnostic dump of all flag states.
      * Useful for debugging and logging.
      */
-    fun getDiagnostics(): Map<String, FlagState> {
-        return mapOf(
-            KEY_MPD_PREFETCH to getFlagState(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH),
-            KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra()),
-            KEY_PREDICTIVE_PREFETCH to getFlagState(KEY_PREDICTIVE_PREFETCH, BuildConfig.ENABLE_PREDICTIVE_PREFETCH),
-            KEY_SEGMENT_PRELOAD to getFlagState(KEY_SEGMENT_PRELOAD, BuildConfig.ENABLE_SEGMENT_PRELOAD),
-            KEY_NEVER_FREEZE_ABR to getFlagState(KEY_NEVER_FREEZE_ABR, BuildConfig.ENABLE_NEVER_FREEZE_ABR),
-            KEY_TTL_WATCHER to getFlagState(KEY_TTL_WATCHER, BuildConfig.ENABLE_TTL_WATCHER)
-        )
-    }
+    fun getDiagnostics(): Map<String, FlagState> =
+        BUILD_DEFAULTS.mapValues { (key, buildDefault) -> getFlagState(key, buildDefault()) }
 
     /**
      * Log current feature flag states for debugging.
@@ -282,21 +272,8 @@ class PlaybackFeatureFlags @Inject constructor(
 
     // --- Private helpers ---
 
-    /**
-     * Detect Samsung Galaxy S25 Ultra by model number prefix.
-     * SM-S938 covers all regional variants (SM-S938B, SM-S938U, SM-S938N, etc.).
-     */
-    private fun isSamsungS25Ultra(): Boolean =
-        android.os.Build.MODEL.contains("SM-S938", ignoreCase = true)
-
-    private fun resolveFlag(key: String, buildDefault: Boolean): Boolean {
-        val override = prefs.getInt(key, VALUE_USE_DEFAULT)
-        return when (override) {
-            VALUE_ENABLED -> true
-            VALUE_DISABLED -> false
-            else -> buildDefault
-        }
-    }
+    private fun resolveFlag(key: String): Boolean =
+        getFlagState(key, BUILD_DEFAULTS.getValue(key)()).effectiveValue
 
     private fun setOverride(key: String, enabled: Boolean?) {
         val value = when (enabled) {

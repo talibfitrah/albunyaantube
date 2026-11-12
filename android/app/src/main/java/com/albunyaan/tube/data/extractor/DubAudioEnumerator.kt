@@ -77,8 +77,6 @@ class DubAudioEnumerator @Inject constructor() {
 
     private data class Session(val visitorData: String, val cookieHeader: String)
 
-    // DRY follow-up: this mirrors AndroidVrStreamResolver.ensureSession. Kept separate so the
-    // working VR resolve path is untouched; a shared YoutubeSessionProvider could unify them later.
     private fun ensureSession(): Session {
         synchronized(lock) {
             val vd = visitorData

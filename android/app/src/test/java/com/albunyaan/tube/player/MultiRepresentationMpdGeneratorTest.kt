@@ -430,8 +430,8 @@ class MultiRepresentationMpdGeneratorTest {
     // MUST build when Opus (webm) audio is present. AndroidVrStreamResolver used
     // to drop all non-mp4 audio, so VP9-topped videos (the common 1440p/2160p
     // case) hit NO_COMPATIBLE_AUDIO → progressive 360p fallback + a re-prepare
-    // loop on high-res selection. The resolver now keeps webm audio; this test
-    // pins the generator's webm-ladder path the fix depends on.
+    // loop on high-res selection. That resolver is gone; this test still
+    // pins the generator's webm-ladder path.
     // =========================================================================
 
     @Test

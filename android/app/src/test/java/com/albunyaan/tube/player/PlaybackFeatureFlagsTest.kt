@@ -106,6 +106,22 @@ class PlaybackFeatureFlagsTest {
         )
     }
 
+    @Test
+    fun `clearAllOverrides clears every flag getDiagnostics reports`() {
+        featureFlags.setMpdPrefetchEnabled(true)
+        featureFlags.setGenerousCropBudgetEnabled(true)
+        featureFlags.setPredictivePrefetchEnabled(true)
+        featureFlags.setSegmentPreloadEnabled(true)
+        featureFlags.setNeverFreezeAbrEnabled(true)
+        featureFlags.setTtlWatcherEnabled(true)
+        assertTrue(featureFlags.getDiagnostics().keys.all { featureFlags.hasOverride(it) })
+
+        featureFlags.clearAllOverrides()
+
+        val leftover = featureFlags.getDiagnostics().filterValues { it.runtimeOverride != null }.keys
+        assertTrue("overrides survived clearAllOverrides: $leftover", leftover.isEmpty())
+    }
+
     // --- hasOverride Tests ---
 
     @Test

@@ -10,7 +10,7 @@ import org.robolectric.annotation.Config
 /**
  * Parser tests for [DubAudioEnumerator]. Robolectric is required because real
  * `org.json` parsing is only available under it (the JVM stub returns default
- * values; project convention — mirrors AndroidVrSubtitleParsingTest, SDK 31).
+ * values; project convention, SDK 31).
  *
  * Fixtures mirror the MWEB innertube player response verified in the spike
  * (memory/player-dubs-phase2-spike.md): each adaptive audio format carries an

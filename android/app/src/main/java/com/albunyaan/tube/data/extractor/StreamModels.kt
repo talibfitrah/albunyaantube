@@ -112,9 +112,7 @@ data class ResolvedStreams(
      * User-Agent that must be used when fetching segments (UA mismatch → HTTP 403).
      *
      * Production always passes this explicitly (see NewPipeExtractorClient.toResolvedStreams).
-     * The default only covers omissions; it names NEWPIPE_ANDROID rather than the retired
-     * ANDROID_VR so it no longer points at a client nothing produces. Both map to the Android
-     * User-Agent, so this default carries the exact UA behaviour the old one did.
+     * The default only covers omissions; NEWPIPE_ANDROID maps to the Android User-Agent.
      */
     val extractionClient: ExtractionClient = ExtractionClient.NEWPIPE_ANDROID,
     /** Wall-clock ms when the URLs were minted; with [urlGeneratedAt] it turns `/expire/<t>/` into a monotonic deadline. */
@@ -180,12 +178,6 @@ data class ResolvedStreams(
  * a UA mismatch causes HTTP 403 on segment requests.
  */
 enum class ExtractionClient {
-    /**
-     * Retired 2026-08-18: YouTube extended its GVS poToken requirement to this client, so its
-     * URLs serve ~60s then 403. Kept for the parsing helpers still under test; no resolve path
-     * produces it. Android UA.
-     */
-    ANDROID_VR,
     /**
      * Every NewPipe resolve (VISIONOS + ANDROID URLs); fetched with the iOS-app UA they were
      * proven with, probe 2026-11-11. The NewPipe IOS client itself is off.
