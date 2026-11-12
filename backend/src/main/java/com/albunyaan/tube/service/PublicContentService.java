@@ -1356,15 +1356,15 @@ public class PublicContentService {
         if (length == null || length.isBlank()) return true;
 
         Integer seconds = video.getDurationSeconds();
-        if (seconds == null || seconds <= 0) return false; // unknown length matches no length filter
-        int duration = seconds / 60; // Convert to minutes
+        boolean unknown = seconds == null || seconds <= 0; // unknown length matches SHORT/MEDIUM/LONG alike: none
+        int duration = unknown ? 0 : seconds / 60; // Convert to minutes
         switch (length.toUpperCase(Locale.ROOT)) {
             case "SHORT":
-                return duration < 4;
+                return !unknown && duration < 4;
             case "MEDIUM":
-                return duration >= 4 && duration <= 20;
+                return !unknown && duration >= 4 && duration <= 20;
             case "LONG":
-                return duration > 20;
+                return !unknown && duration > 20;
             default:
                 return true;
         }
