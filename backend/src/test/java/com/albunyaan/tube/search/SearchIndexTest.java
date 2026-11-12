@@ -1535,6 +1535,14 @@ class SearchIndexTest {
     }
 
     @Test
+    void aCatalogVideoTakesNoDurationFromACopyNoAdmittedSourceKeeps() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UCghost", List.of(item("vKahf", "Surah Al-Kahf", 1500))), Map.of());
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")), List.of(), 5_000, inner));
+        assertNull(hit(idx.search("kahf", null, 50), "vKahf").getDurationSeconds());
+    }
+
+    @Test
     void durationFillsShareTheTitleBudgetAndStopWhenItRunsOut() throws Exception {
         SearchIndex idx = recitations(originals());
         idx.slowSearchMs = -1;

@@ -152,6 +152,12 @@ class PublicContentServiceTabOrderTest {
         verify(videoRepository, never()).findAllByOrderByUploadedAtDesc(anyInt());
     }
 
+    @Test void aVideoWithNoLengthIsDroppedByALengthFilterButKeptWithout() throws Exception {
+        videoRepository.findAllByIds(List.of()).get("v-D").setDurationSeconds(null);
+        assertEquals(List.of(), ids("VIDEOS", "c1a", "SHORT", null));
+        assertEquals(List.of("yt-v-D"), ids("VIDEOS", "c1a", null, null));
+    }
+
     private List<String> ids(String tab, String category, String length, String sort) throws Exception {
         return service.getContent(tab, null, 20, category, length, null, sort).getData().stream()
                 .map(ContentItemDto::getId).toList();
