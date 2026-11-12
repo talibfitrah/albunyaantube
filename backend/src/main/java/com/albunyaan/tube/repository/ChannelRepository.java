@@ -19,7 +19,6 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
-import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -466,11 +465,12 @@ public class ChannelRepository {
     public List<Channel> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
-        // Fetch limit per subcategory (not per total) but cap to avoid waste
-        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
+        // ponytail: reads up to limit × categoryIds.size() docs per call (e.g. SortOrderService's 500 × every
+        // subcategory, the same in Playlist/VideoRepository); merge per-category cursors (k-way) if that grows.
         LinkedHashMap<String, Channel> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, perCategoryLimit);
+            List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, limit);
             for (Channel ch : batch) {
                 deduped.putIfAbsent(ch.getId(), ch);
             }
@@ -547,119 +547,6 @@ public class ChannelRepository {
                 .count();
         AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();
-    }
-
-    /**
-     * Find approved channels ordered by subscribers with cursor-based pagination.
-     *
-     * @param limit Number of items to fetch (fetch limit + 1 to detect hasNext)
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing channels and next cursor
-     */
-    public PaginatedResult<Channel> findApprovedBySubscribersDescWithCursor(int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("subscribers", Query.Direction.DESCENDING)
-                .limit(limit + 1); // Fetch one extra to detect hasNext
-
-        // Apply cursor if provided. If the cursor's document no longer exists
-        // (deleted, or cursor came from a different collection / content type),
-        // fall back to returning the first page — graceful degradation matching
-        // CursorUtils.decode()'s null-on-malformed behaviour.
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Channel> channels = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Channel channel = doc.toObject(Channel.class);
-            channel.setId(doc.getId());
-            channels.add(channel);
-
-            // Generate cursor from last item
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "subscribers");
-            }
-        }
-
-        return new PaginatedResult<>(channels, nextCursor, hasNext);
-    }
-
-    /**
-     * Find approved channels by category ordered by subscribers with cursor-based pagination.
-     *
-     * @param category Category ID to filter by
-     * @param limit Number of items to fetch
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing channels and next cursor
-     */
-    public PaginatedResult<Channel> findApprovedByCategoryAndSubscribersDescWithCursor(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("subscribers", Query.Direction.DESCENDING)
-                .limit(limit + 1);
-
-        // Apply cursor if provided. Stale cursor → restart from first page
-        // (graceful degradation matching CursorUtils.decode()'s contract).
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Channel> channels = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Channel channel = doc.toObject(Channel.class);
-            channel.setId(doc.getId());
-            channels.add(channel);
-
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "subscribers");
-            }
-        }
-
-        return new PaginatedResult<>(channels, nextCursor, hasNext);
     }
 
     // ==================== Display Order Methods ====================
@@ -935,33 +822,6 @@ public class ChannelRepository {
                 .count();
         AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();
-    }
-
-    /**
-     * Generic paginated result wrapper.
-     */
-    public static class PaginatedResult<T> {
-        private final List<T> items;
-        private final String nextCursor;
-        private final boolean hasNext;
-
-        public PaginatedResult(List<T> items, String nextCursor, boolean hasNext) {
-            this.items = items;
-            this.nextCursor = nextCursor;
-            this.hasNext = hasNext;
-        }
-
-        public List<T> getItems() {
-            return items;
-        }
-
-        public String getNextCursor() {
-            return nextCursor;
-        }
-
-        public boolean hasNext() {
-            return hasNext;
-        }
     }
 
     /**

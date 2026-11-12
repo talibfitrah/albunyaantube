@@ -22,7 +22,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 import java.util.*;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -63,6 +62,9 @@ class ContentImportServiceTest {
     @Mock
     private LiveCategoryGuard liveCategoryGuard;
 
+    @Mock
+    private PublicContentCacheService publicContentCacheService;
+
     private ContentImportService service;
 
     @BeforeEach
@@ -74,7 +76,8 @@ class ContentImportServiceTest {
                 playlistRepository,
                 videoRepository,
                 validationRunRepository,
-                liveCategoryGuard
+                liveCategoryGuard,
+                publicContentCacheService
         );
     }
 
@@ -126,6 +129,37 @@ class ContentImportServiceTest {
         assertEquals(0, run.getChannelsFailed());
         assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
         verify(channelRepository, times(10)).save(any(Channel.class));
+    }
+
+    private ValidationRun importOneChannel(String status) throws Exception {
+        List<Map<String, String>> simpleData = List.of(Map.of("UC1", "Channel 1|Global"), Collections.emptyMap(), Collections.emptyMap());
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(channelRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        BatchValidationResult<ChannelDetailsDto> validationResult = new BatchValidationResult<>();
+        validationResult.addValid("UC1", createChannelDto("UC1", "Channel 1"));
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(validationResult);
+        when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenReturn(List.of("cat-1"));
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        service.importSimpleFormatAsync(run, simpleData, status, "test-user");
+        return run;
+    }
+
+    /** The async import writes APPROVED docs straight into the tabs, so its completion announces a content change. */
+    @Test
+    void importSimpleFormatAsync_approvedImportAnnouncesAContentChange() throws Exception {
+        ValidationRun run = importOneChannel("APPROVED");
+
+        assertEquals(1, run.getChannelsImported());
+        verify(publicContentCacheService, times(1)).evictPublicContentCaches();
+    }
+
+    /** PENDING rows are not in any tab, so importing them changes no tab. */
+    @Test
+    void importSimpleFormatAsync_pendingImportAnnouncesNothing() throws Exception {
+        ValidationRun run = importOneChannel("PENDING");
+
+        assertEquals(1, run.getChannelsImported());
+        verify(publicContentCacheService, never()).evictPublicContentCaches();
     }
 
     /**
@@ -755,7 +789,7 @@ class ContentImportServiceTest {
         LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, mock(LiveChannelService.class), videoRepository,
                 channelRepository, playlistRepository, categoryMappingService);
         ContentImportService guarded = new ContentImportService(channelOrchestrator, categoryMappingService,
-                channelRepository, playlistRepository, videoRepository, validationRunRepository, guard);
+                channelRepository, playlistRepository, videoRepository, validationRunRepository, guard, publicContentCacheService);
         when(categoryMappingService.mapCategoryNamesToIds("Live")).thenReturn(List.of("live-cat"));
         when(playlistRepository.findByYoutubeId("PLgone"))
                 .thenReturn(Optional.of(new Playlist("PLgone")))   // the guard's read: stored, so no check

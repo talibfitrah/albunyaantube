@@ -246,12 +246,12 @@ public class VideoValidationScheduler {
                     result.getErrorCount()
             );
 
-            // Only evict caches when validation completed successfully.
-            // If validation failed, we don't want to clear caches unnecessarily.
+            // ContentValidationService announces the content change itself (failed runs too); only a completed run
+            // also clears the videos cache here.
             if (ValidationRun.STATUS_COMPLETED.equals(result.getStatus())) {
-                evictPublicContentCaches();
+                clearVideosCache();
             } else {
-                logger.warn("{} validation did not complete successfully (status: {}), skipping cache eviction",
+                logger.warn("{} validation did not complete successfully (status: {}), skipping the videos cache clear",
                         timeOfDay, result.getStatus());
             }
 
@@ -269,18 +269,11 @@ public class VideoValidationScheduler {
     }
 
     /**
-     * Evict public content caches after validation runs.
-     * This ensures the mobile app doesn't serve stale cached data that might
-     * include videos that were just archived.
+     * Clear the videos cache after a completed run, so archived or refreshed videos are not served from it.
+     * The public caches and the kept tab order are dropped by ContentValidationService, which announces the run.
      */
-    private void evictPublicContentCaches() {
+    private void clearVideosCache() {
         try {
-            var publicContentCache = cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT);
-            if (publicContentCache != null) {
-                publicContentCache.clear();
-                logger.debug("Evicted {} cache after validation", CacheConfig.CACHE_PUBLIC_CONTENT);
-            }
-
             var videosCache = cacheManager.getCache(CacheConfig.CACHE_VIDEOS);
             if (videosCache != null) {
                 videosCache.clear();
@@ -340,7 +333,7 @@ public class VideoValidationScheduler {
             );
 
             if (ValidationRun.STATUS_COMPLETED.equals(result.getStatus())) {
-                evictPublicContentCaches();
+                clearVideosCache();
             }
 
             return true;

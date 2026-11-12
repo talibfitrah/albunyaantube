@@ -19,7 +19,6 @@ import com.google.cloud.firestore.QuerySnapshot;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
-import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -339,10 +338,12 @@ public class PlaylistRepository {
     public List<Playlist> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
-        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        // The full limit per category, fetched in the merge order (itemCount desc): the result is then exactly the
+        // first `limit` of the whole sorted union.
+        // ponytail: reads up to limit × categoryIds.size() docs per call; see ChannelRepository.findByCategoryIds.
         LinkedHashMap<String, Playlist> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Playlist> batch = findByCategoryId(catId, perCategoryLimit);
+            List<Playlist> batch = findByCategoryOrderByItemCountDesc(catId, limit);
             for (Playlist pl : batch) {
                 deduped.putIfAbsent(pl.getId(), pl);
             }
@@ -486,112 +487,6 @@ public class PlaylistRepository {
                 .limit(limit)
                 .get();
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
-    /**
-     * Find approved playlists ordered by item count with cursor-based pagination.
-     *
-     * @param limit Number of items to fetch
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing playlists and next cursor
-     */
-    public PaginatedResult<Playlist> findApprovedByItemCountDescWithCursor(int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereEqualTo("status", STATUS_APPROVED)
-                .orderBy("itemCount", Query.Direction.DESCENDING)
-                .limit(limit + 1);
-
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Playlist> playlists = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Playlist playlist = doc.toObject(Playlist.class);
-            playlist.setId(doc.getId());
-            playlists.add(playlist);
-
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "itemCount");
-            }
-        }
-
-        return new PaginatedResult<>(playlists, nextCursor, hasNext);
-    }
-
-    /**
-     * Find approved playlists by category ordered by item count with cursor-based pagination.
-     *
-     * @param category Category ID to filter by
-     * @param limit Number of items to fetch
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing playlists and next cursor
-     */
-    public PaginatedResult<Playlist> findApprovedByCategoryAndItemCountDescWithCursor(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", STATUS_APPROVED)
-                .orderBy("itemCount", Query.Direction.DESCENDING)
-                .limit(limit + 1);
-
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Playlist> playlists = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Playlist playlist = doc.toObject(Playlist.class);
-            playlist.setId(doc.getId());
-            playlists.add(playlist);
-
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "itemCount");
-            }
-        }
-
-        return new PaginatedResult<>(playlists, nextCursor, hasNext);
     }
 
     // ==================== Display Order Methods ====================
@@ -879,33 +774,6 @@ public class PlaylistRepository {
         }
 
         return result;
-    }
-
-    /**
-     * Generic paginated result wrapper.
-     */
-    public static class PaginatedResult<T> {
-        private final List<T> items;
-        private final String nextCursor;
-        private final boolean hasNext;
-
-        public PaginatedResult(List<T> items, String nextCursor, boolean hasNext) {
-            this.items = items;
-            this.nextCursor = nextCursor;
-            this.hasNext = hasNext;
-        }
-
-        public List<T> getItems() {
-            return items;
-        }
-
-        public String getNextCursor() {
-            return nextCursor;
-        }
-
-        public boolean hasNext() {
-            return hasNext;
-        }
     }
 
     /**

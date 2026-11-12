@@ -299,7 +299,7 @@ class LiveChannelPollerTest {
         assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
         assertThat(live.state(B).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
         assertThat(live.state(B).getMisses().get("bbbbbbbbbbb").getCount()).isZero();
-        verify(caches).evictPublicContentCaches();
+        verify(caches).evictForLiveChange();
 
         when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
         when(reader.read(B)).thenReturn(live("bbbbbbbbbbb"));
@@ -386,7 +386,7 @@ class LiveChannelPollerTest {
         assertThat(live.served().get(B)).extracting(LiveTabResult.LiveItem::id).containsExactly("bbbbbbbbbbb");
         assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
         assertThat(live.state(A).getMisses().values()).allMatch(m -> m.getCount() == 0);
-        verify(caches).evictPublicContentCaches();
+        verify(caches).evictForLiveChange();
 
         when(reader.read(A)).thenReturn(live("aaaaaaaaaaa", "linkid00001"));
         cycleAt(S + 150 * MIN);                                        // A's backoff (80 min) is over
@@ -430,7 +430,7 @@ class LiveChannelPollerTest {
         assertThat(live.state(A)).isNull();
         assertThat(live.state(B).getStatus()).isEqualTo(LiveChannelState.LIVE);
         assertThat(live.served()).containsOnlyKeys(B);
-        verify(caches).evictPublicContentCaches();
+        verify(caches).evictForLiveChange();
     }
 
     /** D7: the seed and a cycle compute-and-put one at a time, so a cycle never overwrites a newer add-time read. */
@@ -494,7 +494,7 @@ class LiveChannelPollerTest {
         cycleAt(T0);
 
         assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.LIVE);       // apply() landed
-        verify(caches).evictPublicContentCaches();
+        verify(caches).evictForLiveChange();
     }
 
     /** D14: a retitled live keeps the caches; a new id evicts them. */
@@ -503,15 +503,15 @@ class LiveChannelPollerTest {
         entries(A);
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("aaaaaaaaaaa", "Morning")), 1));
         cycleAt(T0);
-        verify(caches, times(1)).evictPublicContentCaches();
+        verify(caches, times(1)).evictForLiveChange();
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("aaaaaaaaaaa", "Evening")), 1));
         cycleAt(T0 + SWEEP);
-        verify(caches, times(1)).evictPublicContentCaches();
+        verify(caches, times(1)).evictForLiveChange();
 
         when(reader.read(anyString())).thenReturn(live("bbbbbbbbbbb"));
         cycleAt(T0 + 2 * SWEEP);
-        verify(caches, times(2)).evictPublicContentCaches();
+        verify(caches, times(2)).evictForLiveChange();
     }
 
     /** Review Focus 1: after a restart the snapshot serves the last lives before the first cycle. */
@@ -592,7 +592,7 @@ class LiveChannelPollerTest {
         assertThat(live.entries()).containsKey(A);
         verify(reader, never()).read(anyString());
         verify(states, never()).save(any());
-        verify(caches).evictPublicContentCaches();                     // pages cached while nothing was loaded
+        verify(caches).evictForLiveChange();                     // pages cached while nothing was loaded
     }
 
     /**
@@ -619,7 +619,7 @@ class LiveChannelPollerTest {
         assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
         assertThat(live.state(A).getMisses().get("aaaaaaaaaaa").getCount()).isZero();
         verify(states).save(argThat(s -> A.equals(s.getChannelId()) && s.getLives().isEmpty()));
-        verify(caches).evictPublicContentCaches();
+        verify(caches).evictForLiveChange();
 
         when(breaker.isOpen()).thenReturn(false);                      // the HALF_OPEN probe got through
         cycleAt(T0 + HOLD + 60 * MIN);
@@ -813,7 +813,7 @@ class LiveChannelPollerTest {
         doAnswer(i -> {
             poller.onPublicContentEvicted(new PublicContentCacheService.Evicted());
             return null;
-        }).when(caches).evictPublicContentCaches();
+        }).when(caches).evictForLiveChange();
         entries(A, B);
         when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
         cycleAt(T0);                                                  // serves A and B; its eviction is its own
@@ -1221,7 +1221,7 @@ class LiveChannelPollerTest {
         cycleAt(T0 + 20 * MIN);                                       // ends
         assertThat(live.state(A).getEnded()).containsExactly("linkid00001");
         verify(audit).logSystem("live_link_hidden_ended", "video", "doc-link", "live-poller");
-        verify(caches).evictPublicContentCaches();                    // the category page stops listing it
+        verify(caches).evictForLiveChange();                    // the category page stops listing it
 
         cycleAt(T0 + 30 * MIN);
         cycleAt(T0 + SWEEP + 30 * MIN);                               // the next sweep: no second end, no second audit
@@ -1243,7 +1243,7 @@ class LiveChannelPollerTest {
         cycleAt(T0 + 20 * MIN + SWEEP);
 
         assertThat(live.state(A).getEnded()).isEmpty();
-        verify(caches).evictPublicContentCaches();
+        verify(caches).evictForLiveChange();
     }
 
     // ---- Final model: the endpoint asks for an on-demand read after a rotation ----
@@ -1262,7 +1262,7 @@ class LiveChannelPollerTest {
 
         verify(reader, times(2)).read(A);
         assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("bbbbbbbbbbb");
-        verify(caches).evictPublicContentCaches();
+        verify(caches).evictForLiveChange();
     }
 
     /** I8: an id the endpoint does not list never costs a read, nor does any id before the first cycle's view. */

@@ -20,17 +20,21 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.search.SearchIndex;
+import com.google.cloud.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.text.Collator;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -43,8 +47,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Service for public API endpoints (Android app).
@@ -98,8 +106,9 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               condition = "T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) != null",
-               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + (#category == null ? '' : 'c:' + #category) + '-' + (#length == null ? '' : 'l:' + #length) + '-' + (#date == null ? '' : 'd:' + #date) + '-' + (#sort == null ? '' : 's:' + #sort)")
+               condition = "T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#cursor) != null"
+                       + " && !T(com.albunyaan.tube.service.PublicContentService).servesTabOrder(#type)",
+               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#cursor) + '-' + #limit + '-' + (#category == null ? '' : 'c:' + #category) + '-' + (#length == null ? '' : 'l:' + #length) + '-' + (#date == null ? '' : 'd:' + #date) + '-' + (#sort == null ? '' : 's:' + #sort)")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
             String category, String length, String date, String sort
@@ -110,54 +119,235 @@ public class PublicContentService {
             type = "HOME";
         }
 
-        // Resolve parent category → parent + children for aggregation.
-        // If category is a parent, allCategoryIds includes it and all its subcategories.
-        // This ensures "See All" and content list views show aggregated content.
-        List<String> allCategoryIds = null;
-        if (category != null && !category.isBlank()) {
-            allCategoryIds = resolveAllCategoryIds(category);
-        }
-
-        // Spec §4.1: a LIVE category's HOME and VIDEOS lists are its expansion; CHANNELS stays the channel cards.
         String upperType = type.toUpperCase(Locale.ROOT);
-        if (allCategoryIds != null && !"CHANNELS".equals(upperType) && !"PLAYLISTS".equals(upperType)
-                && liveCategoryService.isLive(category)) {
-            return livePage(liveCategoryService.items(category), cursor, limit);
+        if (servesTabOrder(upperType)) { // CHANNELS -> CHANNEL, PLAYLISTS -> PLAYLIST, VIDEOS -> VIDEO
+            return keptPage(upperType.substring(0, upperType.length() - 1), cursor, limit, category, length, date, sort);
         }
 
-        // For content types that support real cursor pagination
-        switch (upperType) {
-            case "CHANNELS":
-                return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
-            case "PLAYLISTS":
-                return getPlaylistsWithCursor(limit, category, allCategoryIds, cursor);
-            case "VIDEOS":
-                return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
-            case "HOME":
-            default:
-                List<ContentItemDto> items;
-                if (allCategoryIds != null) {
-                    // Category specified: use admin-defined sort order with offset pagination.
-                    // Over-fetch by 1 to reliably detect whether a next page exists,
-                    // avoiding phantom cursors when total items are an exact multiple of limit.
-                    int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);
-                    items = getCategoryContentItems(allCategoryIds, limit + 1, offset);
-                    boolean hasNext = items.size() > limit;
-                    if (hasNext) {
-                        items = items.subList(0, limit);
-                    }
-                    String nc = hasNext ? encodeCursor(offset + limit) : null;
-                    return new CursorPageDto<>(items, nc);
-                } else {
-                    // No category filter: mix content types with default sorting.
-                    // getMixedContent does not support offset/cursor, so no next page.
-                    items = getMixedContent(limit, category, allCategoryIds);
-                    return new CursorPageDto<>(items, null);
-                }
+        // HOME (and any other type): a category's list uses its admin-defined sort order, parent + subcategories.
+        if (category != null && !category.isBlank()) {
+            // Spec §4.1: a LIVE category's HOME list is its expansion.
+            if (liveCategoryService.isLive(category)) {
+                return pageOf(liveCategoryService.items(category), cursor, limit);
+            }
+            // Over-fetch by 1 to reliably detect whether a next page exists,
+            // avoiding phantom cursors when total items are an exact multiple of limit.
+            List<String> allCategoryIds = resolveAllCategoryIds(category);
+            int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);
+            List<ContentItemDto> items = getCategoryContentItems(allCategoryIds, limit + 1, offset);
+            boolean hasNext = items.size() > limit;
+            if (hasNext) {
+                items = items.subList(0, limit);
+            }
+            String nc = hasNext ? encodeCursor(offset + limit) : null;
+            return new CursorPageDto<>(items, nc);
+        }
+        // No category filter: mix content types with default sorting.
+        // getMixedContent does not support offset/cursor, so no next page.
+        return new CursorPageDto<>(getMixedContent(limit), null);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /**
+     * True for CHANNELS, PLAYLISTS and VIDEOS: every page of those lists is read from the kept order (keptPage), so
+     * they skip the page cache. The kept order already is their cache, and a page from an overtaken build must not be
+     * stored. Public static so the @Cacheable condition calls the same rule as the dispatch.
+     */
+    public static boolean servesTabOrder(String type) {
+        return type != null && Set.of("CHANNELS", "PLAYLISTS", "VIDEOS").contains(type.toUpperCase(Locale.ROOT));
+    }
+
+    /** Categories by displayOrder (null last), then id: the Content Sorting order Home and the tabs share. */
+    private static final Comparator<Category> DISPLAY_ORDER = Comparator
+            .comparingInt((Category c) -> c.getDisplayOrder() != null ? c.getDisplayOrder() : Integer.MAX_VALUE)
+            .thenComparing(Category::getId);
+
+    /** Parent category id → its child ids, in the order {@code all} lists them. */
+    private static Map<String, List<String>> childrenByParent(List<Category> all) {
+        Map<String, List<String>> children = new HashMap<>();
+        for (Category cat : all) {
+            if (cat.getParentCategoryId() != null) {
+                children.computeIfAbsent(cat.getParentCategoryId(), k -> new ArrayList<>()).add(cat.getId());
+            }
+        }
+        return children;
+    }
+
+    // ponytail: no TTL; a write that skips evictPublicContentCaches() leaves the order stale until the next content change. Add a built-at check if such a path appears.
+    // ponytail: uploadedDaysAgo in the kept DTOs is frozen until the next ContentChanged (each completed daily validation run announces one, so about a day); rebuild when the UTC day changes if that drift matters.
+    private volatile KeptOrder tabOrder;
+    private final AtomicLong tabOrderGeneration = new AtomicLong();
+    /** The build in flight, shared by every request that finds no kept order; null when none runs. */
+    private final AtomicReference<CompletableFuture<KeptOrder>> tabOrderBuild = new AtomicReference<>();
+    /** How long a request waits on another request's build before answering 504: two Firestore bulk-query timeouts. */
+    private static final long TAB_ORDER_WAIT_SECONDS = 60;
+
+    /** Any content change drops the kept order; the generation bump first makes a build already running discard its result. */
+    @EventListener
+    public void onContentChanged(PublicContentCacheService.ContentChanged event) {
+        tabOrderGeneration.incrementAndGet();
+        tabOrder = null;
+    }
+
+    /**
+     * The kept order. One build at a time: requests that arrive while it runs share its result or its failure.
+     * A build that a content change overtook is served to its requests, never kept.
+     */
+    private KeptOrder tabOrder()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        KeptOrder order = tabOrder;
+        if (order != null) return order;
+        CompletableFuture<KeptOrder> mine = new CompletableFuture<>();
+        CompletableFuture<KeptOrder> running = tabOrderBuild.compareAndExchange(null, mine);
+        if (running != null) {
+            try {
+                return running.get(TAB_ORDER_WAIT_SECONDS, TimeUnit.SECONDS);
+            } catch (ExecutionException e) {
+                throw unwrapped(e);
+            }
+        }
+        try {
+            order = tabOrder; // a build that finished between the fast-path read and the CAS
+            if (order != null) {
+                mine.complete(order);
+                return order;
+            }
+            long generation = tabOrderGeneration.get();
+            order = buildTabOrder();
+            // Store, then re-check: onContentChanged bumps before it nulls, so a change racing the store always wins.
+            tabOrder = order;
+            if (tabOrderGeneration.get() != generation) tabOrder = null;
+            mine.complete(order);
+            return order;
+        } catch (Throwable t) {
+            mine.completeExceptionally(t);
+            throw t;
+        } finally {
+            tabOrderBuild.compareAndSet(mine, null);
         }
     }
 
-    private List<ContentItemDto> getMixedContent(int limit, String category, List<String> allCategoryIds)
+    /** Every live approved item per type ("CHANNEL", "PLAYLIST", "VIDEO") in tab order, and the category tree. */
+    private record KeptOrder(Map<String, List<ContentItemDto>> byType, Map<String, List<String>> children,
+                             Set<String> liveCategoryIds) {}
+
+    /**
+     * A CHANNELS, PLAYLISTS or VIDEOS page ({@code dtoType} CHANNEL, PLAYLIST or VIDEO) from the kept order alone, so
+     * no Firestore read once it is kept. No filter keeps the tab order. A category keeps its own and its
+     * subcategories' items: channels by subscribers, playlists by item count (both descending). A VIDEOS length or
+     * date filters, and a VIDEOS category or sort orders newest first unless sorted (videoOrder). A LIVE category's
+     * VIDEOS list is its expansion (spec §4.1; cached by LiveCategoryService). A cursor that is not an offset (an old
+     * document-id cursor) ends the list.
+     */
+    private CursorPageDto<ContentItemDto> keptPage(String dtoType, String cursor, int limit, String category,
+                                                   String length, String date, String sort)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (parseCursorOffset(cursor) < 0) {
+            return new CursorPageDto<>(new ArrayList<>(), null);
+        }
+        KeptOrder kept = tabOrder();
+        boolean byCategory = !isBlank(category);
+        if (byCategory && "VIDEO".equals(dtoType) && kept.liveCategoryIds().contains(category)) {
+            return pageOf(liveCategoryService.items(category), cursor, limit);
+        }
+        Stream<ContentItemDto> items = kept.byType().get(dtoType).stream();
+        if (byCategory) {
+            Set<String> ids = new HashSet<>(kept.children().getOrDefault(category, List.of()));
+            ids.add(category);
+            items = items.filter(d -> d.getCategoryIds() != null && d.getCategoryIds().stream().anyMatch(ids::contains));
+        }
+        Comparator<ContentItemDto> order = switch (dtoType) {
+            case "CHANNEL" -> byCategory ? Comparator.comparingLong(
+                    (ContentItemDto d) -> d.getSubscribers() != null ? d.getSubscribers() : 0).reversed() : null;
+            case "PLAYLIST" -> byCategory ? Comparator.comparingInt(
+                    (ContentItemDto d) -> d.getItemCount() != null ? d.getItemCount() : 0).reversed() : null;
+            default -> !byCategory && isBlank(length) && isBlank(date) && (isBlank(sort) || "DEFAULT".equalsIgnoreCase(sort))
+                    ? null : videoOrder(sort);
+        };
+        if ("VIDEO".equals(dtoType)) {
+            items = items.filter(d -> matchesLengthFilter(d, length) && matchesDateFilter(d, date));
+        }
+        if (order != null) {
+            items = items.sorted(order); // stable: ties keep the tab order
+        }
+        return pageOf(items.toList(), cursor, limit);
+    }
+
+    /** A VIDEOS sort: OLDEST, POPULAR / MOST_POPULAR (views), ALPHABETICAL (title); anything else is newest first. */
+    private static Comparator<ContentItemDto> videoOrder(String sort) {
+        return switch (sort == null ? "" : sort.toUpperCase(Locale.ROOT)) {
+            case "OLDEST" -> Comparator.comparing(ContentItemDto::getUploadedAt,
+                    Comparator.nullsLast(Comparator.<Timestamp>naturalOrder()));
+            case "POPULAR", "MOST_POPULAR" -> Comparator.comparingLong(
+                    (ContentItemDto d) -> d.getViewCount() != null ? d.getViewCount() : 0).reversed();
+            case "ALPHABETICAL" -> Comparator.comparing(
+                    (ContentItemDto d) -> d.getTitle() != null ? d.getTitle() : "", String.CASE_INSENSITIVE_ORDER);
+            default -> Comparator.comparing(ContentItemDto::getUploadedAt,
+                    Comparator.nullsLast(Comparator.<Timestamp>reverseOrder()));
+        };
+    }
+
+    /**
+     * Every approved item per type ("CHANNEL", "PLAYLIST", "VIDEO"): top-level categories in {@link #DISPLAY_ORDER},
+     * each through its Content Sorting order (parent plus subcategories, first category wins), then whatever no
+     * category listed, alphabetically.
+     * ponytail: rebuilds the whole catalog per content change (reads ≈ categories + order rows + ~2-3× approved items); page the walk if that outgrows one rebuild per content change.
+     */
+    private KeptOrder buildTabOrder()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<Category> all = new ArrayList<>(categoryRepository.findAll());
+        Map<String, List<String>> children = childrenByParent(all);
+        List<Category> topLevel = all.stream().filter(c -> c.getParentCategoryId() == null).sorted(DISPLAY_ORDER).toList();
+
+        // Same fan-out as getHomeFeed; a failed category propagates, because a partial list must not be cached.
+        List<CompletableFuture<List<ContentItemDto>>> walks = new ArrayList<>();
+        for (Category cat : topLevel) {
+            List<String> ids = new ArrayList<>();
+            ids.add(cat.getId());
+            ids.addAll(children.getOrDefault(cat.getId(), List.of()));
+            walks.add(asyncSupply(() -> getCategoryContentItems(ids, Integer.MAX_VALUE, 0)));
+        }
+
+        Map<String, List<ContentItemDto>> byType = new HashMap<>();
+        for (String type : List.of("CHANNEL", "PLAYLIST", "VIDEO")) {
+            byType.put(type, new ArrayList<>());
+        }
+        Set<String> seen = new HashSet<>();
+        for (CompletableFuture<List<ContentItemDto>> walk : walks) {
+            for (ContentItemDto dto : joinUnwrapped(walk)) {
+                if (seen.add(dto.getType() + ":" + dto.getId())) {
+                    byType.get(dto.getType()).add(dto);
+                }
+            }
+        }
+
+        List<ContentItemDto> rest = new ArrayList<>();
+        for (Channel ch : channelRepository.findByStatus("APPROVED")) {
+            if (isApproved(ch) && isAvailable(ch)) rest.add(toDto(ch));
+        }
+        for (Playlist pl : playlistRepository.findByStatus("APPROVED")) {
+            if (isApproved(pl) && isAvailable(pl)) rest.add(toDto(pl));
+        }
+        for (Video v : videoRepository.findByStatus("APPROVED")) {
+            if (isApproved(v) && isAvailable(v)) rest.add(toDto(v));
+        }
+        // Channel DTOs fill name, playlists and videos title. The id tie-break keeps pages stable across rebuilds;
+        // the collator is built per call because it is not thread-safe.
+        Collator collator = Collator.getInstance(Locale.ROOT);
+        rest.stream()
+                .filter(d -> seen.add(d.getType() + ":" + d.getId()))
+                .sorted(Comparator.comparing((ContentItemDto d) -> d.getTitle() != null ? d.getTitle() : d.getName(),
+                                Comparator.nullsLast(collator))
+                        .thenComparing(ContentItemDto::getId))
+                .forEach(d -> byType.get(d.getType()).add(d));
+        Set<String> live = all.stream().filter(Category::isLive).map(Category::getId).collect(Collectors.toSet());
+        return new KeptOrder(byType, children, live);
+    }
+
+    private List<ContentItemDto> getMixedContent(int limit)
             throws ExecutionException, InterruptedException, TimeoutException {
         List<ContentItemDto> mixed = new ArrayList<>();
 
@@ -166,9 +356,9 @@ public class PublicContentService {
         int playlistCount = (limit / 6) * 2;
         int videoCount = limit - channelCount - playlistCount;
 
-        mixed.addAll(getChannels(channelCount, category, allCategoryIds));
-        mixed.addAll(getPlaylists(playlistCount, category, allCategoryIds));
-        mixed.addAll(getVideos(videoCount, category, allCategoryIds, null, null, null));
+        mixed.addAll(getChannels(channelCount, null, null));
+        mixed.addAll(getPlaylists(playlistCount, null, null));
+        mixed.addAll(getVideos(videoCount, null, null, null, null, null));
 
         return mixed;
     }
@@ -195,40 +385,6 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get channels with real cursor-based pagination.
-     * When allCategoryIds has multiple entries (parent + children), falls back to
-     * non-cursor aggregation since cursor pagination across multiple categories is complex.
-     */
-    private CursorPageDto<ContentItemDto> getChannelsWithCursor(int limit, String category,
-                                                                 List<String> allCategoryIds, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        // Multi-category aggregation: no cursor support (getChannels lacks offset)
-        if (allCategoryIds != null && allCategoryIds.size() > 1) {
-            List<ContentItemDto> items = getChannels(limit, category, allCategoryIds);
-            return new CursorPageDto<>(items, null);
-        }
-
-        ChannelRepository.PaginatedResult<Channel> result;
-
-        if (category != null && !category.isBlank()) {
-            result = channelRepository.findApprovedByCategoryAndSubscribersDescWithCursor(category, limit, cursor);
-        } else {
-            result = channelRepository.findApprovedBySubscribersDescWithCursor(limit, cursor);
-        }
-
-        // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
-        // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
-        List<ContentItemDto> items = result.getItems().stream()
-                .filter(this::isApproved)
-                .filter(this::isAvailable)
-                .map(this::toDto)
-                .collect(Collectors.toList());
-
-        return new CursorPageDto<>(items, result.getNextCursor());
-    }
-
     private List<ContentItemDto> getPlaylists(int limit, String category, List<String> allCategoryIds)
             throws ExecutionException, InterruptedException, TimeoutException {
         List<Playlist> playlists;
@@ -250,85 +406,6 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get playlists with real cursor-based pagination.
-     * When allCategoryIds has multiple entries, falls back to non-cursor aggregation.
-     */
-    private CursorPageDto<ContentItemDto> getPlaylistsWithCursor(int limit, String category,
-                                                                  List<String> allCategoryIds, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        // Multi-category aggregation: no cursor support (getPlaylists lacks offset)
-        if (allCategoryIds != null && allCategoryIds.size() > 1) {
-            List<ContentItemDto> items = getPlaylists(limit, category, allCategoryIds);
-            return new CursorPageDto<>(items, null);
-        }
-
-        PlaylistRepository.PaginatedResult<Playlist> result;
-
-        if (category != null && !category.isBlank()) {
-            result = playlistRepository.findApprovedByCategoryAndItemCountDescWithCursor(category, limit, cursor);
-        } else {
-            result = playlistRepository.findApprovedByItemCountDescWithCursor(limit, cursor);
-        }
-
-        // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
-        // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
-        List<ContentItemDto> items = result.getItems().stream()
-                .filter(this::isApproved)
-                .filter(this::isAvailable)
-                .map(this::toDto)
-                .collect(Collectors.toList());
-
-        return new CursorPageDto<>(items, result.getNextCursor());
-    }
-
-    /**
-     * Get videos with real cursor-based pagination.
-     * When allCategoryIds has multiple entries, falls back to non-cursor aggregation.
-     */
-    private CursorPageDto<ContentItemDto> getVideosWithCursor(int limit, String category,
-                                                              List<String> allCategoryIds, String cursor,
-                                                              String length, String date, String sort)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        // Multi-category aggregation: no cursor support (getVideos lacks offset)
-        if (allCategoryIds != null && allCategoryIds.size() > 1) {
-            List<ContentItemDto> items = getVideos(limit, category, allCategoryIds, length, date, sort);
-            return new CursorPageDto<>(items, null);
-        }
-
-        // For default case (no filters, newest first), use efficient cursor pagination
-        boolean hasFilters = (length != null && !length.isBlank()) ||
-                            (date != null && !date.isBlank()) ||
-                            (sort != null && !sort.isBlank() && !"NEWEST".equalsIgnoreCase(sort));
-
-        if (!hasFilters) {
-            VideoRepository.PaginatedResult<Video> result;
-
-            if (category != null && !category.isBlank()) {
-                result = videoRepository.findApprovedByCategoryAndUploadedAtDescWithCursor(category, limit, cursor);
-            } else {
-                result = videoRepository.findApprovedByUploadedAtDescWithCursor(limit, cursor);
-            }
-
-            // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
-            // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
-            List<ContentItemDto> items = result.getItems().stream()
-                    .filter(this::isApproved)
-                    .filter(this::isAvailable)
-                    .map(this::toDto)
-                    .collect(Collectors.toList());
-
-            return new CursorPageDto<>(items, result.getNextCursor());
-        }
-
-        // Fall back to legacy approach when filters are applied
-        List<ContentItemDto> items = getVideos(limit, category, allCategoryIds, length, date, sort);
-        String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
-        return new CursorPageDto<>(items, nextCursor);
-    }
-
     private List<ContentItemDto> getVideos(int limit, String category, List<String> allCategoryIds,
                                            String length, String date, String sort) throws ExecutionException, InterruptedException, TimeoutException {
         List<Video> videos;
@@ -344,47 +421,13 @@ public class PublicContentService {
             videos = videoRepository.findAllByOrderByUploadedAtDesc(fetchLimit);
         }
 
-        // Apply filters
-        var stream = videos.stream()
+        return videos.stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)
-                .filter(v -> matchesLengthFilter(v, length))
-                .filter(v -> matchesDateFilter(v, date));
-
-        // Apply sorting based on sort parameter
-        if (sort != null && !sort.isBlank()) {
-            switch (sort.toUpperCase(Locale.ROOT)) {
-                case "OLDEST":
-                    stream = stream.sorted((v1, v2) -> {
-                        if (v1.getUploadedAt() == null) return 1;
-                        if (v2.getUploadedAt() == null) return -1;
-                        return v1.getUploadedAt().compareTo(v2.getUploadedAt());
-                    });
-                    break;
-                case "POPULAR":
-                    stream = stream.sorted((v1, v2) -> {
-                        Long views1 = v1.getViewCount() != null ? v1.getViewCount() : 0L;
-                        Long views2 = v2.getViewCount() != null ? v2.getViewCount() : 0L;
-                        return views2.compareTo(views1); // Descending
-                    });
-                    break;
-                case "ALPHABETICAL":
-                    stream = stream.sorted((v1, v2) -> {
-                        String title1 = v1.getTitle() != null ? v1.getTitle() : "";
-                        String title2 = v2.getTitle() != null ? v2.getTitle() : "";
-                        return title1.compareToIgnoreCase(title2);
-                    });
-                    break;
-                case "NEWEST":
-                default:
-                    // Already sorted by uploadedAt descending from repository
-                    break;
-            }
-        }
-
-        return stream
-                .limit(limit)
                 .map(this::toDto)
+                .filter(d -> matchesLengthFilter(d, length) && matchesDateFilter(d, date))
+                .sorted(videoOrder(sort))
+                .limit(limit)
                 .collect(Collectors.toList());
     }
 
@@ -449,13 +492,7 @@ public class PublicContentService {
         List<Category> allCategories = new ArrayList<>(categoryRepository.findAll());
 
         // Build parent → children mapping for subcategory aggregation
-        Map<String, List<String>> childrenMap = new HashMap<>();
-        for (Category cat : allCategories) {
-            if (cat.getParentCategoryId() != null) {
-                childrenMap.computeIfAbsent(cat.getParentCategoryId(), k -> new ArrayList<>())
-                        .add(cat.getId());
-            }
-        }
+        Map<String, List<String>> childrenMap = childrenByParent(allCategories);
 
         // Filter to parent (top-level) categories only for home feed display.
         // Subcategory content is aggregated under its parent section.
@@ -497,12 +534,7 @@ public class PublicContentService {
             }
         }
 
-        parentCategories.sort((a, b) -> {
-            int orderA = a.getDisplayOrder() != null ? a.getDisplayOrder() : Integer.MAX_VALUE;
-            int orderB = b.getDisplayOrder() != null ? b.getDisplayOrder() : Integer.MAX_VALUE;
-            if (orderA != orderB) return Integer.compare(orderA, orderB);
-            return a.getId().compareTo(b.getId());
-        });
+        parentCategories.sort(DISPLAY_ORDER);
 
         // Apply cursor: skip categories with displayOrder <= cursor value
         int startAfterOrder = -1;
@@ -1079,7 +1111,7 @@ public class PublicContentService {
                     .filter(i -> SearchIndex.matches(q,
                             Objects.toString(i.getTitle(), "") + " " + Objects.toString(i.getChannelTitle(), "")))
                     .toList();
-            return new SearchPage(livePage(hits, cursor, limit), hits.isEmpty() ? "none" : "exact");
+            return new SearchPage(pageOf(hits, cursor, limit), hits.isEmpty() ? "none" : "exact");
         }
         searchIndex.awaitReady(); // before the Firestore reads below, not after them (F12)
         List<String> allCategoryIds = (category != null && !category.isBlank()) ? resolveAllCategoryIds(category) : null;
@@ -1320,10 +1352,10 @@ public class PublicContentService {
                 && validationStatus != ValidationStatus.ARCHIVED;
     }
 
-    private boolean matchesLengthFilter(Video video, String length) {
+    private static boolean matchesLengthFilter(ContentItemDto video, String length) {
         if (length == null || length.isBlank()) return true;
 
-        int duration = video.getDurationSeconds() / 60; // Convert to minutes
+        int duration = (video.getDurationSeconds() != null ? video.getDurationSeconds() : 0) / 60; // Convert to minutes
         switch (length.toUpperCase(Locale.ROOT)) {
             case "SHORT":
                 return duration < 4;
@@ -1336,7 +1368,7 @@ public class PublicContentService {
         }
     }
 
-    private boolean matchesDateFilter(Video video, String date) {
+    private static boolean matchesDateFilter(ContentItemDto video, String date) {
         if (date == null || date.isBlank()) return true;
         if (video.getUploadedAt() == null) return true;
 
@@ -1394,23 +1426,16 @@ public class PublicContentService {
     }
 
     /**
-     * Type-aware cache key for cursors. CHANNELS/PLAYLISTS/VIDEOS use opaque Firestore cursors that must be
-     * preserved as-is; normalizing them would collapse different pages into the same cache entry. Every other
-     * type is served as HOME (getContent's switch default) from an offset cursor: its key is the offset the page
-     * reads, or null (never cached) when the cursor is malformed, negative or past the int range (B1).
+     * Cache-key part of an offset cursor (HOME, and every type getContent serves as HOME; CHANNELS, PLAYLISTS and
+     * VIDEOS never reach the page cache, see servesTabOrder): the offset the page reads, or null (never cached) when
+     * the cursor is malformed, negative or past the int range (B1).
      *
      * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
      */
-    public static String cacheCursorKey(String type, String cursor) {
+    public static String cacheCursorKey(String cursor) {
         if (cursor == null || cursor.isEmpty()) return "0";
-        String resolvedType = (type == null || type.isBlank()) ? "HOME" : type.toUpperCase(Locale.ROOT);
-        return switch (resolvedType) {
-            case "CHANNELS", "PLAYLISTS", "VIDEOS" -> cursor;
-            default -> {
-                long offset = parseCursorOffset(cursor);
-                yield offset >= 0 && offset <= Integer.MAX_VALUE ? String.valueOf(offset) : null;
-            }
-        };
+        long offset = parseCursorOffset(cursor);
+        return offset >= 0 && offset <= Integer.MAX_VALUE ? String.valueOf(offset) : null;
     }
 
     // Membership read for filtered in-tab search (searchContent, spec §4.7).
@@ -1422,11 +1447,11 @@ public class PublicContentService {
     }
 
     /**
-     * Offset paging over the whole expanded LIVE list.
+     * Offset paging over a whole in-memory list (the expanded LIVE list, a kept-order list).
      * ponytail: every page builds the full list, entries × lives per channel (≤ 30 entries, LIVE_CATEGORY_FULL, a
      * few lives each), still small; page inside items() if the cap or the lives per channel grow.
      */
-    private CursorPageDto<ContentItemDto> livePage(List<ContentItemDto> all, String cursor, int limit) {
+    private CursorPageDto<ContentItemDto> pageOf(List<ContentItemDto> all, String cursor, int limit) {
         int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);
         if (offset >= all.size()) {
             return new CursorPageDto<>(new ArrayList<>(), null);
@@ -1462,6 +1487,29 @@ public class PublicContentService {
         if (offset >= 0) return offset;
         log.warn("Invalid content cursor: {}", cursor);
         return 0;
+    }
+
+    /**
+     * join() wraps a failed read as CompletionException(RuntimeException(cause)) (see asyncSupply); hand back the
+     * original checked exception so GlobalExceptionHandler maps a timeout to 504, not 500.
+     */
+    private static <T> T joinUnwrapped(CompletableFuture<T> future)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            throw unwrapped(e);
+        }
+    }
+
+    /** Throws the first TimeoutException / ExecutionException / InterruptedException in e's cause chain; else returns e. */
+    private static <E extends Exception> E unwrapped(E e) throws ExecutionException, InterruptedException, TimeoutException {
+        for (Throwable t = e.getCause(); t != null; t = t.getCause()) {
+            if (t instanceof TimeoutException te) throw te;
+            if (t instanceof ExecutionException ee) throw ee;
+            if (t instanceof InterruptedException ie) throw ie;
+        }
+        return e;
     }
 
     /** Supplier that can throw checked exceptions. */
