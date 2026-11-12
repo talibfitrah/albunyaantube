@@ -1,6 +1,12 @@
 import FitrahAPI
 import Foundation
 
+extension Int {
+    /// A stored or legacy-wire 0 means "length unknown" (`FavoriteVideo.durationSeconds` is non-optional);
+    /// nil is the honest value, so no "0:00" chip or spoken duration is drawn for it.
+    nonisolated var knownDuration: Int? { self > 0 ? self : nil }
+}
+
 nonisolated enum ContentType: String, Sendable {
     case video = "VIDEO"
     case channel = "CHANNEL"

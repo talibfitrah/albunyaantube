@@ -75,6 +75,22 @@ struct FavoritesViewModelTests {
         #expect(args.channelId == nil)
     }
 
+    /// `FavoriteVideo.durationSeconds` is non-optional, so an unknown length is stored as 0. The row and the
+    /// player args read it back as unknown (no "0:00" chip, no spoken duration); a real length is untouched.
+    @Test func aStoredZeroDurationReadsBackAsUnknownInTheRowAndThePlayerArgs() throws {
+        let store = makeStore()
+        try store.toggle(makeItem(id: "v0", duration: 0))
+        try store.toggle(makeItem(id: "v1", duration: 754))
+        let viewModel = FavoritesViewModel(store: store)
+        let unknown = try #require(viewModel.items.first { $0.videoId == "v0" })
+        let known = try #require(viewModel.items.first { $0.videoId == "v1" })
+
+        #expect(viewModel.contentItem(for: unknown).durationSeconds == nil)
+        #expect(viewModel.playerArgs(for: unknown).durationSeconds == nil)
+        #expect(viewModel.contentItem(for: known).durationSeconds == 754)
+        #expect(viewModel.playerArgs(for: known).durationSeconds == 754)
+    }
+
     @Test func playerArgsHandlesNilThumbnail() throws {
         let store = makeStore()
         try store.toggle(makeItem(id: "v1", thumbnail: nil))

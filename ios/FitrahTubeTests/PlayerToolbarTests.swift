@@ -304,6 +304,7 @@ struct PlayerToolbarTests {
         let full = PlayerArgs(offline: savedRow(channelName: "Channel", durationSeconds: 754))
         #expect(FavoriteAffordance.isVisible(args: full, isOfflinePlayback: true))
         for row in [savedRow(channelName: "Channel", durationSeconds: nil),
+                    savedRow(channelName: "Channel", durationSeconds: 0),   // a row saved from a legacy favourite's 0
                     savedRow(channelName: nil, durationSeconds: 754),
                     savedRow(channelName: " ", durationSeconds: 754)] {
             #expect(!FavoriteAffordance.isVisible(args: PlayerArgs(offline: row), isOfflinePlayback: true))

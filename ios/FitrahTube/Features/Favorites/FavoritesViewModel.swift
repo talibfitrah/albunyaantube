@@ -31,7 +31,7 @@ import Foundation
     /// the player header (`channelId` stays nil).
     func playerArgs(for item: FavoriteVideo) -> PlayerArgs {
         PlayerArgs(videoId: item.videoId, title: item.title, channelName: item.channelName,
-                   thumbnailURL: item.thumbnailUrl.flatMap(URL.init(string:)), durationSeconds: item.durationSeconds)
+                   thumbnailURL: item.thumbnailUrl.flatMap(URL.init(string:)), durationSeconds: item.durationSeconds.knownDuration)
     }
 
     /// Shared by `remove(_:)` (the store's only mutation entry point takes a `ContentItem`) and by
@@ -39,7 +39,7 @@ import Foundation
     /// stats are irrelevant to a favorite and left nil.
     func contentItem(for item: FavoriteVideo) -> ContentItem {
         ContentItem(id: item.videoId, type: .video, title: item.title, category: nil, description: nil,
-                    thumbnailURL: item.thumbnailUrl.flatMap(URL.init(string:)), durationSeconds: item.durationSeconds,
+                    thumbnailURL: item.thumbnailUrl.flatMap(URL.init(string:)), durationSeconds: item.durationSeconds.knownDuration,
                     uploadedDaysAgo: nil, viewCount: nil, channelTitle: item.channelName,
                     subscribers: nil, videoCount: nil, itemCount: nil)
     }

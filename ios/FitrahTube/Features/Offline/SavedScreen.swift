@@ -158,7 +158,7 @@ extension PlayerArgs {
     /// favourites a real row rather than a 0:00 one with a blank channel.
     init(offline item: OfflineItem) {
         self.init(videoId: item.videoId, title: item.title, channelName: item.channelName,
-                  thumbnailURL: item.thumbnailUrl.flatMap(URL.init), durationSeconds: item.durationSeconds)
+                  thumbnailURL: item.thumbnailUrl.flatMap(URL.init), durationSeconds: item.durationSeconds?.knownDuration)
         offlineItemId = item.id
     }
 
@@ -182,7 +182,7 @@ extension PlayerArgs {
         args.title = title ?? item.title
         args.channelName = channelName ?? item.channelName
         args.thumbnailURL = thumbnailURL ?? item.thumbnailUrl.flatMap(URL.init)
-        args.durationSeconds = durationSeconds ?? item.durationSeconds
+        args.durationSeconds = durationSeconds ?? item.durationSeconds?.knownDuration
         return args
     }
 }
