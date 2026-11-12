@@ -1,0 +1,22 @@
+android/app/src/test/java/com/albunyaan/tube/download/DownloadWorkerRangeTest.kt
+  s_8a936fc306f37b::t_f4eeb4dfa00e23 540-563
+android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt
+  s_8a936fc306f37b::t_a98568daf13a53 284,296,331-346
+  s_8a936fc306f37b::t_32c2a0540135d4 347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca7572013075f8195db4491bb458b0335f7c2941",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
