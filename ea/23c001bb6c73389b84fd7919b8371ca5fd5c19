@@ -1,0 +1,21 @@
+frontend/src/views/ContentSortingView.vue
+  s_8a936fc306f37b::t_7bdaa843c69038 552,554-560
+frontend/tests/ContentSortingLive.spec.ts
+  s_8a936fc306f37b::t_1614948fd2036e 45-47,50-59,63,416-437
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea23c001bb6c73389b84fd7919b8371ca5fd5c19",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
