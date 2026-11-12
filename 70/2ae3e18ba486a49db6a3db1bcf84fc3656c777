@@ -1,0 +1,58 @@
+ios/FitrahTubeTests/ContentListViewModelTests.swift
+  s_8a936fc306f37b::t_45b00611824ab4 17,27-28,53,77,105,117,126,148,158,167,180,183,189,203,208,215,224,241-247,250-251,254-255,267,279,284,302,326,349,376,403,416,434,453
+ios/FitrahTubeTests/HomeViewModelTests.swift
+  s_8a936fc306f37b::t_758c0b1618a028 28,49,75,88,255
+ios/FitrahTube/Features/Categories/CategoriesViewModel.swift
+  s_8a936fc306f37b::t_a81c23407e7b4c 20
+ios/FitrahTube/DesignSystem/Components.swift
+  s_8a936fc306f37b::t_9d244ab187ec65 774,776-796,800
+  s_8a936fc306f37b::t_012ab4dda664da 803
+ios/FitrahTubeTests/FeaturedViewModelTests.swift
+  s_8a936fc306f37b::t_758c0b1618a028 38,62,75,94
+ios/FitrahTubeTests/CategoriesCacheTests.swift
+  s_8a936fc306f37b::t_758c0b1618a028 34,46,63
+ios/FitrahTube/Features/Lists/ContentListView.swift
+  s_8a936fc306f37b::t_8ad68a4e3b1563 81,91,107,130,133-137,200,202,313,333-334
+ios/FitrahTube/Features/Lists/PaginationGuard.swift
+  s_8a936fc306f37b::t_b90ff274aeec3a 19-20
+  s_8a936fc306f37b::t_a81c23407e7b4c 6
+ios/FitrahTubeTests/LiveCatalogClientTests.swift
+  s_8a936fc306f37b::t_758c0b1618a028 72,84,91,98,247,265,280
+  s_8a936fc306f37b::t_529341a7cec830 133
+ios/FitrahTube/Features/Suggest/SuggestContentViewModel.swift
+  s_8a936fc306f37b::t_a81c23407e7b4c 52
+ios/FitrahTube/Catalog/CatalogClient.swift
+  s_8a936fc306f37b::t_147cc5c50dc04f 7
+ios/FitrahTube/Catalog/LiveCatalogClient.swift
+  s_8a936fc306f37b::t_147cc5c50dc04f 38,46
+ios/FitrahTube/Features/Featured/FeaturedViewModel.swift
+  s_8a936fc306f37b::t_a81c23407e7b4c 36
+  s_8a936fc306f37b::t_147cc5c50dc04f 224
+ios/FitrahTube/Catalog/FakeCatalogClient.swift
+  s_8a936fc306f37b::t_147cc5c50dc04f 70
+ios/FitrahTube/Features/Lists/ContentListViewModel.swift
+  s_8a936fc306f37b::t_e46858cca66e84 6,11-12,16,36,48-52,75,90,158,160,173,186,195,201
+  s_8a936fc306f37b::t_486843e40798df 60,63-64
+ios/FitrahTube/Features/Search/SearchViewModel.swift
+  s_8a936fc306f37b::t_a81c23407e7b4c 47,80
+ios/FitrahTubeTests/SearchViewModelTests.swift
+  s_8a936fc306f37b::t_758c0b1618a028 40,63,89,121
+ios/FitrahTube/Features/Home/HomeView.swift
+  s_8a936fc306f37b::t_9d244ab187ec65 114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "702ae3e18ba486a49db6a3db1bcf84fc3656c777",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
