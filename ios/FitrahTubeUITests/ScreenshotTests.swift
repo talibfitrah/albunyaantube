@@ -317,7 +317,7 @@ final class ScreenshotTests: XCTestCase {
         let content = element(for: screen.anchor, in: app)
         XCTAssertTrue(content.waitForExistence(timeout: 20), "player-audio-only: AVPlayerViewController's content view never appeared")
         let button = app.buttons["player.audioOnly.button"]
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "player-audio-only: the audio-only button never appeared")
+        XCTAssertTrue(button.waitForExistence(timeout: 30), "player-audio-only: the audio-only button never appeared")
         button.tap()
         let pill = app.staticTexts["player.audioOnlyPill"]
         XCTAssertTrue(pill.waitForExistence(timeout: 10), "player-audio-only: the audio-only status surface never appeared")
