@@ -144,7 +144,7 @@ public class PublicContentService {
         }
         // No category filter: mix content types with default sorting.
         // getMixedContent does not support offset/cursor, so no next page.
-        return new CursorPageDto<>(getMixedContent(limit, null, null), null);
+        return new CursorPageDto<>(getMixedContent(limit), null);
     }
 
     private static boolean isBlank(String s) {
@@ -239,7 +239,8 @@ public class PublicContentService {
      * no Firestore read once it is kept. No filter keeps the tab order. A category keeps its own and its
      * subcategories' items: channels by subscribers, playlists by item count (both descending). A VIDEOS length or
      * date filters, and a VIDEOS category or sort orders newest first unless sorted (videoOrder). A LIVE category's
-     * VIDEOS list is its expansion (spec §4.1). A cursor that is not an offset (an old document-id cursor) ends the list.
+     * VIDEOS list is its expansion (spec §4.1; cached by LiveCategoryService). A cursor that is not an offset (an old
+     * document-id cursor) ends the list.
      */
     private CursorPageDto<ContentItemDto> keptPage(String dtoType, String cursor, int limit, String category,
                                                    String length, String date, String sort)
@@ -346,7 +347,7 @@ public class PublicContentService {
         return new KeptOrder(byType, children, live);
     }
 
-    private List<ContentItemDto> getMixedContent(int limit, String category, List<String> allCategoryIds)
+    private List<ContentItemDto> getMixedContent(int limit)
             throws ExecutionException, InterruptedException, TimeoutException {
         List<ContentItemDto> mixed = new ArrayList<>();
 
@@ -355,9 +356,9 @@ public class PublicContentService {
         int playlistCount = (limit / 6) * 2;
         int videoCount = limit - channelCount - playlistCount;
 
-        mixed.addAll(getChannels(channelCount, category, allCategoryIds));
-        mixed.addAll(getPlaylists(playlistCount, category, allCategoryIds));
-        mixed.addAll(getVideos(videoCount, category, allCategoryIds, null, null, null));
+        mixed.addAll(getChannels(channelCount, null, null));
+        mixed.addAll(getPlaylists(playlistCount, null, null));
+        mixed.addAll(getVideos(videoCount, null, null, null, null, null));
 
         return mixed;
     }
