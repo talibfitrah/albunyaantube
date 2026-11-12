@@ -1,0 +1,307 @@
+android-remote-config.json
+  s_8a936fc306f37b::t_200377c911beea 1
+backend/src/test/java/com/albunyaan/tube/scheduler/VideoValidationSchedulerTest.java
+  s_8a936fc306f37b::t_200377c911beea 225-226,335
+android/app/src/play/java/com/albunyaan/tube/update/NoUpdateGateway.kt
+  s_8a936fc306f37b::t_200377c911beea 4-6,25-31,47-62
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryItemsCacheTest.java
+  s_8a936fc306f37b::t_200377c911beea 1-54
+ios/FitrahTubeTests/AudioSessionPolicyTests.swift
+  s_8a936fc306f37b::t_200377c911beea 6-7,11-14,18-19
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_8a936fc306f37b::t_200377c911beea 125,137,156-171,857-859,866
+backend/src/test/java/com/albunyaan/tube/controller/ApprovalControllerTest.java
+  s_8a936fc306f37b::t_200377c911beea 76,78,81-82,90,92,94-95,110,115,122,129,133,136,283,288,297,302,390,395
+backend/src/test/java/com/albunyaan/tube/service/VideoValidationServiceTest.java
+  s_8a936fc306f37b::t_200377c911beea 29,56-58,66,111-163
+  s_8a936fc306f37b::t_c17f1ad11edc9a 164
+ios/FitrahTubeTests/PlayerViewModelTests.swift
+  s_8a936fc306f37b::t_200377c911beea 187-192
+backend/src/main/java/com/albunyaan/tube/scheduler/VideoValidationScheduler.java
+  s_8a936fc306f37b::t_200377c911beea 249-250,252,254,272-273,275,336
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_8a936fc306f37b::t_200377c911beea 20,195-198,217,233-234,238-239,244-245,247-251,253-259,263-272,370,418,492-493,540,884,905-907,1012,1014,1017-1024
+  s_8a936fc306f37b::t_6737df1eeb3099 1025
+android/app/src/main/java/com/albunyaan/tube/player/SeekTransientErrorGate.kt
+  s_8a936fc306f37b::t_200377c911beea 88,94-102
+  s_8a936fc306f37b::t_388fc632834921 103-104
+android/app/src/test/java/com/albunyaan/tube/player/PlaybackFeatureFlagsTest.kt
+  s_8a936fc306f37b::t_200377c911beea 109-124,159
+android/app/src/test/java/com/albunyaan/tube/ui/SplashRouterTest.kt
+  s_8a936fc306f37b::t_200377c911beea 149-168
+backend/src/main/java/com/albunyaan/tube/controller/MigrationController.java
+  s_8a936fc306f37b::t_200377c911beea 4,37,46-47,50,169-173
+backend/src/main/java/com/albunyaan/tube/model/Channel.java
+  s_8a936fc306f37b::t_200377c911beea 7,20
+backend/src/main/java/com/albunyaan/tube/service/LibrarySearchSnapshot.java
+  s_8a936fc306f37b::t_200377c911beea 1-205
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryService.java
+  s_8a936fc306f37b::t_200377c911beea 3,18,109-110,112
+android/app/src/main/java/com/albunyaan/tube/update/MinVersionGate.kt
+  s_8a936fc306f37b::t_200377c911beea 1-114
+backend/src/test/java/com/albunyaan/tube/scheduler/LiveChannelPollerTest.java
+  s_8a936fc306f37b::t_200377c911beea 302,389,433,497,506,510,514,595,622,816,1224,1246,1265
+android/app/src/test/java/com/albunyaan/tube/update/MinVersionGateTest.kt
+  s_8a936fc306f37b::t_200377c911beea 1-158
+android/app/src/test/java/com/albunyaan/tube/player/SeekTransientErrorGateTest.kt
+  s_8a936fc306f37b::t_200377c911beea 143-185
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceLiveTest.java
+  s_8a936fc306f37b::t_200377c911beea 45-48
+android/app/src/test/java/com/albunyaan/tube/data/extractor/potoken/WebViewPoTokenProviderTest.kt
+  s_8a936fc306f37b::t_200377c911beea 10,20-47,79,120,123
+ios/FitrahTubeUITests/SinglePlayerChecks.swift
+  s_8a936fc306f37b::t_200377c911beea 45-77,79,113-120
+  s_8a936fc306f37b::t_addc81c99253f4 121
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_8a936fc306f37b::t_200377c911beea 162-163,268-269,307-308,350-351,391-392,549-551,686-688,805-807,1279-1292
+  s_8a936fc306f37b::t_40eb048bd93875 1293
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_8a936fc306f37b::t_200377c911beea 78-81,256-272,625-626,632-633,653-654,904-906,1453,2212-2217,2236-2274,2281,2283-2285,2287,2418-2427,2431-2432,2458-2471,2511,2524-2525,2540-2543,2557,2922-2923,2964-2970
+backend/src/main/java/com/albunyaan/tube/service/PublicContentCacheService.java
+  s_8a936fc306f37b::t_200377c911beea 23-25,49,55-66
+  s_8a936fc306f37b::t_55b98012ba4475 67
+backend/src/test/java/com/albunyaan/tube/service/ImportExportServiceTest.java
+  s_8a936fc306f37b::t_200377c911beea 38,40,72-102,331,390,477
+docs/superpowers/plans/2026-11-11-tab-order-follows-sorting.md
+  s_8a936fc306f37b::t_200377c911beea 1-520
+frontend/tests/liveErrorsInViews.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 29-30,51
+ios/FitrahTubeTests/HDStagerTests.swift
+  s_8a936fc306f37b::t_200377c911beea 20-24,61-63,66-68,355,364-365
+ios/FitrahTubeTests/NowPlayingSnapshotTests.swift
+  s_8a936fc306f37b::t_200377c911beea 83,94-104,106-120,122-166,196
+backend/src/main/java/com/albunyaan/tube/dto/ContentItemMapper.java
+  s_8a936fc306f37b::t_200377c911beea 28,38-39,44,53-54,70,82-84
+backend/src/main/java/com/albunyaan/tube/service/SimpleImportService.java
+  s_8a936fc306f37b::t_200377c911beea 61,80-81,88,158-161
+  s_8a936fc306f37b::t_966feece58f1c3 162-163
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_8a936fc306f37b::t_200377c911beea 16-17,77,91-92,106,122,157-161,164,166-174,177-178,181-183,191,193-194,200,206-207,209,211,232,235,237-240,242-258,260-267,269-285,290,296-298,301,310,316-320,322-323,325-386,388-394,396-408,412-415,417-423,426-436,438-446,448-471,473,476-481,483-488,491-497,500-506,573,581-582,584-585,587
+android/app/src/main/res/values/strings.xml
+  s_8a936fc306f37b::t_200377c911beea 207-209,570
+android/app/src/main/java/com/albunyaan/tube/ui/MainActivity.kt
+  s_8a936fc306f37b::t_200377c911beea 32,104-121,249,508
+android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt
+  s_8a936fc306f37b::t_200377c911beea 284,296,331-346
+  s_8a936fc306f37b::t_696e0a36079996 347
+backend/src/test/java/com/albunyaan/tube/controller/RegistryFake.java
+  s_8a936fc306f37b::t_200377c911beea 1-91
+android/app/src/main/java/com/albunyaan/tube/player/PlaybackFeatureFlags.kt
+  s_8a936fc306f37b::t_200377c911beea 61-68,71-80,134-136,148,161,164,167,170,173,228,245-246,275-276
+backend/src/test/java/com/albunyaan/tube/service/ContentImportServiceTest.java
+  s_8a936fc306f37b::t_200377c911beea 65-67,79-80,134-164,814
+ios/FitrahTube/Features/Player/BackgroundPlaybackController.swift
+  s_8a936fc306f37b::t_200377c911beea 6-7,13,44,48-50,52-55,58-61,112,114-115,155-157,163,172,206,219,225,239,244,314,318,328-331,346-347,349-369,377
+android/app/src/sideload/java/com/albunyaan/tube/update/UpdatePromptFlow.kt
+  s_8a936fc306f37b::t_200377c911beea 134-137
+frontend/src/views/ContentLibraryView.vue
+  s_8a936fc306f37b::t_200377c911beea 8-9,25-28,398,640,649,673,857-867,891,1186-1187,1190-1192,1197-1198,1280-1283,1287,1292-1293,1328,1332-1343,1356,1358-1359,1386,1391-1392,1400-1401,1570
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_8a936fc306f37b::t_ea1552dec7d399 136-157
+android/app/src/test/java/com/albunyaan/tube/player/Forbidden403RecoveryTest.kt
+  s_8a936fc306f37b::t_200377c911beea 1-50
+frontend/tests/ContentSortingLive.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 38,45-53,153,191,212-237,322,338-413
+  s_8a936fc306f37b::t_a14393f0e5a687 414
+android/app/src/test/java/com/albunyaan/tube/ui/settings/AboutLogoLayoutTest.kt
+  s_8a936fc306f37b::t_200377c911beea 1-71
+backend/src/test/java/com/albunyaan/tube/service/SimpleImportServiceTest.java
+  s_8a936fc306f37b::t_200377c911beea 59-61,71-72,107-138
+  s_8a936fc306f37b::t_daaa4ee5dc7d52 139
+android/app/src/main/java/com/albunyaan/tube/util/HttpConstants.kt
+  s_8a936fc306f37b::t_200377c911beea 22-23
+frontend/src/services/sortOrder.ts
+  s_8a936fc306f37b::t_200377c911beea 115-117,125,129-130,132-141
+frontend/tests/ContentLibraryLoadedWindow.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 143-145,150-154,247-288,383-384,386-388,409-410,415-419,423-441,668,670,676,684-685,693-698,703
+android/app/src/main/res/layout/fragment_about.xml
+  s_8a936fc306f37b::t_200377c911beea 48-49,52-53
+backend/src/test/java/com/albunyaan/tube/integration/BaseIntegrationTest.java
+  s_8a936fc306f37b::t_200377c911beea 4,15,52-54,88-89
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_8a936fc306f37b::t_200377c911beea 235-236,831-835
+android/app/src/test/java/com/albunyaan/tube/player/DashSourceBuilderTest.kt
+  s_8a936fc306f37b::t_200377c911beea 413
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_8a936fc306f37b::t_200377c911beea 332-334,337,453-465
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_8a936fc306f37b::t_200377c911beea 313,382
+backend/src/test/java/com/albunyaan/tube/controller/ApprovedPickerTest.java
+  s_8a936fc306f37b::t_200377c911beea 5,11,19-20,26-29,39,42-56,60,62-64,66-67,71-74,76-77,81-92,96-100,102,104-105,109-116,120-123,127,129,133-134,136,138-144
+backend/src/test/java/com/albunyaan/tube/controller/MigrationControllerTest.java
+  s_8a936fc306f37b::t_200377c911beea 1-34
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverUpgradeTests.swift
+  s_8a936fc306f37b::t_200377c911beea 135
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Models.swift
+  s_8a936fc306f37b::t_200377c911beea 88-92
+android/app/src/main/java/com/albunyaan/tube/update/UpdateGateway.kt
+  s_8a936fc306f37b::t_200377c911beea 59-64
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_8a936fc306f37b::t_200377c911beea 354-355,358,462-474
+docs/superpowers/plans/2026-11-11-android-playback-stop.md
+  s_8a936fc306f37b::t_200377c911beea 1-226
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_8a936fc306f37b::t_200377c911beea 473-474,527-529,531-533,603-605,634,642-645,649-657,659-666,669-698,1756,1775,1789-1790,1793,1801,1829-1834,1884-1894
+  s_8a936fc306f37b::t_63789659d69ff2 1895
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/LiveResolveTests.swift
+  s_8a936fc306f37b::t_200377c911beea 1,86-119
+  s_8a936fc306f37b::t_f313fd35932288 120
+ios/FitrahTubeTests/PlayerQueueTests.swift
+  s_8a936fc306f37b::t_200377c911beea 84,115
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/WebViewPoTokenProvider.kt
+  s_8a936fc306f37b::t_200377c911beea 19-24,50
+frontend/src/composables/useFocusTrap.ts
+  s_8a936fc306f37b::t_200377c911beea 163-172,178-186,208-209
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_8a936fc306f37b::t_200377c911beea 797,801-802,815-891,911,915-916,929,948,952-953,966-994
+backend/src/main/java/com/albunyaan/tube/service/ImportExportService.java
+  s_8a936fc306f37b::t_200377c911beea 53,62-63,72,405-406
+  s_8a936fc306f37b::t_9eb607ca4f6bb8 407-408
+ios/FitrahTubeTests/BackgroundPlaybackControllerTests.swift
+  s_8a936fc306f37b::t_200377c911beea 12-13,19-21,27,57-60,64-65,67-70,76,78-79,95-96,101,104-106,117,119-120,124-125,130,132,149,173,354,397
+android/app/src/main/java/com/albunyaan/tube/player/Forbidden403Recovery.kt
+  s_8a936fc306f37b::t_200377c911beea 1-53
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_8a936fc306f37b::t_200377c911beea 407-410,412-421,424,426,450-452,455
+docs/superpowers/plans/2026-08-23-ios-phase2-research/PHASE2-CARRYFORWARDS.md
+  s_8a936fc306f37b::t_200377c911beea 50,53,61,138
+frontend/tests/PendingApprovalsByUser.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 5-6,18,24,73,76-77,79-94,99-100,102-146,161-163,176,238,242,258-259,270
+docs/superpowers/plans/2026-11-11-unified-search.md
+  s_8a936fc306f37b::t_8be2518c912773 1-450
+android/app/src/main/res/layout/fragment_update_required.xml
+  s_8a936fc306f37b::t_200377c911beea 1-74
+backend/src/main/java/com/albunyaan/tube/service/ContentImportService.java
+  s_8a936fc306f37b::t_200377c911beea 67,76-77,86,194-197
+  s_8a936fc306f37b::t_961cacc8ebf411 198
+frontend/tests/ContentLibraryTotals.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 79-90
+backend/src/test/java/com/albunyaan/tube/controller/LibrarySearchTest.java
+  s_8a936fc306f37b::t_200377c911beea 1-222
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServicePaginationTest.java
+  s_8a936fc306f37b::t_200377c911beea 25,251,257,262,333-495
+  s_8a936fc306f37b::t_3ae2a054e4b3e7 496
+ios/FitrahTube/Features/Player/AudioSessionPolicy.swift
+  s_8a936fc306f37b::t_200377c911beea 3-6,14,26,31,37-38
+frontend/tests/e2e-browser/content-library-scroll.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 99-100,102-103,106-107
+android/app/src/main/java/com/albunyaan/tube/ui/UpdateRequiredFragment.kt
+  s_8a936fc306f37b::t_200377c911beea 1-30
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceTabOrderTest.java
+  s_8a936fc306f37b::t_200377c911beea 1-392
+backend/src/test/java/com/albunyaan/tube/integration/PaginationIntegrationTest.java
+  s_8a936fc306f37b::t_200377c911beea 15,66-68,738,742-744,961
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_8a936fc306f37b::t_200377c911beea 807-823
+backend/src/main/java/com/albunyaan/tube/dto/ContentItemDto.java
+  s_8a936fc306f37b::t_200377c911beea 5,53-58,267-282
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_8a936fc306f37b::t_200377c911beea 291,295,529,532-534
+frontend/src/views/ContentSortingView.vue
+  s_8a936fc306f37b::t_200377c911beea 255,278,283-294,296-303,338-353,358,378-379,500-503,509-511,515-569,598-609,612,614,623,628-643,645,649,967,969-971,974,984-985,989,1450-1451,1536-1538,1587-1615
+  s_8a936fc306f37b::t_13643107a45c3b 1616
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_8a936fc306f37b::t_200377c911beea 8,19,27,87-88,170-175,180-181,184-187,261-273,275-279,371-375
+  s_8a936fc306f37b::t_2fef4758e09c6b 376-377
+android/app/src/test/java/com/albunyaan/tube/data/extractor/DubAudioEnumeratorTest.kt
+  s_8a936fc306f37b::t_200377c911beea 13
+backend/src/main/resources/firestore.indexes.json
+  s_8a936fc306f37b::t_200377c911beea 69-85,136-152,211-227
+android/app/src/main/res/navigation/app_nav_graph.xml
+  s_8a936fc306f37b::t_200377c911beea 46-52,55-58
+  s_8a936fc306f37b::t_c65041d70169bb 59
+ios/FitrahTube/Features/Player/HDStager.swift
+  s_8a936fc306f37b::t_200377c911beea 56-57,60,62
+docs/architecture/api-specification.yaml
+  s_8a936fc306f37b::t_200377c911beea 3104-3111,3114-3119,3146-3152,3168-3173,3201,3206,3209,3211,3213,3215,4381-4383,4389-4392
+android/app/src/main/res/values-nl/strings.xml
+  s_8a936fc306f37b::t_200377c911beea 188-190,480
+backend/src/test/java/com/albunyaan/tube/repository/FindByCategoryIdsLimitTest.java
+  s_8a936fc306f37b::t_200377c911beea 1-103
+frontend/tests/approvedPicker.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 2-3,11-13,19-22,24,26-29,32,35,38,40-42,48-49
+backend/src/test/java/com/albunyaan/tube/controller/ImportExportControllerTest.java
+  s_8a936fc306f37b::t_200377c911beea 17,59
+android/app/src/main/java/com/albunyaan/tube/ui/settings/DeveloperSettingsDialog.kt
+  s_8a936fc306f37b::t_200377c911beea 125
+frontend/tests/ContentBrowserModalPaging.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 1-79
+backend/src/main/java/com/albunyaan/tube/service/VideoValidationService.java
+  s_8a936fc306f37b::t_200377c911beea 43,50-51,58,187-191
+  s_8a936fc306f37b::t_078cae35d87e9b 192-194
+android/app/src/test/java/com/albunyaan/tube/player/MultiRepresentationMpdGeneratorTest.kt
+  s_8a936fc306f37b::t_200377c911beea 433-434
+frontend/src/locales/messages.ts
+  s_8a936fc306f37b::t_200377c911beea 333,421,433-435,454,458,1986,2087,2099-2101,2120,2124,3432,3533,3545-3547,3566,3570
+ios/scripts/screenshots.sh
+  s_8a936fc306f37b::t_200377c911beea 588-605
+ios/FitrahTubeTests/PlayerHostTests.swift
+  s_8a936fc306f37b::t_200377c911beea 644,651,748-756,764-782,1169-1170
+android/app/src/main/java/com/albunyaan/tube/ui/SplashRouter.kt
+  s_8a936fc306f37b::t_200377c911beea 131-142
+  s_8a936fc306f37b::t_511fec757fe47e 130
+android/app/src/test/java/com/albunyaan/tube/download/DownloadWorkerRangeTest.kt
+  s_8a936fc306f37b::t_200377c911beea 13,128,145-158,519-562
+  s_8a936fc306f37b::t_5b03ee8d091228 563
+ios/FitrahTubeUITests/ScreenshotTests.swift
+  s_8a936fc306f37b::t_200377c911beea 303-307,310-311,313,320,325-327,345
+backend/src/test/java/com/albunyaan/tube/service/PendingQueueSourceSplitTest.java
+  s_8a936fc306f37b::t_200377c911beea 31-32,34-35,72,74,85-89,91,93,97-98,101,103,109,111-112,114,116-117,121-122,124
+docs/superpowers/specs/2026-11-11-sorting-search-playback-design.md
+  s_8a936fc306f37b::t_8be2518c912773 1-189
+backend/src/test/java/com/albunyaan/tube/service/PublicContentCacheKeyTest.java
+  s_8a936fc306f37b::t_200377c911beea 3-4,21,35,53-54,72-76,92,96,98,108,111,185,193-195,197-198,200-237,240,244
+frontend/tests/PendingApprovalsView.spec.ts
+  s_8a936fc306f37b::t_200377c911beea 5,110,114,124-125,133
+ios/FitrahTubeTests/PlayerViewModelQueueTests.swift
+  s_8a936fc306f37b::t_200377c911beea 226-424,603-642
+  s_8a936fc306f37b::t_55c33f6db13abe 643
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryVisibilityTest.java
+  s_8a936fc306f37b::t_200377c911beea 23-24,75,81,96,109,122,133
+android/app/src/main/java/com/albunyaan/tube/player/MultiRepresentationMpdGenerator.kt
+  s_8a936fc306f37b::t_200377c911beea 113
+backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java
+  s_8a936fc306f37b::t_200377c911beea 85-87,92-93,95-98,100,104,110-111,116,132-138
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryPagingAndTotalsTest.java
+  s_8a936fc306f37b::t_200377c911beea 4-5,15,19,21,24-26,28-29,31,35-38,65-68,70-71,74-75,78-80,82-104,106-119,123-126,128,130-134,138-140,142,144-148,152-154,156-157,161-163,165-170,174-176,178,180-181,183,185,187-205,209-211,215-217,219,221-223,225-228,232-235,237,239-241,243-250,252,254-255,259-269,271-274,276-278,282-285,287,289-292,296-302,304,306-312,338-339,341-345
+frontend/src/views/PendingApprovalsView.vue
+  s_8a936fc306f37b::t_200377c911beea 54,61,199-201,482-483,668-669,671-677,765,767,872,892,901,934,972,984,1053,1056-1057
+android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt
+  s_8a936fc306f37b::t_200377c911beea 115,182-183
+android/app/src/main/res/values-ar/strings.xml
+  s_8a936fc306f37b::t_200377c911beea 178-180,578
+backend/src/main/java/com/albunyaan/tube/controller/ApprovalController.java
+  s_8a936fc306f37b::t_200377c911beea 70,95,98,100
+frontend/src/components/exclusions/ContentBrowserModal.vue
+  s_8a936fc306f37b::t_200377c911beea 188,190-191,228,250-251,254,257-258,273-274,277-279,282-283,285,299,304-305
+  s_8a936fc306f37b::t_59a91686e6f002 306
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_8a936fc306f37b::t_200377c911beea 23,27,31,37,50,52-53,55,109-111,122-127,129-143,145-148,150-322,324,326-347,350,359-361,424,428-430,495,537,1114,1355,1373,1431-1433,1437,1439-1440,1452,1456,1494-1515
+  s_8a936fc306f37b::t_4b1a98df90e8cc 1516
+android/app/src/test/java/com/albunyaan/tube/data/extractor/ExtractionClientTest.kt
+  s_8a936fc306f37b::t_200377c911beea 40-41
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryOfflineAllowedTest.java
+  s_8a936fc306f37b::t_200377c911beea 20-21,55-56
+backend/src/test/java/com/albunyaan/tube/service/PublicContentCacheServiceTest.java
+  s_8a936fc306f37b::t_200377c911beea 8,22-36
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/TVAdaptive.swift
+  s_8a936fc306f37b::t_200377c911beea 170-179
+backend/src/test/java/com/albunyaan/tube/integration/LiveChannelPollerIT.java
+  s_8a936fc306f37b::t_200377c911beea 33,127,132,138-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a0f936511333c615e2b9aa012dfa90b36e747a5",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
