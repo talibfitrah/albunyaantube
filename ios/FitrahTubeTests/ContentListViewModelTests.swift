@@ -8,8 +8,8 @@ struct ContentListViewModelTests {
 
     // MARK: - Test doubles (same pattern as HomeViewModelTests)
 
-    /// Records every `content()` call's params -- proves per-type request shapes, cursor
-    /// progression, and the `q` omission threshold.
+    /// Records every `content()` call's params -- proves per-type request shapes and cursor
+    /// progression.
     private actor RecordingCatalogClient: CatalogClient {
         /// `filter` added fix round 1, finding #2 -- the original `Call` recorded every request
         /// param except this one, so nothing ever proved `ContentListViewModel` actually forwards

@@ -789,7 +789,7 @@ struct SearchButton: View {
     }
 }
 
-// MARK: - SearchField (the pill-shaped query field, shared by Search and the detail/suggest screens)
+// MARK: - SearchField (the pill-shaped query field, shared by Search and the Suggest screen)
 
 /// Magnifier + text field + clear button in a `surfaceVariant` pill. One copy (gate wave-2 W9): the
 /// screens differ only in focus/submit behaviour and the field's VoiceOver label -- so the next
@@ -801,6 +801,7 @@ struct SearchField: View {
     /// element of a header.
     var focus: FocusState<Bool>.Binding?
     /// Set by `SearchView`, which searches on the keyboard's Search key (bypassing its debounce).
+    /// Only takes effect together with `focus` (both are needed to attach the submit handler).
     var onSubmit: (() -> Void)?
     /// Overrides the placeholder. `nil` (every Phase 1-3 caller) keeps `search_hint`; Task 27's
     /// Suggest screen searches YouTube through the BACKEND and says so (`suggest_search_hint`).
