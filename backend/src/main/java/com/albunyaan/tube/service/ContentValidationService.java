@@ -980,9 +980,13 @@ public class ContentValidationService {
 
         // Videos with no duration (null or <= 0) jump the queue, capped at half the run; ERROR rows keep
         // their oldest-first turn so a video that keeps failing to fetch cannot win a slot every day.
+        // ponytail: a row that stays 0 s after a fetch (live/upcoming) jumps again only weekly, not daily; add a live/upcoming marker on Video to stop it entirely.
+        Instant sevenDaysAgo = Instant.now().minus(7, ChronoUnit.DAYS);
         List<Video> result = eligible.stream()
                 .filter(v -> (v.getDurationSeconds() == null || v.getDurationSeconds() <= 0)
-                        && v.getValidationStatus() != ValidationStatus.ERROR)
+                        && v.getValidationStatus() != ValidationStatus.ERROR
+                        && (v.getLastValidatedAt() == null
+                        || v.getLastValidatedAt().toDate().toInstant().isBefore(sevenDaysAgo)))
                 .limit(limit / 2)
                 .collect(Collectors.toCollection(ArrayList::new));
         eligible.stream()

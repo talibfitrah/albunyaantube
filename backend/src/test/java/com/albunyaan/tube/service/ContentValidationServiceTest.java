@@ -444,7 +444,7 @@ class ContentValidationServiceTest {
             List<String> brokenUrls = Arrays.asList(PLC_THUMB, "https://i.ytimg.com/img/no_thumbnail.jpg", null);
             for (int i = 0; i < brokenUrls.size(); i++) {
                 firestoreOrder.add(playlistAt("PLbroken" + i, brokenUrls.get(i),
-                        Instant.now().minus(2, ChronoUnit.DAYS).plusSeconds(i)));
+                        Instant.now().minus(8, ChronoUnit.DAYS).plusSeconds(i)));
             }
             stubApprovedPlaylists(firestoreOrder);
 
@@ -466,7 +466,7 @@ class ContentValidationServiceTest {
             }
             for (int i = 0; i < 30; i++) {
                 firestoreOrder.add(playlistAt(String.format("PLbroken%02d", i), PLC_THUMB,
-                        Instant.now().minus(2, ChronoUnit.DAYS).plusSeconds(i)));
+                        Instant.now().minus(8, ChronoUnit.DAYS).plusSeconds(i)));
             }
             stubApprovedPlaylists(firestoreOrder);
 
@@ -562,8 +562,8 @@ class ContentValidationServiceTest {
                     videoAt("Vold1", 600, base.plusSeconds(1)),
                     videoAt("Vold2", 600, base.plusSeconds(2)),
                     videoAt("Vold3", 600, base.plusSeconds(3)),
-                    videoAt("VnoDurationNull", null, Instant.now().minus(2, ChronoUnit.DAYS)),
-                    videoAt("VnoDurationZero", 0, Instant.now().minus(2, ChronoUnit.DAYS).plusSeconds(1))));
+                    videoAt("VnoDurationNull", null, Instant.now().minus(8, ChronoUnit.DAYS)),
+                    videoAt("VnoDurationZero", 0, Instant.now().minus(8, ChronoUnit.DAYS).plusSeconds(1))));
 
             List<String> ids = pickedVideoIds(4);
 
@@ -579,7 +579,7 @@ class ContentValidationServiceTest {
                 firestoreOrder.add(videoAt("Vold" + i, 600, base.plusSeconds(i)));
             }
             for (int i = 0; i < 5; i++) {
-                firestoreOrder.add(videoAt("VnoDuration" + i, null, Instant.now().minus(2, ChronoUnit.DAYS).plusSeconds(i)));
+                firestoreOrder.add(videoAt("VnoDuration" + i, null, Instant.now().minus(8, ChronoUnit.DAYS).plusSeconds(i)));
             }
             stubApprovedVideos(firestoreOrder);
 
@@ -601,6 +601,18 @@ class ContentValidationServiceTest {
                     error));
 
             assertEquals(List.of("Vold0", "Vold1", "VerrorNoDuration"), pickedVideoIds(4));
+        }
+
+        @Test
+        @DisplayName("A video still lacking a duration 2 days after its last check does not jump ahead of an older VALID row")
+        void validateVideos_missingDurationValidatedWithin7DaysDoesNotJump() throws Exception {
+            Instant base = Instant.now().minus(30, ChronoUnit.DAYS);
+            stubApprovedVideos(List.of(
+                    videoAt("Vold0", 600, base),
+                    videoAt("Vold1", 600, base.plusSeconds(1)),
+                    videoAt("VstuckNoDuration", 0, Instant.now().minus(2, ChronoUnit.DAYS))));
+
+            assertEquals(List.of("Vold0", "Vold1"), pickedVideoIds(2));
         }
 
         @Test
