@@ -3,7 +3,8 @@
   Update-required terminal screen. One layout for every width: the content column is
   centred and capped by layout_constraintWidth_max, so phone / sw600dp / sw720dp all
   render the same block. Outer FrameLayout owns fitsSystemWindows and the inner
-  ConstraintLayout owns the padding (see fragment_age_ineligible.xml for why).
+  ConstraintLayout owns the padding (see fragment_age_ineligible.xml for why). The
+  ScrollView (fillViewport) keeps the button reachable on a landscape phone at large font.
 -->
 <FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -14,9 +15,14 @@
     android:fitsSystemWindows="true"
     tools:context="com.albunyaan.tube.ui.UpdateRequiredFragment">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:fillViewport="true">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:paddingStart="@dimen/spacing_lg"
         android:paddingEnd="@dimen/spacing_lg"
         android:paddingTop="@dimen/spacing_lg"
@@ -64,4 +70,5 @@
             app:layout_constraintEnd_toEndOf="parent" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
+    </ScrollView>
 </FrameLayout>

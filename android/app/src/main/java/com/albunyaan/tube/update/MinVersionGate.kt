@@ -24,6 +24,9 @@ import javax.inject.Singleton
  * floor; a failed fetch never clears it. Fails open: with no good value ever seen, nothing
  * is blocked.
  *
+ * To un-block, publish a lower value; removing the key (or an unparseable value) keeps the
+ * last cached floor.
+ *
  * ponytail: cold start only. iOS also re-checks on foreground; add a resume check if a floor
  * ever has to bite a process that stays alive for days.
  */
