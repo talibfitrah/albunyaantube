@@ -1,5 +1,7 @@
 package com.albunyaan.tube.player
 
+import com.albunyaan.tube.data.extractor.ResolvedStreams
+
 internal enum class Forbidden403Step { REFRESH, PLAY_MUXED, EXHAUSTED }
 
 /**
@@ -25,3 +27,11 @@ internal fun next403Step(
     refreshesThisEpisode < maxRefreshes -> Forbidden403Step.REFRESH
     else -> Forbidden403Step.EXHAUSTED
 }
+
+/**
+ * Whether [next403Step]'s PLAY_MUXED can help: a VOD stream set with a muxed track. Live is
+ * excluded because [DashSourceBuilder.decide] ignores forceProgressive for live, so the
+ * "muxed" rebuild would be the same live source and never advance the refresh count.
+ */
+internal fun hasMuxedFallback(resolved: ResolvedStreams?): Boolean =
+    resolved != null && !resolved.isLive && resolved.videoTracks.any { !it.isVideoOnly }

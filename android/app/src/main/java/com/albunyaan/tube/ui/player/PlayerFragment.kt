@@ -77,6 +77,7 @@ import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import com.albunyaan.tube.player.Forbidden403Step
 import com.albunyaan.tube.player.next403Step
+import com.albunyaan.tube.player.hasMuxedFallback
 import com.albunyaan.tube.player.applyCaptionStyle
 import com.albunyaan.tube.player.normalizeSubtitleCue
 import com.albunyaan.tube.data.report.ReportTargetType
@@ -2406,8 +2407,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // The source that 403'd, read before any arm resets prepared state or a backoff delay
             // lets it change.
             val playingMuxed = !preparedIsAdaptive
-            val hasMuxed = (viewModel.state.value.streamState as? StreamState.Ready)
-                ?.selection?.resolved?.videoTracks?.any { !it.isVideoOnly } == true
+            val hasMuxed = hasMuxedFallback((viewModel.state.value.streamState as? StreamState.Ready)?.selection?.resolved)
 
             // Handle based on failure classification
             when (failureType) {
@@ -2491,6 +2491,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                     lifecycleOwner.lifecycleScope.launch {
                         delay(backoffMs)
+                        // The user may have switched video during the backoff: the state captured
+                        // above belongs to the 403'd video, so act only if it is still current.
+                        if (viewModel.state.value.currentItem?.streamId != videoId) return@launch
                         when (next403Step(currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
                             Forbidden403Step.REFRESH -> {
                                 onStreamRefresh()
