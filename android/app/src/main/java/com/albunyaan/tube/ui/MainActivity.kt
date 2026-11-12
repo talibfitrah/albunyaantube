@@ -29,6 +29,7 @@ import com.albunyaan.tube.download.DownloadNotificationPermission
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.preferences.SettingsPreferences
+import com.albunyaan.tube.update.MinVersionGate
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
@@ -99,6 +100,21 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         configureSystemBars()
         navController // trigger lazy init if toolbar needed later
+
+        // The NavHostFragment restored its back stack in super.onCreate, so its graph is set.
+        if (SplashRouter.restoreBlockedByMinVersion(savedInstanceState != null) {
+                minVersionGate.decideFromCache(BuildConfig.VERSION_NAME)
+            }
+        ) {
+            navController.navigate(
+                R.id.updateRequiredFragment,
+                null,
+                navOptions {
+                    popUpTo(R.id.app_nav_graph) { inclusive = true }
+                    launchSingleTop = true
+                },
+            )
+        }
 
         // Handle intent only on fresh launch (not recreation)
         if (savedInstanceState == null) {
@@ -227,7 +243,7 @@ class MainActivity : AppCompatActivity() {
     private fun navigateToSignIn() {
         try {
             val nav = navController
-            if (nav.currentDestination?.id != R.id.signInFragment) {
+            if (SplashRouter.mayRouteToSignIn(nav.currentDestination?.id)) {
                 nav.navigate(
                     R.id.signInFragment,
                     null,
@@ -486,6 +502,7 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var firebaseAuth: FirebaseAuth
     @Inject lateinit var syncManager: SyncManager
     @Inject @Named("applicationScope") lateinit var appScope: CoroutineScope
+    @Inject lateinit var minVersionGate: MinVersionGate
 
     override fun onDestroy() {
         // Clean up any pending navigation listener to prevent leaks
