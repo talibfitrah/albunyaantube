@@ -389,4 +389,26 @@ describe('Content Sorting add-content: see a channel or playlist before adding i
     await fireEvent.click(close);
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Some channel' }));
   });
+
+  it('Escape closes the detail window, not the picker, and focus returns to the title', async () => {
+    await openPicker();
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    expect(screen.queryByTestId('channel-detail')).toBeNull();
+    expect(screen.getByText('Add Content to Category')).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Some channel' }));
+  });
+
+  it('the covered picker cannot be reached while the detail window is open', async () => {
+    await openPicker();
+    const picker = document.querySelector('.modal-container[role="dialog"]')!;
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+    expect(picker).toHaveAttribute('inert');
+
+    await fireEvent.click(screen.getByText('close-detail'));
+    expect(picker).not.toHaveAttribute('inert');
+  });
 });

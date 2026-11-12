@@ -355,7 +355,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, watch } from 'vue';
+import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import {
@@ -527,6 +527,7 @@ function openDetail(item: ApprovedContentItem, event: Event) {
     ?.querySelector<HTMLElement>('.add-content-detail') ?? null;
   // The detail window sits outside the picker; its trap would pull focus straight back.
   pauseFocusTrap();
+  setDetailOwnsKeyboard(true);
   detailItem.value = item;
   nextTick(() => {
     const closers = document.querySelectorAll<HTMLElement>('.modal-overlay .close-btn');
@@ -536,8 +537,28 @@ function openDetail(item: ApprovedContentItem, event: Event) {
 
 function closeDetail() {
   detailItem.value = null;
+  // Before any focus moves: an inert element cannot take it.
+  setDetailOwnsKeyboard(false);
   resumeFocusTrap({ initialFocus: detailReturnFocus });
 }
+
+/**
+ * While a detail window is open it alone takes the keyboard: the picker and the page under it are
+ * inert, so Tab cannot reach a covered checkbox or "Add", and Escape closes the detail, not the picker.
+ * The detail windows (and those they open in turn) are teleported to <body>, outside both.
+ */
+function onDetailEscape(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return;
+  // A video preview opened from the detail closes itself on Escape (its overlay is the dialog).
+  if ((event.target as Element | null)?.closest?.('.modal-overlay[role="dialog"]')) return;
+  closeDetail();
+}
+function setDetailOwnsKeyboard(owns: boolean) {
+  for (const el of [document.getElementById('app'), addModalContainerRef.value]) el?.toggleAttribute('inert', owns);
+  if (owns) document.addEventListener('keydown', onDetailEscape);
+  else document.removeEventListener('keydown', onDetailEscape);
+}
+onBeforeUnmount(() => { if (detailItem.value) setDetailOwnsKeyboard(false); });
 
 /** A video's thumbnail selects the row as before; a channel's or playlist's opens its detail. */
 function onThumbClick(event: Event, item: ApprovedContentItem) {
@@ -961,6 +982,7 @@ async function openAddContentModal(categoryId: string) {
 
 function closeAddContentModal() {
   detailItem.value = null;
+  setDetailOwnsKeyboard(false);
   deactivateFocusTrap();
   addModalOpen.value = false;
   addModalError.value = '';
@@ -1425,8 +1447,8 @@ tr.drag-over {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* As every view's dialogs: the shared detail windows (1000 and up) open over it. */
-  z-index: 1000;
+  /* Just below the shared detail windows (1000 and up), which open over it. */
+  z-index: 999;
   padding: 1rem;
 }
 

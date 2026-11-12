@@ -160,11 +160,11 @@ export function useFocusTrap(containerRef: Ref<HTMLElement | null>, options: Foc
   }
 
   function deactivate(): void {
-    if (!isActive.value) {
-      return;
+    if (isActive.value) {
+      detachListeners();
+      isActive.value = false;
     }
-    detachListeners();
-    isActive.value = false;
+    // Also when paused: the focus to hand back is still the one saved on activate (a no-op otherwise).
     restoreFocus();
   }
 

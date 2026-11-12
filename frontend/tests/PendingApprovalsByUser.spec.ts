@@ -124,6 +124,27 @@ describe('the queue lists everything pending, phone imports included', () => {
     await waitFor(() => expect(getPendingSubmittersMock).toHaveBeenCalledTimes(2));
   });
 
+  it('refreshes the by-user counts even when the tab changed before the decision returned', async () => {
+    getPendingSubmittersMock.mockResolvedValue([
+      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 1 }
+    ]);
+    getPendingApprovalsMock.mockResolvedValue({
+      items: [makeItem('b', 'Ahmeds Import', 'USER_IMPORT')],
+      nextCursor: null
+    });
+    let finish!: () => void;
+    approveItemMock.mockReturnValueOnce(new Promise<void>(r => { finish = r; }));
+
+    await renderView();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'By user (1)' })).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: /approve for this user/i }));
+    await fireEvent.click(screen.getByRole('button', { name: 'By user (1)' }));
+    finish();
+
+    // Ahmed's import is decided: the tally it showed must not stand.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'By user (1)' })).toBeNull());
+  });
+
   it('fetches exactly one page per load', async () => {
     getPendingApprovalsMock.mockResolvedValue({
       items: [makeItem('a', 'Moderator Pick', 'MODERATOR')],

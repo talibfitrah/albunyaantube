@@ -196,7 +196,7 @@
             />
             <span class="content-type">{{ t(`approvals.types.${item.type}`) }}</span>
             <span v-if="item.source === 'USER_IMPORT'" class="source-badge source-user-import">
-              {{ selectedSubmitter
+              {{ selectedSubmitter || isModeratorView
                 ? t('approvals.sourceUserImport')
                 : t('approvals.phoneImportBy', { name: item.submittedByLabel || t('approvals.unknown') }) }}
             </span>
@@ -665,12 +665,12 @@ function clearSelection() {
  * loaded, so acting on the 100th item sent them back to the top. Splicing leaves the scroll
  * position untouched and costs one request fewer per action.
  */
-function removeFromQueue(ids: string[]) {
+function removeFromQueue(done: { id: string; source?: string }[]) {
+  const ids = done.map(item => item.id);
   const gone = new Set(ids);
-  // Deciding a phone import, from either tab, moves the by-user counts.
-  if (approvals.value.some(item => gone.has(item.id) && item.source === 'USER_IMPORT')) {
-    submitterCountsStale.value = true;
-  }
+  // Deciding a phone import, from either tab, moves the by-user counts. Judged from the decided
+  // items themselves: a tab switch while the request ran has emptied the list by now.
+  if (done.some(item => item.source === 'USER_IMPORT')) submitterCountsStale.value = true;
   approvals.value = approvals.value.filter(item => !gone.has(item.id));
   const nextSelection = new Set(selectedIds.value);
   ids.forEach(id => {
@@ -865,7 +865,7 @@ async function handleApprove(item: any) {
   processingId.value = item.id;
   try {
     await approveItem(item.id, item.type, categoryOverride);
-    removeFromQueue([item.id]);
+    removeFromQueue([item]);
     loadPendingCount();
   } catch (err) {
     // A live-category refusal (spec §8) is about this item only: toast it and keep the queue on screen.
@@ -885,7 +885,7 @@ async function bulkApprove() {
   if (!batch.length) return;
 
   const chosen = bulkCategory.value;
-  const approved: string[] = [];
+  const approved: { id: string; source?: string }[] = [];
   let failed = 0;
   let firstError: string | null = null;
 
@@ -894,7 +894,7 @@ async function bulkApprove() {
     await runBounded(batch, BULK_CONCURRENCY, async item => {
       try {
         await approveItem(item.id, item.type, categoryOverrideFor(item, chosen));
-        approved.push(item.id);
+        approved.push(item);
       } catch (err) {
         // One rejection from the server must not abandon the rest of the batch — but a batch
         // where everything failed must still say why, not just how many.
@@ -927,7 +927,7 @@ async function handleApprovePersonal(item: any) {
   processingId.value = item.id;
   try {
     await approveItem(item.id, item.type, undefined, undefined, 'PERSONAL');
-    removeFromQueue([item.id]);
+    removeFromQueue([item]);
     loadPendingCount();
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.approveError');
@@ -965,7 +965,7 @@ async function handleReject() {
 
   // The reason is optional. Blank means "no feedback", not "OTHER".
   const reason = rejectReason.value.trim() || undefined;
-  const rejected: string[] = [];
+  const rejected: { id: string; source?: string }[] = [];
   let failed = 0;
 
   isRejecting.value = true;
@@ -977,7 +977,7 @@ async function handleReject() {
     await runBounded(targets, BULK_CONCURRENCY, async item => {
       try {
         await rejectItemApi(item.id, item.type, reason);
-        rejected.push(item.id);
+        rejected.push(item);
       } catch (err) {
         failed += 1;
         // Keep the server's words for the reviewer — "already reviewed in another tab" is
