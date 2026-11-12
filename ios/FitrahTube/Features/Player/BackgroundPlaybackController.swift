@@ -41,7 +41,7 @@ import UIKit
     /// treat Play as the interruption's end). Another media app started from Control Center sends a
     /// begin and never an end, so without this every later open waited for a tap. Called from
     /// `Router.push` for `.player`/`.shorts` (a tap or a deep link; round 5 N2 moved it off the
-    /// screen's mount, which an iPad resize also re-runs), `PlayerScreen.playUpNext` and
+    /// screen's mount, which an iPad resize also re-runs), `PlayerScreen.playUpNext`, `PlayerHostView.trackSkip` and
     /// `PlayerScreen.retryTapped`. Never for an automatic start: an advance, an auto-skip's rebuild.
     static func userAskedToPlay() { sessionInterrupted = false }
     private static var sessionObserver: NSObjectProtocol?
@@ -49,7 +49,7 @@ import UIKit
     /// foreground. Skipped while PiP is live: the floating window is playing the very item a re-resolve replaces, so it
     /// would re-buffer or blank; the stream is unexpired by definition (it is still playing).
     var onWillEnterForeground: (() async -> Void)?
-    /// The playlist's next and previous lecture (`PlayerScreen.playUpNext`), set on every host update pass. nil: no
+    /// The playlist's next and previous lecture (`PlayerHostView.trackSkip`), set on every host update pass. nil: no
     /// such lecture, so the lock-screen button is disabled (ruling 28: a dead button is worse than an absent one).
     var onNextTrack: (() -> Void)? { didSet { applyTrackCommands() } }
     var onPreviousTrack: (() -> Void)? { didSet { applyTrackCommands() } }

@@ -804,6 +804,23 @@ import Testing
         #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil, "the HLS walk wrote the plain key")
     }
 
+    /// 2026-11-12: AVPlayer reads the itag 140 file with one open-ended GET, which googlevideo throttles, so audio only
+    /// never started. The player plays it as a byte-range playlist instead, which needs the format's ranges.
+    @Test func aVisionOSAnswerCarriesTheItag140ByteRanges() async throws {
+        let (resolver, _) = makeResolver(transport: RecordingTransport([try fixtureResponse("player-ok-hls")]))
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .hls(_, _, let audioOnlyURL?, _, _) = resolved.stream else {
+            Issue.record("expected .hls with itag 140, got \(resolved.stream)"); return
+        }
+        let audio = try #require(resolved.audioOnly)
+        #expect(audio.url == audioOnlyURL)
+        #expect(audio.initRange == 0...722)
+        #expect(audio.indexRange == 723...10918)
+        #expect(audio.contentLength == 136_852_236)
+        #expect(audio.codecs == "mp4a.40.2")
+        #expect(audio.bandwidth == 138_809)
+    }
+
     /// Fix r5 N4-2 (controller ruling, option b): the audio-only save's HLS fallback runs exactly when
     /// VISIONOS may be bot-checked for the session (ANDROID answered the plain walk), and a trip from
     /// it fed the SHARED cooldown that then refused the player's working ANDROID rung. It records no

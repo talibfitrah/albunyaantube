@@ -371,7 +371,6 @@ extension StreamState {
     /// only resolves what it has not resolved before. Success-only: a refusal leaves the id
     /// eligible for the next window (CF-B2-2 rule (a) says skip silently, not give up).
     private var prefetchedIds: Set<String> = []
-    private var consecutiveSkips = 0
     /// The in-flight page fetch (Cubic P3). A single-flight boolean made a concurrent caller
     /// return EARLY: an end-of-item `advance()` landing while `open()`'s page was still inside
     /// `queueSource.page(...)` saw an empty `upcoming` and showed `.queueEnded` with a whole page
@@ -525,16 +524,13 @@ extension StreamState {
     /// also B5's auto-advance hook -- Up Next reads THIS, not `SettingsStore` directly.
     var safeMode: Bool { settings.safeMode }
 
-    /// Audio-only needs a real itag 140 URL. Rung 2 (a single muxed 360p progressive) has none, so
-    /// the toggle is hidden there -- the same "hide the control that has no backing" rule spec §10
-    /// applies to the quality control on rung 2.
+    /// Audio-only needs the audio file's byte ranges (`Resolved.audioOnly`; `PlayerHostView.source`). Rung 2 (a single
+    /// muxed 360p progressive) has none, so the toggle is hidden there -- the same "hide the control that has no
+    /// backing" rule spec §10 applies to the quality control on rung 2.
     static func audioOnlyAvailable(for state: StreamState) -> Bool {
-        // ponytail: no `isLive` check -- a live HLS has never been seen carrying an itag 140 url, so
-        // the `audioOnlyURL != nil` test already excludes it. Add one here if a live stream ever
-        // resolves with one (the swap would then hand AVPlayer a non-live audio rendition).
-        guard case .ready(let resolved) = state,
-              case .hls(_, _, let audioOnlyURL, _, _) = resolved.stream else { return false }
-        return audioOnlyURL != nil
+        // No `isLive` check: a live stream has no byte ranges, so it never carries the rendition.
+        guard case .ready(let resolved) = state else { return false }
+        return resolved.audioOnly != nil
     }
 
     func open() async {
@@ -635,7 +631,7 @@ extension StreamState {
         let myGeneration = generation
         await pageIfNeeded()
         guard myGeneration == generation else { return }
-        guard let next = queue.advance() else {
+        guard queueNeighbour(1) != nil else {
             // `PlayerViewModel.kt:1920-1923`: no next item and no more pages -- playback stops.
             // NOT `.idle` (reconciliation note 9): that is the pre-open value and renders as a
             // Retry-less "Loading..." spinner forever. A finished playlist is a real terminal
@@ -643,49 +639,57 @@ extension StreamState {
             state = .queueEnded
             return
         }
-        swapArgs(to: next)
-        // `showLoading: false` is LOAD-BEARING (reconciliation note 2): a `.loading` hop
-        // dismantles PlayerHostView, detaches the audio session and kills background
-        // auto-advance. NOT `silent:` -- a failed advance MUST surface, because that is what
-        // drives auto-skip and, past the cap, the terminal state the user sees.
-        // `forceRefresh: false` is CF-B2-2 rule (b): land on the warmed ManifestCache entry.
-        let stillCurrent = await resolve(forceRefresh: false, kind: .player, showLoading: false)
-        // Review F1: the same supersession check as after `pageIfNeeded()` above, for the OTHER
-        // suspension. A `play(at:)` landing during THIS resolve owns the queue now -- it cancelled
-        // this resolve and set `.loading`; without this guard the resumed advance read that
-        // `.loading` as a failed advance, burned a skip walking `queue.advance()` off the user's
-        // pick, and its recursive resolve superseded the tap's.
-        guard stillCurrent else { return }
-        if state.isPlayable {
-            consecutiveSkips = 0             // `PlayerViewModel.kt:1916`
-            // Round 5 (re-review N1): landed, so the lecture is the user's from here. Kept through the
-            // prefetch, the flag resumed a lecture the user paused after an interruption, and
-            // swallowed the end of a short next lecture.
-            isAdvancing = false
-            await prefetchUpcoming()
-            await pageIfNeeded()
-        } else if queue.hasNext, AutoSkipPolicy.decide(consecutive: consecutiveSkips, limit: 3) {
-            consecutiveSkips += 1
-            await advance()                  // bounded by the policy above; max depth 3
-        }
-        // else: leave the non-playable state on screen. Ruling 14's one terminal surface, with
-        // PlayerStateView's Retry -- exactly what Android shows past MAX_CONSECUTIVE_SKIPS.
+        // Ruling 2026-11-12: the lock screen's next, as the owner's locked phone needs it -- the next lecture without the
+        // loading card, one that is not available passed over (at most 3) while the ended one stays on screen, and an
+        // error or cooldown shown on the next one. Past the cap, ruling 14's one terminal surface with its Retry.
+        await skip(by: 1)
     }
 
     /// The Up Next tap (`PlayerViewModel.kt:355-387`). A deliberate user action, so this one DOES
     /// show the loading card with the new thumbnail -- unless `showLoading` is false: the lock screen's next/previous,
     /// where a `.loading` hop would dismantle the host and its audio session. Index-addressed (Cubic P2): a duplicate
     /// id in the playlist must play the tapped occurrence, not the first one.
-    func play(at index: Int, showLoading: Bool = true) async {
+    /// `holdFailure`: a failure is not applied (`skip(by:)`), and the pick answers `true` at once, with nothing awaited
+    /// after it, so the next try cannot race a newer action.
+    @discardableResult
+    func play(at index: Int, showLoading: Bool = true, holdFailure: Bool = false) async -> Bool {
         let playing = hostVideoId   // the stream on screen, not a skip still resolving (Cubic r3)
-        guard let item = queue.select(at: index) else { return }
+        guard let item = queue.select(at: index) else { return false }
         swapArgs(to: item)
-        consecutiveSkips = 0
-        let landed = await resolve(forceRefresh: false, kind: .player, showLoading: showLoading)
+        let landed = await resolve(forceRefresh: false, kind: .player, showLoading: showLoading, holdFailure: holdFailure)
+        if landed, heldGeneration == generation { return true }
+        // Round 5 (re-review N1): landed, so the lecture is the user's from here, an advance's included, and a failure
+        // shown ends it too (Cubic r4). Kept through the prefetch, the flag resumed a lecture the user paused after an
+        // interruption, and swallowed the end of a short next lecture.
+        if landed { isAdvancing = false }
         // The same lecture again further down the list: the host keeps its item and position, so the pick starts over.
         if landed, item.id == playing { await currentPlayer?.seek(to: .zero) }
         await prefetchUpcoming()
         await pageIfNeeded()
+        return false
+    }
+
+    /// The resolve whose failure `holdFailure` kept off the screen.
+    private var heldGeneration: Int?
+
+    /// The lock screen's next/previous (`PlayerHostView.trackSkip`): the neighbour `offset` away, without the loading
+    /// card. One that does not play is passed over in the same direction, at most `AutoSkipPolicy`'s 3 as an
+    /// auto-advance, while the outgoing lecture plays on: a state with nothing playable dismantles the host, and with it
+    /// the audio session and the lock screen's controls. Only the lecture's own failure is passed over; the last
+    /// try applies what it gets, so with nothing playable past it its card shows. A cooldown or an error (offline, a
+    /// blip) is no answer about the lecture: it shows on the one pressed to, whose Retry plays it.
+    /// Also the auto-advance (`advance()`), so each hop pages first, as the advance always did; a pick meanwhile wins.
+    func skip(by offset: Int) async {
+        var skipped = 0
+        while true {
+            let current = generation
+            await pageIfNeeded()
+            guard current == generation, let index = queueNeighbour(offset) else { return }
+            let passOver = AutoSkipPolicy.decide(consecutive: skipped, limit: 3)
+                && queue.items.indices.contains(index + offset)
+            guard await play(at: index, showLoading: false, holdFailure: passOver) else { return }
+            skipped += 1
+        }
     }
 
     /// The loaded queue's index `offset` away from the lecture on screen (the lock screen's next/previous), if any.
@@ -1749,7 +1753,7 @@ extension StreamState {
     /// it; every other caller is either itself the superseder or has nothing left to do.
     @discardableResult
     private func resolve(forceRefresh: Bool, kind: RequestKind, resetBudget: Bool = true,
-                         showLoading: Bool = true, silent: Bool = false) async -> Bool {
+                         showLoading: Bool = true, silent: Bool = false, holdFailure: Bool = false) async -> Bool {
         generation += 1
         let myGeneration = generation
         resolveTask?.cancel()
@@ -1768,7 +1772,7 @@ extension StreamState {
         if showLoading { state = .loading }
         let task = Task {
             await self.performResolve(generation: myGeneration, forceRefresh: forceRefresh,
-                                      kind: kind, silent: silent)
+                                      kind: kind, silent: silent, holdFailure: holdFailure)
         }
         resolveTask = task
         await task.value
@@ -1782,9 +1786,11 @@ extension StreamState {
         return myGeneration == generation
     }
 
-    private func performResolve(generation: Int, forceRefresh: Bool, kind: RequestKind, silent: Bool) async {
+    private func performResolve(generation: Int, forceRefresh: Bool, kind: RequestKind, silent: Bool,
+                                holdFailure: Bool) async {
         let videoId = args.videoId
         let result: StreamState
+        var theLecturesOwn = false
         do {
             let resolved = try await resolver.resolve(
                 videoId, purpose: .player, kind: kind,
@@ -1792,6 +1798,7 @@ extension StreamState {
             result = Self.map(resolved)
         } catch {
             result = Self.map(error)
+            theLecturesOwn = Self.isTheLecturesOwn(error)
         }
         // A superseding `open()`/`retry()` both cancels this job and bumps `generation` before its
         // own resolve starts -- either signal alone is enough to discard a late/stale completion,
@@ -1817,6 +1824,12 @@ extension StreamState {
             // screen) is still that stream's: it moves to this generation, or the return would read it as stale. Only one
             // current when this refresh began (`resolve` bumps by one); a miss a landed resolve superseded stays dead.
             if let miss = liveMiss, miss.generation == generation - 1 { liveMiss = (generation, miss.trigger) }
+            return
+        }
+        // A skip passing over a lecture that does not play keeps the outgoing one on screen (`skip(by:)`). Only the
+        // lecture's own answer (`isTheLecturesOwn`): a cooldown, a bot check or a transport failure says nothing about it.
+        if holdFailure, theLecturesOwn {
+            heldGeneration = generation
             return
         }
         // §9.3(a): a proactive refresh of a live stream only ever replaces it with a stream that is still live now.
@@ -1867,6 +1880,18 @@ extension StreamState {
         state = .recoveryExhausted(resolved)
     }
     #endif
+
+    /// A failure that is the lecture's own answer, which a skip passes over: every `.contentUnavailable` reason, a
+    /// malformed id, and every rung answering without a stream for it (Cubic r4).
+    private static func isTheLecturesOwn(_ error: Error) -> Bool {
+        guard let extractionError = error as? ExtractionError else { return false }
+        switch extractionError {
+        case .unavailable, .liveOffline, .ageRestricted, .geoBlocked, .private, .removed, .invalidVideoId, .allRungsFailed:
+            return true
+        case .cooldown, .botCheck, .cancelled, .transport:
+            return false
+        }
+    }
 
     private static func map(_ error: Error) -> StreamState {
         guard let extractionError = error as? ExtractionError else {

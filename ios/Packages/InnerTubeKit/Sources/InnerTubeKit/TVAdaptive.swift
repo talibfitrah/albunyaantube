@@ -167,6 +167,16 @@ enum TVAdaptive {
                             audio: try selection.audio.enumerated().map { try rendition($1, isDefault: $0 == 0) })
     }
 
+    /// `Resolved.audioOnly` of a plain answer: the format `url` (its itag 140) came from, as one byte-range rendition, if
+    /// its numbers pass the same checks `select` makes.
+    static func audioOnly(_ url: URL?, in formats: [AdaptiveFormat]) -> SyntheticHLS.Rendition? {
+        guard let url, let f = formats.first(where: { $0.url.flatMap(URL.init(string:)) == url }), numbersAreSane(f),
+              let initRange = f.initRange, let indexRange = f.indexRange, let length = f.contentLength,
+              !codecs(f.mimeType).isEmpty else { return nil }
+        return SyntheticHLS.Rendition(url: url, codecs: codecs(f.mimeType), bandwidth: f.bitrate, averageBandwidth: f.averageBitrate,
+                                      initRange: initRange, indexRange: indexRange, contentLength: length, isDefault: true)
+    }
+
     /// `video/mp4; codecs="avc1.640028"` -> `avc1.640028`; "" when unquoted or absent (`select` drops those).
     static func codecs(_ mimeType: String) -> String {
         guard let range = mimeType.range(of: "codecs=\"") else { return "" }

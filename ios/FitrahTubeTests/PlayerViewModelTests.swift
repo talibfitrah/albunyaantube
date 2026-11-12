@@ -184,8 +184,12 @@ struct PlayerViewModelTests {
 
     @Test func audioOnlyIsOfferedOnlyWhenTheResolvedStreamHasAnAudioTrack() {
         let video = URL(string: "https://manifest.googlevideo.com/x.m3u8")!
-        let withAudio = Self.resolved(.hls(url: video, isLive: false,
-                                           audioOnlyURL: URL(string: "https://r1.example.com/a140")!, captionTracks: []))
+        let audio = URL(string: "https://r1.example.com/a140")!
+        var withAudio = Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: []))
+        // The bare itag 140 never plays (googlevideo throttles AVPlayer's open-ended GET); its byte ranges do.
+        #expect(PlayerViewModel.audioOnlyAvailable(for: .ready(withAudio)) == false)
+        withAudio.audioOnly = .init(url: audio, codecs: "mp4a.40.2", bandwidth: 1, initRange: 0...1, indexRange: 2...3,
+                                    contentLength: 9, isDefault: true)
         #expect(PlayerViewModel.audioOnlyAvailable(for: .ready(withAudio)) == true)
         #expect(PlayerViewModel.audioOnlyAvailable(for: .ready(Self.hls)) == false)   // rung 1, no itag 140
         #expect(PlayerViewModel.audioOnlyAvailable(for: .rung2Progressive(Self.progressive)) == false)
