@@ -42,12 +42,6 @@ nonisolated enum TabState<Item: Sendable & Equatable>: Sendable, Equatable {
         }
     }
 
-    /// The `.empty` key (a tab's own copy), nil otherwise.
-    var emptyMessageKey: String? {
-        if case .empty(let key) = self { return key }
-        return nil
-    }
-
     /// `ChannelDetailViewModel.kt:951-979`: keep the items and the cursor, surface the message.
     func appendFailed(messageKey: String) -> TabState {
         switch self {
@@ -110,7 +104,7 @@ nonisolated struct ChannelTabAutofill: Sendable, Equatable {
         recheckPending = false
     }
 
-    /// Renews the autofill budget without invalidating in-flight copies (generation kept).
+    /// Renews the autofill budget (an in-flight append still commits).
     mutating func loadMoreTapped() {
         autofilledPages = 0
         showsLoadMore = false
