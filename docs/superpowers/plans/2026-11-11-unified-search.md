@@ -45,7 +45,7 @@
 
 **Interfaces:** Produces the gate verdict Task 13 reads: PASS (enable inner) or FAIL (B ships without inner results; owner gets numbers + options).
 
-- [ ] **Step 1: Server facts** over SSH (`~/.ssh/id_ed25519_fitrah`, host 72.60.179.47, user per the backend-prod-deploy memory):
+- [ ] **Step 1: Server facts** on the prod backend host (access per the backend-prod-deploy memory):
   `free -m; nproc; df -h /opt/albunyaan /tmp; ps -o pid,rss,args -C java; grep -E 'search\.(index|inner)' /opt/albunyaan/application-prod.yml; grep -E 'search index (catalog|built)' /opt/albunyaan/logs/app.log | tail -2`
 - [ ] **Step 2: Catalog volumes** from the public API (no auth): page `https://app.fitrahtube.com/api/v1/content?type=CHANNELS&limit=50&cursor=…` summing `videoCount`, and `type=PLAYLISTS` summing `itemCount`, each count capped at 10,000 (`InnerState.MAX_PER_SOURCE`); page `type=VIDEOS` counting items with `durationSeconds` absent or `0`.
 - [ ] **Step 3: Report these numbers** (R = raw, P = projected):
