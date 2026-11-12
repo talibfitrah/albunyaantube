@@ -2195,10 +2195,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         // Refresh is proceeding - now safe to stop player and clear state
-        pendingResumeStreamId = currentItem.streamId
-        pendingResumePositionMs = resumePosition.takeIf { it > 0L }
-        pendingResumePlayWhenReady = wasPlayWhenReady
-
         // CRITICAL: Invalidate cached MPD before refresh to prevent reusing stale signed URLs.
         // Without this, a refresh within the MPD TTL can hit the cache and reuse the same
         // failing URLs, causing 403 loops. This ensures the next media source build regenerates
@@ -2208,12 +2204,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             android.util.Log.d("PlayerFragment", "Invalidated cached MPD for ${currentItem.streamId} before refresh")
         }
 
-        preparedStreamKey = null
-        preparedStreamUrl = null
-        preparedIsAdaptive = false
-        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
-        preparedQualityCapHeight = null
-        factorySelectedVideoTrack = null
+        captureResumeAndResetPrepared(currentItem.streamId, resumePosition, wasPlayWhenReady)
         currentPlayer.stop()
 
         context?.let { ctx ->
@@ -2235,17 +2226,34 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             "Playing muxed track for $streamId at ${currentPlayer.currentPosition}ms: $reason"
         )
         adaptiveFailedForCurrentStream = streamId
+        captureResumeAndResetPrepared(
+            streamId,
+            currentPlayer.currentPosition.coerceAtLeast(0L),
+            currentPlayer.playWhenReady
+        )
+        currentPlayer.stop()
+        maybePrepareStream(viewModel.state.value)
+    }
+
+    /** Save where to resume and drop the prepared-source state so the next prepare rebuilds. */
+    private fun captureResumeAndResetPrepared(streamId: String, resumePosition: Long, playWhenReady: Boolean) {
         pendingResumeStreamId = streamId
-        pendingResumePositionMs = currentPlayer.currentPosition.coerceAtLeast(0L).takeIf { it > 0L }
-        pendingResumePlayWhenReady = currentPlayer.playWhenReady
+        pendingResumePositionMs = resumePosition.takeIf { it > 0L }
+        pendingResumePlayWhenReady = playWhenReady
         preparedStreamKey = null
         preparedStreamUrl = null
         preparedIsAdaptive = false
         preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
         preparedQualityCapHeight = null
         factorySelectedVideoTrack = null
-        currentPlayer.stop()
-        maybePrepareStream(viewModel.state.value)
+    }
+
+    /** Recovery is out of steps: show the retry overlay and say the stream is unavailable. */
+    private fun surfaceStreamUnavailable() {
+        surfaceRecoveryExhausted()
+        context?.let { ctx ->
+            Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**
@@ -2470,12 +2478,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             requestStreamRefreshAndResume("URL expired (403)")
                         }
                         Forbidden403Step.PLAY_MUXED -> playMuxedFromCurrentStreams("repeat 403 (URL expired)")
-                        Forbidden403Step.EXHAUSTED -> {
-                            surfaceRecoveryExhausted()
-                            context?.let { ctx ->
-                                Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                        Forbidden403Step.EXHAUSTED -> surfaceStreamUnavailable()
                     }
                     return
                 }
@@ -2501,12 +2504,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             }
                             Forbidden403Step.PLAY_MUXED ->
                                 playMuxedFromCurrentStreams("repeat 403 (${failureType.name})")
-                            Forbidden403Step.EXHAUSTED -> {
-                                surfaceRecoveryExhausted()
-                                context?.let { ctx ->
-                                    Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
-                                }
-                            }
+                            Forbidden403Step.EXHAUSTED -> surfaceStreamUnavailable()
                         }
                     }
                     return
@@ -2521,10 +2519,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 "HTTP error (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
             )
         } else {
-            surfaceRecoveryExhausted()
-            context?.let { ctx ->
-                Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
-            }
+            surfaceStreamUnavailable()
         }
     }
 
