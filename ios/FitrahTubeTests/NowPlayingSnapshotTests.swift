@@ -104,9 +104,15 @@ import Testing
         #expect(center.nextTrackCommand.isEnabled == false)       // a single video: no neighbours
         #expect(center.previousTrackCommand.isEnabled == false)
 
+        #expect(center.skipForwardCommand.isEnabled)              // a single video keeps ±10 s
+
         controller.onNextTrack = {}
         #expect(center.nextTrackCommand.isEnabled)
         #expect(center.previousTrackCommand.isEnabled == false)    // the playlist's first lecture
+        // Cubic r2: the lock screen has one button pair beside play/pause and shows ±10 s over next/previous while
+        // both are on, so a playlist trades ±10 s for the track buttons (the scrubber still seeks).
+        #expect(center.skipForwardCommand.isEnabled == false)
+        #expect(center.skipBackwardCommand.isEnabled == false)
         controller.onPreviousTrack = {}
         #expect(center.previousTrackCommand.isEnabled)
         controller.onNextTrack = nil                               // its last

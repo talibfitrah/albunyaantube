@@ -355,12 +355,17 @@ import UIKit
         return .success
     }
 
-    /// Only while this controller owns the transport: a detached or covered one leaves them alone.
+    /// Only while this controller owns the transport: a detached or covered one leaves them alone. The lock screen has
+    /// one button pair beside play/pause and shows ±10 s over next/previous while both are on, so a playlist trades
+    /// ±10 s for the track buttons; the scrubber (`changePlaybackPositionCommand`) still seeks.
     private func applyTrackCommands() {
         guard player != nil, Self.lockScreenOwner === self else { return }
         let center = MPRemoteCommandCenter.shared()
         center.nextTrackCommand.isEnabled = onNextTrack != nil
         center.previousTrackCommand.isEnabled = onPreviousTrack != nil
+        let playlist = onNextTrack != nil || onPreviousTrack != nil
+        center.skipForwardCommand.isEnabled = !playlist
+        center.skipBackwardCommand.isEnabled = !playlist
     }
 
     private func skip(by interval: TimeInterval) -> MPRemoteCommandHandlerStatus {
