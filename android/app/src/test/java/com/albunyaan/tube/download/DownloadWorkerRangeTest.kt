@@ -10,6 +10,7 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
@@ -124,6 +125,7 @@ class DownloadWorkerRangeTest {
         audioOnly: Boolean = true,
         targetHeight: Int = 0,
         kids: Boolean = false,
+        muxedOnly: Boolean = false,
         merger: FFmpegMerger = FFmpegMerger(),
         blocked: Boolean = false,
         onProgress: (DownloadWorker, Data) -> Unit = { _, _ -> },
@@ -140,6 +142,20 @@ class DownloadWorkerRangeTest {
                 // Each resolve mints a fresh URL, as googlevideo's signed URLs are.
                 val n = ++resolves
                 val url = server.url("/videoplayback?itag=140&c=${if (kids) "IOS" else "VISIONOS"}&n=$n").toString()
+                if (muxedOnly) {
+                    // What an IOS-off kids resolve returns: ANDROID's itag 18 and nothing else.
+                    val muxed = listOf(
+                        VideoTrack(server.url("/videoplayback?itag=18&c=ANDROID&n=$n").toString(), "video/mp4",
+                            640, 360, 500_000, "360p", 30, isVideoOnly = false),
+                    )
+                    return ResolvedStreams(
+                        streamId = videoId,
+                        videoTracks = muxed,
+                        audioTracks = NewPipeExtractorClient.deriveFallbackAudioTracks(emptyList(), muxed),
+                        durationSeconds = 262,
+                        uploaderChannelId = "UClecturer",
+                    )
+                }
                 val videoTracks = if (!kids) emptyList() else listOf(
                     VideoTrack(server.url("/videoplayback?itag=136&c=IOS&n=$n").toString(), "video/mp4",
                         1280, 720, 1_500_000, "720p", 30, isVideoOnly = true),
@@ -492,6 +508,27 @@ class DownloadWorkerRangeTest {
         }
 
         val result = runDownload(audioOnly = true, kids = true, merger = merger)
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        assertArrayEquals("FFmpeg got the whole itag 18 file", body, muxedInputs.single())
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertTrue(file.name.endsWith(".m4a"))
+        assertArrayEquals(audio, file.readBytes())
+    }
+
+    @Test
+    fun `an audio-only save of a muxed-only video extracts the audio`() = runTest {
+        answer = ::kidsCdn
+        val audio = byteArrayOf(4, 2)
+        val muxedInputs = CopyOnWriteArrayList<ByteArray>()
+        val merger = org.mockito.kotlin.mock<FFmpegMerger> {
+            onBlocking { extractAudio(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doAnswer { call ->
+                muxedInputs += call.getArgument<File>(0).readBytes()
+                call.getArgument<File>(1).writeBytes(audio)
+            }
+        }
+
+        val result = runDownload(audioOnly = true, muxedOnly = true, merger = merger)
 
         assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
         assertArrayEquals("FFmpeg got the whole itag 18 file", body, muxedInputs.single())

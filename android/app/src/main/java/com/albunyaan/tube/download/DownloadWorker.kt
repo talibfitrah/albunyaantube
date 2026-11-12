@@ -280,6 +280,12 @@ class DownloadWorker @AssistedInject constructor(
             )
         uploaderChannelId?.let { storage.saveChannelId(downloadId, it) }
 
+        // A muxed-only video (kids: ANDROID itag 18) has its "audio track" derived from the MP4 itself;
+        // saving that URL as-is would commit the whole 360p video as the audio copy.
+        if (audioOnly && resolvedStream is ResolvedStream.Progressive && resolvedStream.url == muxedFallbackUrl) {
+            return downloadMuxedFallback(resolvedStream.url, downloadId, title, audioOnly = true)
+        }
+
         return try {
             executeDownload(resolvedStream, downloadId, title, audioOnly)
         } catch (e: IOException) {
