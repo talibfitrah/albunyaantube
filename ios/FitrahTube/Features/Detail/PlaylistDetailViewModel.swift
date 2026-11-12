@@ -12,7 +12,7 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
 }
 
 /// Android's `PlaylistDetailViewModel.kt` over `BrowseSource.playlistItems` -- one `TabState`, the
-/// the Save toggle, and the B5 launch contract's three call
+/// Save toggle, and the B5 launch contract's three call
 /// sites (`playAllArgs(shuffled:)` ×2, `playerArgs(forRowAt:)`).
 @MainActor @Observable final class PlaylistDetailViewModel {
     nonisolated struct Row: Identifiable, Sendable {

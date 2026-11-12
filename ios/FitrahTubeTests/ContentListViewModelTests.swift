@@ -238,23 +238,6 @@ struct ContentListViewModelTests {
         guard case .content = vm.state else { Issue.record("expected .content after refresh completes"); return }
     }
 
-    /// Owner ruling (unified search): a tab never searches -- Home's magnifier opens global search.
-    /// Load, load-more and refresh each reach the catalog as the plain 4-argument `content(...)`.
-    @Test func aTabFetchNeverSendsAQuery() async {
-        let pages = [CursorPage(items: items(count: 3, prefix: "p0"), nextCursor: "1"),
-                     CursorPage(items: items(count: 3, prefix: "p1"), nextCursor: nil)]
-        let client = RecordingCatalogClient(pages: pages)
-        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore())
-
-        await vm.load()
-        await vm.loadMore()
-        await vm.refresh()
-
-        let calls = await client.calls
-        #expect(calls.map(\.cursor) == [nil, "1", nil])
-        #expect(calls.allSatisfy { $0.type == .videos && $0.limit == 20 && $0.filter == FilterState() })
-    }
-
     // MARK: - Fix round 1
 
     /// Finding #1 (`content-lists.md:256,278-280`): a terminal (initial/refresh) failure with

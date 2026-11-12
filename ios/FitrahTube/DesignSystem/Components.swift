@@ -834,8 +834,6 @@ struct SearchField: View {
             .accessibilityLabel(accessibilityLabel)
         if let focus, let onSubmit {
             base.focused(focus).submitLabel(.search).onSubmit(onSubmit)
-        } else if let onSubmit {
-            base.submitLabel(.search).onSubmit(onSubmit)
         } else {
             base
         }

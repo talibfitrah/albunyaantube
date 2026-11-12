@@ -4,7 +4,7 @@ import Testing
 @testable import FitrahTube
 
 /// Plan C Task 2: the channel tabs' pagination machine (`ChannelTabAutofill`), the per-tab state
-/// (`TabState`) and the in-header search filter. All pure, no `await`, no wall clock.
+/// (`TabState`). All pure, no `await`, no wall clock.
 @Suite(.perTest)
 struct ChannelTabPaginationTests {
     private static func videos(_ count: Int) -> [VideoItem] {

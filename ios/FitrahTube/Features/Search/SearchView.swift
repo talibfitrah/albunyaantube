@@ -62,8 +62,8 @@ struct SearchView: View {
         Binding(get: { viewModel?.query ?? "" }, set: { viewModel?.query = $0 })
     }
 
-    /// Shared chrome with `ContentListView`'s inline header field (gate wave-2 W9); this one adds
-    /// the two things only this screen does: auto-focus on appear and submit-on-Search.
+    /// The shared `SearchField` chrome, plus the two things only this screen does: auto-focus on
+    /// appear and submit-on-Search.
     private var searchField: some View {
         SearchField(text: queryBinding, accessibilityLabel: String(localized: "search_hint"),
                     focus: $fieldFocused, onSubmit: { Task { await viewModel?.submit() } })
