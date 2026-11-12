@@ -1,0 +1,25 @@
+android/app/src/main/java/com/albunyaan/tube/ui/MainActivity.kt
+  s_8a936fc306f37b::t_75a0087a053fce 104-106
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_8a936fc306f37b::t_87d234e8ec3ff0 8
+  s_8a936fc306f37b::t_7e5e39ecd92531 264-266,278-279
+  s_8a936fc306f37b::t_7df920c7f8fc01 275-277
+android/app/src/main/java/com/albunyaan/tube/ui/SplashRouter.kt
+  s_8a936fc306f37b::t_a55e6e76e2b792 131-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "552acfc93b4c13dc7d840c74d2c9664191e0bc26",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
