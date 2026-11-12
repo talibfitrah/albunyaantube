@@ -133,6 +133,50 @@
         }
       }
     },
+    "a11y_video_item_no_duration": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فيديو: %1$@، %2$@، %3$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video: %1$@, %2$@, %3$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Video: %1$@, %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "a11y_video_item_no_duration_no_age": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فيديو: %1$@، %2$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video: %1$@, %2$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Video: %1$@, %2$@"
+          }
+        }
+      }
+    },
     "about_app_logo_description": {
       "localizations": {
         "ar": {

@@ -59,8 +59,17 @@ class HomeFeaturedA11yTest {
     @Config(qualifiers = "ar")
     fun `unknown duration keeps the localized Video prefix in Arabic`() {
         assertEquals(
-            "فيديو: تفسير, 1K",
+            "فيديو: تفسير، 1K",
             HomeFeaturedAdapter.videoDescription(res(), "تفسير", null, "1K", null),
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "ar")
+    fun `unknown duration with an age uses Arabic punctuation`() {
+        assertEquals(
+            "فيديو: تفسير، 1K، قبل 3 أيام",
+            HomeFeaturedAdapter.videoDescription(res(), "تفسير", null, "1K", "قبل 3 أيام"),
         )
     }
 

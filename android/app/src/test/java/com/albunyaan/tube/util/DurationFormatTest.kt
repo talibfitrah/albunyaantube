@@ -16,4 +16,11 @@ class DurationFormatTest {
         assertEquals("12:34", DurationFormat.badge(754))
         assertEquals("1:02:03", DurationFormat.badge(3723))
     }
+
+    @Test fun `hour and long boundaries`() {
+        assertEquals("59:59", DurationFormat.badge(3599))
+        assertEquals("1:00:00", DurationFormat.badge(3600))
+        assertEquals("10:00:00", DurationFormat.badge(36000))
+        assertEquals("100:00:00", DurationFormat.badge(360000))
+    }
 }

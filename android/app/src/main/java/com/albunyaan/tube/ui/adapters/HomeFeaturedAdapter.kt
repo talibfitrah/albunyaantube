@@ -201,7 +201,7 @@ class HomeFeaturedAdapter(
     companion object {
         /**
          * a11y_video_item, or its age-less sibling when the age is unknown (no empty trailing field).
-         * Unknown duration drops the "Duration:" field (no template for that; keeps the "Video:" prefix).
+         * Unknown duration uses the *_no_duration pair, so the locale's own punctuation still joins the fields.
          */
         internal fun videoDescription(
             res: android.content.res.Resources,
@@ -209,8 +209,10 @@ class HomeFeaturedAdapter(
             duration: String?,
             views: String,
             age: String?,
-        ): String = if (duration == null) listOfNotNull("${res.getString(R.string.type_video)}: $title", views, age).joinToString(", ")
-            else if (age != null) res.getString(R.string.a11y_video_item, title, duration, views, age)
+        ): String = if (duration == null) {
+            if (age != null) res.getString(R.string.a11y_video_item_no_duration, title, views, age)
+            else res.getString(R.string.a11y_video_item_no_duration_no_age, title, views)
+        } else if (age != null) res.getString(R.string.a11y_video_item, title, duration, views, age)
             else res.getString(R.string.a11y_video_item_no_age, title, duration, views)
 
         /** Views • age • category — the same age ladder as every other list. */

@@ -3695,17 +3695,6 @@
 
     <issue
         id="UnusedResources"
-        message="The resource `R.string.search_error` appears to be unused"
-        errorLine1="    &lt;string name=&quot;search_error&quot;>Search failed: %1$s&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="502"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
         message="The resource `R.string.menu_settings` appears to be unused"
         errorLine1="    &lt;string name=&quot;menu_settings&quot;>Settings&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
