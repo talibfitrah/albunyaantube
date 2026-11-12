@@ -5,6 +5,13 @@ stable release.
 
 ## [Unreleased]
 
+- Android 1.0.7 playback: some videos stopped after about 50 s; the app now uses streams that keep playing, and recovers to a compatible stream if one fails mid-play.
+- Android 1.0.7: a minimum-version check. The server-side floor sends Play users to the store and sideload users to the in-app updater, and it fails open when the config can't be read.
+- Search (backend, Android 1.0.7, iOS 1.0.9): one search bar, Home's, everywhere; results include videos inside approved channels and playlists (excluded ones never); unknown lengths show blank, not 0:00.
+- Tabs (backend): the Channels, Playlists and Videos tabs follow the dashboard Content Sorting order (categories top to bottom, then item order, then uncategorized A–Z); changes show immediately.
+- iOS 1.0.9: playback continues on the lock screen with play/pause, seek and next; audio-only plays; playlists skip unavailable items.
+- Admin dashboard: counts are exact and match on every page; the Content Library lists everything with load more; phone imports show in the Pending Approvals queue with the importer's name; in Content Sorting's add-content picker, clicking a channel or playlist opens its detail window.
+- Android 1.0.7: the About screen shows the app logo.
 - Exclusions (backend, Android 1.0.6, iOS 1.0.8): videos and playlists an admin excludes from a channel or playlist no longer show in that channel's or playlist's lists, the Me feed or Shorts, also for personal channels and playlists (only the person they belong to can see those). On Android a channel-excluded video also stops playing from Favorites, Search, deep links and saved copies opened online (offline, saved copies still play). A rejected or archived channel blocks its videos unless the video itself was approved; an unreachable server never blocks playback.
 - Lists (Android 1.0.6, iOS 1.0.8): coming back after more than 5 minutes refreshes the first page in place, so you keep your place in the list and see new items and exclusions without a manual refresh.
 - iOS (1.0.8): after a quality change, a scrub that has not landed yet is kept, so playback resumes at the scrubbed position instead of the old one or 0:00.

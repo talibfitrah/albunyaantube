@@ -85,6 +85,7 @@ When cutting a new release (bumping `versionCode`/`versionName`):
 2. Add an entry to `releases-meta.json` (repo root) under the new `versionName` with `en`, `ar`, `nl` one-liners (≤120 chars each). Missing locales are silently OK but degrade UX for that locale.
 3. Update `CHANGELOG.md` Unreleased section.
 4. Tag and push. The Available Updates screen reads `releases-meta.json` from `main` via raw.githubusercontent.com, so the merge to `main` is what makes the new entry live.
+5. Raise `minAppVersion` in `android-remote-config.json` only after BOTH the Play Store and the sideload channel serve that version. Raising it earlier locks users out with no update available.
 
 ---
 

@@ -1,4 +1,9 @@
 {
+  "1.0.7": {
+    "en": "Videos no longer stop after a minute; search finds videos inside channels and playlists; tabs follow the curated order.",
+    "ar": "لا تتوقف المقاطع بعد دقيقة على بعض الهواتف، والبحث يجد المقاطع داخل القنوات والقوائم، والتبويبات تتبع الترتيب المنتقى.",
+    "nl": "Video's stoppen niet meer na een minuut; zoeken vindt video's in kanalen en playlists; tabs volgen de gekozen volgorde."
+  },
   "1.0.6": {
     "en": "Videos and playlists an admin hides no longer show or play anywhere, and lists keep your place after a break.",
     "ar": "المقاطع وقوائم التشغيل التي يخفيها المشرف لم تعد تظهر أو تعمل في أي مكان، والقوائم تحفظ موضعك بعد الاستراحة.",
