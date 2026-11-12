@@ -1,0 +1,20 @@
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_8a936fc306f37b::t_d620d31943e543 266-272,630,651,902,2250,2261,2928-2929,2965-2966,2972
+  s_8a936fc306f37b::t_7a3fa1f7f671ca 265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2896ce624278e47bb1a8282d33e295b4831bbe5f",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
