@@ -204,6 +204,9 @@
     <string name="update_download_and_install">Update now</string>
     <string name="update_check_up_to_date">FitrahTube is up to date.</string>
     <string name="update_check_failed">Couldn\'t check for updates. Please try again.</string>
+    <string name="update_required_title">Update required</string>
+    <string name="update_required_message">This version of FitrahTube is no longer supported. Please update to continue.</string>
+    <string name="update_required_button">Update</string>
     <string name="update_downloading">Downloading update…</string>
     <string name="update_preparing">Preparing to install…</string>
     <string name="update_download_failed">Download failed. Please try again.</string>
@@ -564,6 +567,7 @@
     <string name="about_privacy_policy">Privacy Policy</string>
     <string name="about_terms_of_service">Terms of Service</string>
     <string name="about_open_source_licenses">Open Source Licenses</string>
+    <string name="about_app_logo_description">FitrahTube logo</string>
     <string name="settings_support_center">Support Center</string>
     <string name="settings_support_center_desc">Get help and send feedback</string>
     <string name="settings_icon_wifi">WiFi only setting icon</string>
@@ -599,8 +603,6 @@
     <string name="dev_settings_status_format">%1$s • %2$s</string>
     <string name="dev_settings_mpd_prefetch_title">MPD Prefetch</string>
     <string name="dev_settings_mpd_prefetch_desc">Pre-generate DASH MPD on video tap for faster first-frame</string>
-    <string name="dev_settings_ios_fetch_title">iOS Client Fetch</string>
-    <string name="dev_settings_ios_fetch_desc">Use iOS client for HLS manifest extraction (requires iOS UA)</string>
     <string name="dev_settings_generous_crop_title">Generous Crop Budget</string>
     <string name="dev_settings_generous_crop_desc">Use 20%% crop budget for fullscreen (fills screen on S25 Ultra). Default: auto-detected per device.</string>
     <string name="dev_settings_clear_cache">Clear Stream Cache</string>

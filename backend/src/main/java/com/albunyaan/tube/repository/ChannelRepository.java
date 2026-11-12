@@ -19,7 +19,6 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
-import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -316,43 +315,6 @@ public class ChannelRepository {
     }
 
     /**
-     * Find approved channels by category ID with deterministic ordering.
-     * NOTE: This unbounded method is retained for backwards compatibility but
-     * callers should prefer findByCategoryId(categoryId, limit) for quota safety.
-     *
-     * @param categoryId Category ID to filter by
-     * @return List of approved channels in the category, ordered by createdAt descending
-     */
-    public List<Channel> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Find channels by category ID with limit (bounded query).
-     * This prevents quota exhaustion for large categories.
-     *
-     * @param categoryId Category ID to filter by
-     * @param limit Maximum number of results
-     * @return List of approved channels in the category
-     */
-    public List<Channel> findByCategoryId(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
      * Find channels by category ID regardless of status (for status=all).
      * This allows admin Content Library to show pending/rejected items when filtering by category.
      *
@@ -363,26 +325,6 @@ public class ChannelRepository {
     public List<Channel> findByCategoryIdAllStatus(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Find channels by category ID and specific status.
-     * This allows admin Content Library to filter by both category and status.
-     *
-     * @param categoryId Category ID to filter by
-     * @param status Status to filter by (APPROVED, PENDING, REJECTED)
-     * @param limit Maximum number of results
-     * @return List of channels matching both category and status
-     */
-    public List<Channel> findByCategoryIdAndStatus(String categoryId, String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", status)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get();
@@ -461,41 +403,27 @@ public class ChannelRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
+    /**
+     * One page of the admin Content Library: createdAt order with the document id as tie-break,
+     * resuming strictly after ({@code afterCreatedAt}, {@code afterId}) when given. {@code status}
+     * and {@code category} are optional filters (null = any). The id ordering has the createdAt
+     * direction, so it is Firestore's implicit tie-break and the existing createdAt indexes serve it.
+     */
+    public List<Channel> findPageAfter(String status, String category, boolean oldest,
+                                       com.google.cloud.Timestamp afterCreatedAt, String afterId, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Query.Direction dir = oldest ? Query.Direction.ASCENDING : Query.Direction.DESCENDING;
+        Query query = getCollection();
+        if (status != null) query = query.whereEqualTo("status", status);
+        if (category != null) query = query.whereArrayContains("categoryIds", category);
+        query = query.orderBy("createdAt", dir).orderBy(com.google.cloud.firestore.FieldPath.documentId(), dir);
+        if (afterCreatedAt != null) query = query.startAfter(afterCreatedAt, afterId);
+        return query.limit(limit).get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
     public List<Channel> findAll(int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Find all channels ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested.
-     *
-     * @param limit Maximum number of results
-     * @return List of channels ordered oldest-first
-     */
-    public List<Channel> findAllOrderByCreatedAtAsc(int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .orderBy("createdAt", Query.Direction.ASCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Find channels by status ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested with status filter.
-     *
-     * @param status Status to filter by
-     * @param limit Maximum number of results
-     * @return List of channels ordered oldest-first
-     */
-    public List<Channel> findByStatusOrderByCreatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", status)
-                .orderBy("createdAt", Query.Direction.ASCENDING)
                 .limit(limit)
                 .get();
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
@@ -519,11 +447,12 @@ public class ChannelRepository {
     public List<Channel> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
-        // Fetch limit per subcategory (not per total) but cap to avoid waste
-        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
+        // ponytail: reads up to limit × categoryIds.size() docs per call (e.g. SortOrderService's 500 × every
+        // subcategory, the same in Playlist/VideoRepository); merge per-category cursors (k-way) if that grows.
         LinkedHashMap<String, Channel> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, perCategoryLimit);
+            List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, limit);
             for (Channel ch : batch) {
                 deduped.putIfAbsent(ch.getId(), ch);
             }
@@ -570,43 +499,6 @@ public class ChannelRepository {
     }
 
     /**
-     * Search channels by normalized nameLower field for case-insensitive prefix matching.
-     * This is the preferred search method as it supports case-insensitive queries.
-     *
-     * @param queryLower Lowercase search prefix
-     * @param limit Maximum number of results
-     * @return List of matching channels
-     */
-    public List<Channel> searchByNameLower(String queryLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("nameLower")
-                .startAt(queryLower)
-                .endAt(queryLower + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Search channels by keyword using array-contains on keywordsLower.
-     * Finds channels where any keyword exactly matches the query (case-insensitive).
-     * Complements prefix-based name search for improved recall.
-     *
-     * @param keywordLower Lowercase keyword to search for
-     * @param limit Maximum number of results
-     * @return List of matching channels
-     */
-    public List<Channel> searchByKeyword(String keywordLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereArrayContains("keywordsLower", keywordLower)
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
      * Count all channels using server-side aggregation
      */
     public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
@@ -637,119 +529,6 @@ public class ChannelRepository {
                 .count();
         AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();
-    }
-
-    /**
-     * Find approved channels ordered by subscribers with cursor-based pagination.
-     *
-     * @param limit Number of items to fetch (fetch limit + 1 to detect hasNext)
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing channels and next cursor
-     */
-    public PaginatedResult<Channel> findApprovedBySubscribersDescWithCursor(int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("subscribers", Query.Direction.DESCENDING)
-                .limit(limit + 1); // Fetch one extra to detect hasNext
-
-        // Apply cursor if provided. If the cursor's document no longer exists
-        // (deleted, or cursor came from a different collection / content type),
-        // fall back to returning the first page — graceful degradation matching
-        // CursorUtils.decode()'s null-on-malformed behaviour.
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Channel> channels = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Channel channel = doc.toObject(Channel.class);
-            channel.setId(doc.getId());
-            channels.add(channel);
-
-            // Generate cursor from last item
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "subscribers");
-            }
-        }
-
-        return new PaginatedResult<>(channels, nextCursor, hasNext);
-    }
-
-    /**
-     * Find approved channels by category ordered by subscribers with cursor-based pagination.
-     *
-     * @param category Category ID to filter by
-     * @param limit Number of items to fetch
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing channels and next cursor
-     */
-    public PaginatedResult<Channel> findApprovedByCategoryAndSubscribersDescWithCursor(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("subscribers", Query.Direction.DESCENDING)
-                .limit(limit + 1);
-
-        // Apply cursor if provided. Stale cursor → restart from first page
-        // (graceful degradation matching CursorUtils.decode()'s contract).
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Channel> channels = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Channel channel = doc.toObject(Channel.class);
-            channel.setId(doc.getId());
-            channels.add(channel);
-
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "subscribers");
-            }
-        }
-
-        return new PaginatedResult<>(channels, nextCursor, hasNext);
     }
 
     // ==================== Display Order Methods ====================
@@ -1025,33 +804,6 @@ public class ChannelRepository {
                 .count();
         AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();
-    }
-
-    /**
-     * Generic paginated result wrapper.
-     */
-    public static class PaginatedResult<T> {
-        private final List<T> items;
-        private final String nextCursor;
-        private final boolean hasNext;
-
-        public PaginatedResult(List<T> items, String nextCursor, boolean hasNext) {
-            this.items = items;
-            this.nextCursor = nextCursor;
-            this.hasNext = hasNext;
-        }
-
-        public List<T> getItems() {
-            return items;
-        }
-
-        public String getNextCursor() {
-            return nextCursor;
-        }
-
-        public boolean hasNext() {
-            return hasNext;
-        }
     }
 
     /**

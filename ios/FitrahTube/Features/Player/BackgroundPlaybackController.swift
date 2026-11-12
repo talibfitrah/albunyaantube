@@ -3,20 +3,14 @@ import MediaPlayer
 import UIKit
 
 /// Owns everything that happens to playback while the player view is not the thing on screen:
-/// the audio session, interruptions, route changes, and (Task 4) the Now Playing surface.
+/// the audio session, interruptions, route changes, and (Task 4) the Now Playing surface and its
+/// remote commands.
 /// Created and torn down by `PlayerHostView.Coordinator`, which already owns the KVO/stall
 /// observers -- one lifecycle owner, not two.
 @MainActor final class BackgroundPlaybackController {
     var backgroundPlay: Bool { didSet { applyBackgroundPolicy() } }
     var pictureInPictureActive = false { didSet { applyBackgroundPolicy() } }
-    /// The player's live audio-only toggle (`PlayerViewModel.audioOnly`), fed on every host update.
-    var userAudioOnly = false
-    /// Whether the resolved stream carries an itag 140 URL at all (`PlayerViewModel.audioOnlyAvailable`).
-    /// Defaults to false so a controller nobody has told yet never decides a swap it cannot honour.
-    var audioOnlyAvailable = false
-    /// `PlayerHostView` performs the swap itself (through the VM's `audioOnly`). Left nil, the swap
-    /// actions only move this controller's own `autoSwappedToAudioOnly` flag. `.pause` reports the
-    /// pauses that end the user's playback, headphones out and the remote pause command (Cubic A6):
+    /// `.pause` reports the pauses that end the user's playback, headphones out and the remote pause command (Cubic A6):
     /// a player a failure already paused cannot show the host one. An interruption's pause is NOT
     /// reported (fix r4 N-2): its end decides, through `resumeIntentPending` below, and an end
     /// without `.shouldResume` reports `.pause` (fix r5 N4-1).
@@ -47,18 +41,24 @@ import UIKit
     /// treat Play as the interruption's end). Another media app started from Control Center sends a
     /// begin and never an end, so without this every later open waited for a tap. Called from
     /// `Router.push` for `.player`/`.shorts` (a tap or a deep link; round 5 N2 moved it off the
-    /// screen's mount, which an iPad resize also re-runs), `PlayerScreen.playUpNext` and
+    /// screen's mount, which an iPad resize also re-runs), `PlayerScreen.playUpNext`, `PlayerHostView.trackSkip` and
     /// `PlayerScreen.retryTapped`. Never for an automatic start: an advance, an auto-skip's rebuild.
     static func userAskedToPlay() { sessionInterrupted = false }
     private static var sessionObserver: NSObjectProtocol?
-    /// CF-B1-3: the pre-emptive TTL re-resolve (`PlayerViewModel.reResolveIfExpiring`). AWAITED
-    /// before the foreground lifecycle policy runs -- see `willEnterForeground()`.
+    /// CF-B1-3: the pre-emptive TTL re-resolve (`PlayerViewModel.reResolveIfExpiring`), run on every return to the
+    /// foreground. Skipped while PiP is live: the floating window is playing the very item a re-resolve replaces, so it
+    /// would re-buffer or blank; the stream is unexpired by definition (it is still playing).
     var onWillEnterForeground: (() async -> Void)?
-    /// I2: how long the lifecycle policy waits for `onWillEnterForeground` before running anyway.
-    /// Injected so a test does not spend two real seconds proving the deadline fires.
-    var foregroundRefreshDeadline: Duration = .seconds(2)
+    /// The playlist's next and previous lecture (`PlayerHostView.trackSkip`), set on every host update pass. nil: no
+    /// such lecture, so the lock-screen button is disabled (ruling 28: a dead button is worse than an absent one).
+    var onNextTrack: (() -> Void)? { didSet { applyTrackCommands() } }
+    var onPreviousTrack: (() -> Void)? { didSet { applyTrackCommands() } }
 
     private weak var player: AVPlayer?
+    /// The lock screen and its commands are process-wide singletons, and the rail shell keeps covered tabs' players
+    /// attached: they are the playing lecture's. Taken at attach, and back by a covered player that starts playing
+    /// (`refreshNowPlaying`) -- else next/previous would run the newer screen's handler under the lecture playing.
+    private static weak var lockScreenOwner: BackgroundPlaybackController?
     private var observers: [NSObjectProtocol] = []
     /// Task 4's Now Playing inputs. `args` stays nil until `PlayerHostView` hands it over, and a
     /// controller with no args publishes nothing rather than an empty lock screen.
@@ -68,10 +68,6 @@ import UIKit
     private var artworkURL: URL?
     private var artworkTask: Task<Void, Never>?
     private var wasPlayingBeforeInterruption = false
-    private(set) var autoSwappedToAudioOnly = false
-    /// I1 (fix round 1): bumped by every event that invalidates an in-flight foreground refresh --
-    /// re-backgrounding, and `detach()`. The awaited hook can outlive both.
-    private var lifecycleGeneration = 0
 
     init(backgroundPlay: Bool) {
         self.backgroundPlay = backgroundPlay
@@ -113,14 +109,11 @@ import UIKit
         applyBackgroundPolicy()
         let center = NotificationCenter.default
         observers = [
-            center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.lifecycleGeneration += 1
-                    self?.handle(.enteredBackground)
-                }
-            },
             center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.willEnterForeground() }
+                MainActor.assumeIsolated {
+                    guard let self, let hook = self.onWillEnterForeground, !self.pictureInPictureActive else { return }
+                    Task { await hook() }
+                }
             },
             // `Notification` is not `Sendable` on this toolchain, so the payload is decoded HERE,
             // in the nonisolated observer block, and only the resulting Sendable values cross into
@@ -159,13 +152,15 @@ import UIKit
     }
 
     func detach() {
-        lifecycleGeneration += 1
+        // A covered tab's teardown leaves the playing one's lock screen and audio session alone: deactivating a session
+        // with running audio stops it (`AVAudioSession.setActive(false)`).
+        let owned = Self.lockScreenOwner.map { $0 === self } ?? true
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         player = nil
         // Same one-owner rule as the audio session: a dismantled player must not keep owning the
         // lock-screen transport. `removeRemoteCommands` also clears `nowPlayingInfo`.
-        removeRemoteCommands()
+        if owned { removeRemoteCommands() }
         artworkTask?.cancel()
         artworkTask = nil
         artwork = nil
@@ -174,7 +169,7 @@ import UIKit
         state = .idle
         // `.notifyOthersOnDeactivation` hands the session back politely so a paused music app
         // resumes instead of staying silent.
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if owned { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
 
     private func applyBackgroundPolicy() {
@@ -182,14 +177,6 @@ import UIKit
             AudioSessionPolicy.backgroundPolicy(backgroundPlay: backgroundPlay,
                                                 pictureInPictureActive: pictureInPictureActive) == .continues
             ? .continuesIfPossible : .pauses
-    }
-
-    private var context: PlaybackPolicyContext {
-        PlaybackPolicyContext(backgroundPlay: backgroundPlay, userAudioOnly: userAudioOnly,
-                              audioOnlyAvailable: audioOnlyAvailable,
-                              pictureInPictureActive: pictureInPictureActive,
-                              wasPlayingBeforeInterruption: wasPlayingBeforeInterruption,
-                              autoSwappedToAudioOnly: autoSwappedToAudioOnly)
     }
 
     private func handleInterruption(type: AVAudioSession.InterruptionType?, optionsRaw: UInt) {
@@ -215,65 +202,8 @@ import UIKit
         }
     }
 
-    /// CF-B1-3's ordering guarantee. The re-resolve is AWAITED before `.willEnterForeground` is
-    /// decided, because `.restoreVideo` rebuilds the item from whatever `Resolved` the state holds
-    /// at that moment: running the policy first would restore the expiring URL the app backgrounded
-    /// with, and the fresh one would then land a second re-buffer a round trip later.
-    ///
-    /// Skipped entirely while PiP is live: the floating window is playing the very item a
-    /// re-resolve replaces, so it would re-buffer or blank. The stream is unexpired by definition
-    /// (it is still playing), and the refresh gets its next chance on the following foreground.
-    ///
-    /// The wait is bounded (I2) and generation-guarded (I1). Bounded, because the hook walks the
-    /// resolver ladder and each rung's transport timeout is 15 s -- a returning user must not sit in
-    /// front of an audio-only player for that long; a refresh that lands after the deadline still
-    /// swaps through the normal `updateUIViewController` path. Guarded, because the hook can outlive
-    /// the transition it belongs to: re-background mid-refresh and the `.willEnterForeground` that
-    /// lands afterwards restores the VIDEO url on a backgrounded player, pulling video segments for
-    /// a screen nobody is looking at. The policy cannot see that on its own -- re-backgrounding
-    /// answers `.none` (the audio-only flag is already set), so `autoSwappedToAudioOnly` stays true
-    /// and the stale restore looks legitimate.
-    private func willEnterForeground() {
-        guard let onWillEnterForeground, !pictureInPictureActive else {
-            return handle(.willEnterForeground)
-        }
-        let mine = lifecycleGeneration
-        // ponytail: NOT `withTaskGroup` -- a task group awaits every child before it returns, so
-        // cancelling the loser would not actually bound the wait. The hook is left running when the
-        // deadline wins (deliberately: its result still reaches the player through the host's normal
-        // update pass); only the waiting stops.
-        let deadline = Task { try await Task.sleep(for: foregroundRefreshDeadline) }
-        Task { @MainActor in
-            await onWillEnterForeground()
-            deadline.cancel()   // the hook won the race
-        }
-        Task { @MainActor [weak self] in
-            _ = try? await deadline.value
-            guard let self, mine == self.lifecycleGeneration else { return }
-            self.handle(.willEnterForeground)
-        }
-    }
-
-    /// IMP-2 (B2 final review): auto-PiP and `didEnterBackgroundNotification` have no defined
-    /// order. `AudioSessionPolicy` refuses the swap when `pictureInPictureActive` is already true,
-    /// but when the background notification lands FIRST the item is swapped to the itag 140 audio
-    /// rendition before AVKit tells anyone PiP is starting -- and a PiP window over an audio-only
-    /// item is a black box. Called from `playerViewControllerWillStartPictureInPicture`; a no-op
-    /// unless this controller performed an automatic swap, so an explicit PiP button press on a
-    /// foregrounded player emits nothing.
-    ///
-    /// Fix round 2: `.restoreVideoNow`, not `.restoreVideo`. This runs inside the home-swipe
-    /// transition, and there is no guarantee SwiftUI re-runs `updateUIViewController` before the
-    /// app suspends -- the same hazard Task 3's C2 fixed for the swap direction. A restore deferred
-    /// to that pass leaves AVKit opening the window over the itag 140 item.
-    func undoAutoSwapIfAny() {
-        guard autoSwappedToAudioOnly else { return }
-        autoSwappedToAudioOnly = false
-        onPolicyAction?(.restoreVideoNow)
-    }
-
     private func handle(_ event: PlaybackLifecycleEvent) {
-        let action = AudioSessionPolicy.decide(event, context)
+        let action = AudioSessionPolicy.decide(event, wasPlayingBeforeInterruption: wasPlayingBeforeInterruption)
         switch action {
         case .none: break
         case .pause:
@@ -282,21 +212,17 @@ import UIKit
             // the speaker.
             if case .routeChanged = event { wasPlayingBeforeInterruption = false }
         case .resume: if autoplayHeld?() != true { player?.play() }
-        case .swapToAudioOnly: autoSwappedToAudioOnly = true
-        // `.restoreVideoNow` never comes from `decide` (only `undoAutoSwapIfAny`, which clears the
-        // flag itself), but the same clearing is the right answer if it ever does.
-        case .restoreVideo, .restoreVideoNow: autoSwappedToAudioOnly = false
         }
         // Fix r4 N-2: the interruption's pause must leave the host's resume intent alone; the
         // interruption's end (`.resume`, counting that intent) plays recovery's replacement.
         guard event != .interruptionBegan else { return }
-        onPolicyAction?(action)   // Task 3 performs the actual URL swap
+        onPolicyAction?(action)
     }
 
     // MARK: - Now Playing (Task 4)
 
     /// Called from `PlayerHostView` on every make/update pass -- which is also every item
-    /// replacement (the audio-only swap in and out, a recovery `replaceCurrentItem`, a quality
+    /// replacement (the audio-only toggle, a recovery `replaceCurrentItem`, a quality
     /// pick): the lock screen is republished from whatever item is live NOW, never only from the
     /// first prepare.
     func update(args: PlayerArgs, state: StreamState) {
@@ -310,10 +236,12 @@ import UIKit
     /// which AVFoundation also fires on every rate change and time jump -- so a play, a pause and a
     /// seek all land here. Deliberately not a second periodic observer on the same player.
     func refreshNowPlaying() {
+        if let player, player.rate != 0, Self.lockScreenOwner !== self { installRemoteCommands() }
         publishNowPlaying()
     }
 
     private func publishNowPlaying() {
+        guard Self.lockScreenOwner === self else { return }
         let elapsed = player.map(PlayerHostView.position(of:)) ?? 0
         // CF-B6: `Resolved` carries no duration, so the item's own is the authority the moment it
         // is finite (HLS reports `indefinite` until the playlist is parsed, and always for a live
@@ -383,10 +311,11 @@ import UIKit
         let center = MPRemoteCommandCenter.shared()
         return [center.playCommand, center.pauseCommand, center.togglePlayPauseCommand,
                 center.skipForwardCommand, center.skipBackwardCommand,
-                center.changePlaybackPositionCommand]
+                center.changePlaybackPositionCommand, center.nextTrackCommand, center.previousTrackCommand]
     }
 
     private func installRemoteCommands() {
+        Self.lockScreenOwner = self
         let center = MPRemoteCommandCenter.shared()
         // Re-attaching (a new player on the same controller) must not stack a second handler on a
         // command that already has one.
@@ -396,7 +325,10 @@ import UIKit
             self?.act { $0.pause(); self?.onPolicyAction?(.pause) } ?? .commandFailed
         }
         _ = center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.act { $0.timeControlStatus == .paused ? $0.play() : $0.pause() } ?? .commandFailed
+            // The headset button's pause is a pause too (Cubic): it drops a failure's resume intent and holds a skip.
+            self?.act { player in
+                if player.timeControlStatus == .paused { player.play() } else { player.pause(); self?.onPolicyAction?(.pause) }
+            } ?? .commandFailed
         }
         center.skipForwardCommand.preferredIntervals = [10]
         center.skipBackwardCommand.preferredIntervals = [10]
@@ -411,11 +343,30 @@ import UIKit
             return self?.act { $0.seek(to: CMTime(seconds: event.positionTime, preferredTimescale: 600)) }
                 ?? .commandFailed
         }
+        _ = center.nextTrackCommand.addTarget { [weak self] _ in self?.track(self?.onNextTrack) ?? .commandFailed }
+        _ = center.previousTrackCommand.addTarget { [weak self] _ in self?.track(self?.onPreviousTrack) ?? .commandFailed }
         Self.transportCommands.forEach { $0.isEnabled = true }
-        // B5 owns Up Next / the playlist queue. Until then these must be visibly absent, not dead
-        // (ruling 28's "dead buttons are worse than absent ones", applied to transport).
-        center.nextTrackCommand.isEnabled = false
-        center.previousTrackCommand.isEnabled = false
+        applyTrackCommands()
+    }
+
+    private func track(_ skip: (() -> Void)?) -> MPRemoteCommandHandlerStatus {
+        guard player != nil, let skip else { return .noSuchContent }
+        interrupted = false   // next/previous is the user's Play: it ends this player's hold (Cubic r3)
+        skip()
+        return .success
+    }
+
+    /// Only while this controller owns the transport: a detached or covered one leaves them alone. The lock screen has
+    /// one button pair beside play/pause and shows ±10 s over next/previous while both are on, so a playlist trades
+    /// ±10 s for the track buttons; the scrubber (`changePlaybackPositionCommand`) still seeks.
+    private func applyTrackCommands() {
+        guard player != nil, Self.lockScreenOwner === self else { return }
+        let center = MPRemoteCommandCenter.shared()
+        center.nextTrackCommand.isEnabled = onNextTrack != nil
+        center.previousTrackCommand.isEnabled = onPreviousTrack != nil
+        let playlist = onNextTrack != nil || onPreviousTrack != nil
+        center.skipForwardCommand.isEnabled = !playlist
+        center.skipBackwardCommand.isEnabled = !playlist
     }
 
     private func skip(by interval: TimeInterval) -> MPRemoteCommandHandlerStatus {
@@ -423,6 +374,7 @@ import UIKit
     }
 
     private func removeRemoteCommands() {
+        Self.lockScreenOwner = nil
         Self.transportCommands.forEach {
             $0.removeTarget(nil)
             $0.isEnabled = false

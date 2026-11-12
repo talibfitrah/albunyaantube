@@ -15,7 +15,6 @@ import com.albunyaan.tube.analytics.TelemetryExtractorMetricsReporter
 import com.albunyaan.tube.data.extractor.ExtractorClient
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.OkHttpDownloader
-import com.albunyaan.tube.data.extractor.YoutubeClientRotator
 import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.paging.ContentPagingRepository
@@ -281,16 +280,12 @@ object DataModule {
         downloader: com.albunyaan.tube.data.extractor.RateLimitedDownloader,
         cache: MetadataCache,
         metrics: ExtractorMetricsReporter,
-        featureFlags: PlaybackFeatureFlags,
-        clientRotator: YoutubeClientRotator,
         poTokenProvider: com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider,
     ): NewPipeExtractorClient {
         return NewPipeExtractorClient(
             downloader,
             cache,
             metrics,
-            featureFlags,
-            clientRotator,
             poTokenProvider,
         )
     }

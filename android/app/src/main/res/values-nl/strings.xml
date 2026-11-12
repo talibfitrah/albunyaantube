@@ -185,6 +185,9 @@
     <string name="update_download_and_install">Downloaden en installeren</string>
     <string name="update_check_up_to_date">U gebruikt de nieuwste versie.</string>
     <string name="update_check_failed">Kan niet controleren op updates.</string>
+    <string name="update_required_title">Update vereist</string>
+    <string name="update_required_message">Deze versie van FitrahTube wordt niet meer ondersteund. Werk de app bij om door te gaan.</string>
+    <string name="update_required_button">Bijwerken</string>
     <string name="update_downloading">Update downloaden…</string>
     <string name="update_preparing">Installatie voorbereiden…</string>
     <string name="update_download_failed">Update-download mislukt.</string>
@@ -474,6 +477,7 @@
     <string name="about_privacy_policy">Privacybeleid</string>
     <string name="about_terms_of_service">Servicevoorwaarden</string>
     <string name="about_open_source_licenses">Open source-licenties</string>
+    <string name="about_app_logo_description">FitrahTube-logo</string>
     <string name="settings_support_center">Helpcentrum</string>
     <string name="settings_support_center_desc">Krijg hulp en stuur feedback</string>
     <string name="cancel">Annuleren</string>

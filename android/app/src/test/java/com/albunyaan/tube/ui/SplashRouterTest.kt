@@ -146,6 +146,26 @@ class SplashRouterTest {
         }
     }
 
+    // --- Min-version floor on a process-death restore (the splash never runs) ---
+
+    @Test fun `a restore below the floor goes to update required`() {
+        assertEquals(true, SplashRouter.restoreBlockedByMinVersion(restoring = true) { true })
+    }
+
+    @Test fun `a restore at or above the floor stays`() {
+        assertEquals(false, SplashRouter.restoreBlockedByMinVersion(restoring = true) { false })
+    }
+
+    @Test fun `a cold start leaves the floor to the splash`() {
+        assertEquals(false, SplashRouter.restoreBlockedByMinVersion(restoring = false) { error("cold start must not read the gate here") })
+    }
+
+    @Test fun `sign-in routing never leaves the update-required screen`() {
+        assertEquals(false, SplashRouter.mayRouteToSignIn(R.id.updateRequiredFragment))
+        assertEquals(false, SplashRouter.mayRouteToSignIn(R.id.signInFragment))
+        assertEquals(true, SplashRouter.mayRouteToSignIn(R.id.mainShellFragment))
+    }
+
     // --- Stop playback only on an actual sign-out, not on every signed-out launch ---
 
     private val signedIn = com.albunyaan.tube.auth.AuthState.SignedIn(org.mockito.kotlin.mock(), "uid")

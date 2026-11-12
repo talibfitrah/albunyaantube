@@ -1,6 +1,7 @@
 package com.albunyaan.tube.integration;
 
 import com.albunyaan.tube.repository.UserRepository;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.util.FirestoreTestHelper;
 import com.google.cloud.firestore.Firestore;
 import org.junit.jupiter.api.AfterEach;
@@ -11,6 +12,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -47,6 +49,9 @@ public abstract class BaseIntegrationTest {
     @Autowired
     protected CacheManager cacheManager;
 
+    @Autowired
+    private ApplicationEventPublisher events;
+
     /**
      * Collections to clear before/after each test.
      * Subclasses can override this to add more collections.
@@ -80,6 +85,8 @@ public abstract class BaseIntegrationTest {
     }
 
     private void clearAllCaches() {
+        // Tests seed Firestore directly, bypassing evictPublicContentCaches(), so drop the kept tab order too.
+        events.publishEvent(new PublicContentCacheService.ContentChanged());
         if (cacheManager == null) {
             return;
         }

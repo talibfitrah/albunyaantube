@@ -40,19 +40,22 @@ public class VideoValidationService {
     private final AuditLogService auditLogService;
     private final ValidationRunRepository validationRunRepository;
     private final ValidationProperties validationProperties;
+    private final PublicContentCacheService publicContentCacheService;
 
     public VideoValidationService(
             VideoRepository videoRepository,
             ChannelOrchestrator channelOrchestrator,
             AuditLogService auditLogService,
             ValidationRunRepository validationRunRepository,
-            ValidationProperties validationProperties
+            ValidationProperties validationProperties,
+            PublicContentCacheService publicContentCacheService
     ) {
         this.videoRepository = videoRepository;
         this.channelOrchestrator = channelOrchestrator;
         this.auditLogService = auditLogService;
         this.validationRunRepository = validationRunRepository;
         this.validationProperties = validationProperties;
+        this.publicContentCacheService = publicContentCacheService;
     }
 
     /**
@@ -178,6 +181,14 @@ public class VideoValidationService {
                 } catch (Exception e) {
                     errorCount++;
                     logger.error("Error validating video {}: {}", video.getYoutubeId(), e.getMessage(), e);
+                }
+            }
+
+            if (unavailableCount > 0) {
+                try {
+                    publicContentCacheService.evictPublicContentCaches();   // UNAVAILABLE videos left the Videos tab
+                } catch (Exception e) {
+                    logger.warn("Cache eviction failed after marking videos unavailable; run continues", e);
                 }
             }
 

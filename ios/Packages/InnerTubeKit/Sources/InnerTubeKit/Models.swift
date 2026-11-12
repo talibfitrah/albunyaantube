@@ -85,6 +85,11 @@ public struct Resolved: Sendable {
     /// 360p can bring (`TVAdaptive.select` keeps mp4 avc1 only), so the quality menu has them before HD lands. Empty
     /// for every other rung.
     public var videoSizes: [CGSize] = []
+    /// Audio only's source: the stream's audio file (`.hls`'s `audioOnlyURL`) with the byte ranges a playlist over it
+    /// needs. AVPlayer reads a bare file with one open-ended GET, which googlevideo throttles to about 31 KB/s, so it
+    /// never started (live probe 2026-11-12: status `.unknown` for 30 s); as a byte-range playlist the same URL plays.
+    /// nil when the answer carries no such file (rung 2, live, offline).
+    public var audioOnly: SyntheticHLS.Rendition?
 
     public init(
         stream: ResolvedStream, client: ClientFamily, userAgent: String, resolvedAt: Date, expiresAt: Date?, isLiveNow: Bool = false,

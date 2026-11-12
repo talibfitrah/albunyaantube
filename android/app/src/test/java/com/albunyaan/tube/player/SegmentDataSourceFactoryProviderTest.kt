@@ -44,12 +44,6 @@ class SegmentDataSourceFactoryProviderTest {
     }
 
     @Test
-    fun `forClient ANDROID_VR invokes createForAndroidUA`() {
-        provider.forClient(ExtractionClient.ANDROID_VR)
-        verify(cronetDataSourceFactory).createForAndroidUA()
-    }
-
-    @Test
     fun `forClient NEWPIPE_ANDROID invokes createForAndroidUA`() {
         provider.forClient(ExtractionClient.NEWPIPE_ANDROID)
         verify(cronetDataSourceFactory).createForAndroidUA()

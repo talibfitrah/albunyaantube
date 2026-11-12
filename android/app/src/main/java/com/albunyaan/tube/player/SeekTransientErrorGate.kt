@@ -85,12 +85,21 @@ class SeekTransientErrorGate(
      * When this returns false, the caller should run the normal degradation path.
      */
     fun tryClaimSeekTransientRefresh(adaptiveType: MediaSourceResult.AdaptiveType): Boolean {
-        if (!isMultiQualityAdaptive(adaptiveType)) return false
-        val last = lastSeekElapsedMs ?: return false
-        if (clock() - last > windowMs) return false
+        if (!isInSeekTransientWindow(adaptiveType)) return false
         if (transientRefreshCount >= maxTransientRefreshes) return false
         transientRefreshCount++
         return true
+    }
+
+    /**
+     * Whether an error now on [adaptiveType] looks seek-induced: a multi-quality adaptive
+     * source and a seek within [windowMs]. Unlike [tryClaimSeekTransientRefresh] it claims
+     * nothing, so the 403 counter can ask before the refresh path claims.
+     */
+    fun isInSeekTransientWindow(adaptiveType: MediaSourceResult.AdaptiveType): Boolean {
+        if (!isMultiQualityAdaptive(adaptiveType)) return false
+        val last = lastSeekElapsedMs ?: return false
+        return clock() - last <= windowMs
     }
 
     companion object {

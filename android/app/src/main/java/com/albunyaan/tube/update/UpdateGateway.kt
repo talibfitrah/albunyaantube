@@ -56,4 +56,10 @@ interface UpdateGateway {
      * toast, because the user explicitly asked.
      */
     fun runCheck(activity: Activity, lifecycleOwner: LifecycleOwner)
+
+    /**
+     * The "Update" button on the update-required screen ([MinVersionGate] said this install
+     * is below the floor). Sends the user to wherever this flavor gets its updates.
+     */
+    fun openRequiredUpdate(activity: Activity, lifecycleOwner: LifecycleOwner)
 }

@@ -5,6 +5,7 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
@@ -15,6 +16,7 @@ import androidx.core.view.isInvisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
@@ -22,6 +24,7 @@ import com.albunyaan.tube.auth.AccountStatus
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.preferences.SettingsPreferences
+import com.albunyaan.tube.update.MinVersionGate
 import com.albunyaan.tube.update.UpdateInfo
 import com.albunyaan.tube.update.UpdateGateway
 import com.google.firebase.auth.EmailAuthProvider
@@ -80,6 +83,8 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
     @Inject @Named("applicationScope") lateinit var appScope: CoroutineScope
 
     @Inject lateinit var updateGateway: UpdateGateway
+
+    @Inject lateinit var minVersionGate: MinVersionGate
 
     /** Track running animators for cleanup on fragment destruction */
     private val runningAnimators = mutableListOf<Animator>()
@@ -162,13 +167,24 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
                 updateGateway.checkForUpdate()
             }
 
+            // Minimum-version floor, fetched in parallel. In appScope so a fetch the
+            // splash stops waiting for still lands in the cache for the next cold start.
+            val updateRequiredDeferred: Deferred<Boolean> = appScope.async {
+                minVersionGate.fetchAndDecide(BuildConfig.VERSION_NAME)
+            }
+
             // Check if this is a deep link launch - if so, skip splash entirely.
             // Deep-link launches deliberately skip the update prompt — the user tapped
             // a link expecting content, not a "new version available" dialog. Cancelling
             // the deferred frees the OkHttp connection; the prompt fires on the next
-            // non-deep-link cold start. (code-reviewer I2.)
+            // non-deep-link cold start. (code-reviewer I2.) The floor still applies, from
+            // the cache only: no wait on the network here.
             if (isDeepLinkLaunch()) {
                 updateInfoDeferred.cancel()
+                if (minVersionGate.decideFromCache(BuildConfig.VERSION_NAME)) {
+                    routeToUpdateRequired()
+                    return@launch
+                }
                 routeAfterSplash(onboardingDeferred.await(), accountStatusDeferred.await())
                 return@launch
             }
@@ -242,8 +258,25 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             // still holds the catalog's mutex, so opening Available updates during that
             // window waits on it (behind a spinner, on an explicit user action). Truly
             // aborting it needs an OkHttp callTimeout on the shared client.
+            //
+            // The floor goes first: below it, neither the "update available" prompt nor
+            // the normal route applies. Same bounded grace; on timeout the last good
+            // cached floor decides (null = no value ever seen = not required). Both waits share
+            // ONE deadline, so the worst case stays UPDATE_AWAIT_GRACE_MS, not twice that.
+            val deadline = SystemClock.elapsedRealtime() + UPDATE_AWAIT_GRACE_MS
+            val updateRequired = withTimeoutOrNull(UPDATE_AWAIT_GRACE_MS) { updateRequiredDeferred.await() }
+                ?: minVersionGate.decideFromCache(BuildConfig.VERSION_NAME)
+            if (updateRequired) {
+                updateInfoDeferred.cancel()
+                routeToUpdateRequired()
+                return@launch
+            }
             awaitUpdatePromptIfAvailable(
-                withTimeoutOrNull(UPDATE_AWAIT_GRACE_MS) { updateInfoDeferred.await() }
+                // withTimeoutOrNull(0) returns null even for a finished deferred; don't drop it.
+                if (updateInfoDeferred.isCompleted) updateInfoDeferred.await()
+                else withTimeoutOrNull((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)) {
+                    updateInfoDeferred.await()
+                }
             )
             val onboardingCompleted = onboardingDeferred.await()
             val accountStatus = accountStatusDeferred.await()
@@ -333,6 +366,13 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             isEmailVerified = user?.isEmailVerified == true,
         )
         findNavController().navigate(action)
+    }
+
+    /** Same detach / current-destination guards as [routeAfterSplash]. */
+    private fun routeToUpdateRequired() {
+        if (!isAdded) return
+        if (findNavController().currentDestination?.id != R.id.splashFragment) return
+        findNavController().navigate(R.id.action_splash_to_updateRequired)
     }
 
     private fun isDeepLinkLaunch(): Boolean {

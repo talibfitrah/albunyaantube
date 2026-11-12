@@ -641,14 +641,14 @@ struct PlayerHostTests {
         Self.postFailure(on: player)                       // dies under the user -> resume intent
         player.pause()                                     // what the failure does to the player
 
-        PlayerHostView.policyHandler(model: model, player: player, coordinator: coordinator)(.pause)
+        PlayerHostView.policyHandler(coordinator: coordinator)(.pause)
 
         try Self.swap(player, to: Self.unanswered, coordinator, model)
         #expect(player.timeControlStatus == .paused, "the failure's replacement overrode a pause")
     }
 
     /// Review M1: the resume intent is spent by the ONE replacement it was for. A later same-player
-    /// swap (the audio-only toggle, a background restore) after the user paused stays paused.
+    /// swap (the audio-only toggle) after the user paused stays paused.
     @Test(.timeLimit(.minutes(1))) func theResumeIntentIsSpentByTheFirstReplacement() async throws {
         let (model, player, coordinator) = try await Self.playingHarness()
         defer { coordinator.stopObserving(); player.pause() }
@@ -745,26 +745,15 @@ struct PlayerHostTests {
 
     // MARK: - Task 3: audio-only URL selection and the same-player swap
 
-    @Test func audioOnlySelectsTheItag140URL() {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let audio = URL(string: "https://127.0.0.1:9/a140")!
-        let stream = ResolvedStream.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])
-        #expect(PlayerHostView.streamURL(stream, audioOnly: false) == video)
-        #expect(PlayerHostView.streamURL(stream, audioOnly: true) == audio)
-    }
-
-    @Test func audioOnlyFallsBackToVideoWhenNoAudioTrackExists() {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let stream = ResolvedStream.hls(url: video, isLive: false, audioOnlyURL: nil, captionTracks: [])
-        #expect(PlayerHostView.streamURL(stream, audioOnly: true) == video)
-        let progressive = ResolvedStream.progressive(url: video, label: "360p")
-        #expect(PlayerHostView.streamURL(progressive, audioOnly: true) == video)
-    }
-
-    @Test func togglingAudioOnlyReplacesTheItemAndKeepsThePlayer() throws {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let audio = URL(string: "https://127.0.0.1:9/a140")!
-        let resolved = Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: []))
+    /// 2026-11-12: the bare itag 140 file never started -- AVPlayer reads it with one open-ended GET, which googlevideo
+    /// throttles. Audio only plays it as a byte-range playlist through the loader, on the same player, and an update pass
+    /// on the same stream keeps that item. `.invalid` never resolves: no network.
+    @Test func togglingAudioOnlyPlaysTheItag140AsAByteRangePlaylistOnTheSamePlayer() throws {
+        let video = URL(string: "https://fixture.invalid/x.m3u8")!
+        let audio = URL(string: "https://fixture.invalid/a140")!
+        var resolved = Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: []))
+        resolved.audioOnly = .init(url: audio, codecs: "mp4a.40.2", bandwidth: 1, initRange: 0...1, indexRange: 2...3,
+                                   contentLength: 9, isDefault: true)
         let state = StreamState.ready(resolved)
         let first = PlayerHostView.player(for: state, replacing: nil, audioOnly: false)
 
@@ -772,57 +761,30 @@ struct PlayerHostTests {
 
         #expect(second === first)  // same AVPlayer -- position carries via replaceCurrentItem + seek
         let asset = try #require(second?.currentItem?.asset as? AVURLAsset)
-        #expect(asset.url == audio)
+        #expect(asset.url.scheme == "fitrah-hls")
+        #expect(asset.url.lastPathComponent == "a0.m3u8")
+        #expect(asset.resourceLoader.delegate is SyntheticHLSLoader)
+        let item = try #require(second?.currentItem)
+        #expect(PlayerHostView.player(for: state, replacing: second, audioOnly: true)?.currentItem === item,
+                "an update pass on the same stream rebuilt the audio item")
+        let back = PlayerHostView.player(for: state, replacing: second, audioOnly: false)
+        #expect((back?.currentItem?.asset as? AVURLAsset)?.url == video)
+        back?.replaceCurrentItem(with: nil)
+    }
+
+    /// No byte-range rendition (the toggle is hidden then: `audioOnlyAvailable`): the video plays on, never the bare file.
+    @Test func audioOnlyKeepsTheVideoWithoutAByteRangeRendition() throws {
+        let video = URL(string: "https://fixture.invalid/x.m3u8")!
+        let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false,
+                                                         audioOnlyURL: URL(string: "https://fixture.invalid/a140")!, captionTracks: [])))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: true))
+        #expect((player.currentItem?.asset as? AVURLAsset)?.url == video)
+        player.replaceCurrentItem(with: nil)
     }
 
     @Test func audioOnlyAssetCarriesTheResolvedUserAgent() {
         // The itag 140 URL is IP+UA-bound exactly like the manifest; a bare asset 403s.
         #expect(PlayerHostView.assetOptions(userAgent: "UA")[AVURLAssetHTTPUserAgentKey] as? String == "UA")
-    }
-
-    // MARK: - Final review (IMP-1, MIN-4): what the background policy may and may not do synchronously
-
-    /// IMP-1: only the BACKGROUND half of the policy swaps the item here. `.restoreVideo` runs
-    /// against whatever `state` is live at action time -- and the pre-emptive TTL refresh can land
-    /// AFTER the 2 s foreground deadline, so a synchronous restore would replace the item once
-    /// against the stale `Resolved` and the foreground update pass would replace it a second time
-    /// against the fresh one, restarting playback from 0. One replace, owned by the update pass.
-    @Test func restoringVideoDoesNotReplaceTheItemSynchronously() throws {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let audio = URL(string: "https://127.0.0.1:9/a140")!
-        let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])))
-        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: true))
-        let audioItem = try #require(player.currentItem)
-
-        PlayerHostView.applyPolicyAction(.restoreVideo, state: state, player: player, model: nil)
-
-        #expect(player.currentItem === audioItem)
-        #expect((player.currentItem?.asset as? AVURLAsset)?.url == audio)
-    }
-
-    /// MIN-4: the synchronous background swap builds a NEW `AVPlayerItem`, and the recovery
-    /// observers (status KVO, failed-to-play-to-end, the periodic sampler) are per-item. Left on
-    /// the outgoing item, an audio-only stream that dies in the background would never fire the
-    /// recovery ladder.
-    @Test func theBackgroundSwapReArmsTheRecoveryObserversOnTheNewItem() throws {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let audio = URL(string: "https://127.0.0.1:9/a140")!
-        let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])))
-        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: false))
-        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
-        let videoItem = try #require(player.currentItem)
-        coordinator.observe(item: videoItem, player: player, model: nil, isLive: false, playToEnd: .advance)
-        defer { coordinator.stopObserving() }
-
-        PlayerHostView.applyPolicyAction(.swapToAudioOnly, state: state, player: player,
-                                         model: nil, coordinator: coordinator)
-
-        #expect(player.currentItem !== videoItem)
-        #expect(coordinator.observedItem === player.currentItem)
-        // B5 Task 4 (live step 2 item 8 FAILED): the re-arm used `.none`, so an end-of-item that
-        // landed while backgrounded never advanced -- the audio-only item must keep the action the
-        // video item had, or background auto-advance (reconciliation note 2) is fiction.
-        #expect(coordinator.playToEnd == .advance)
     }
 
     /// I2 (B4 T2 fix round 2): the repeat-one loop. Real clip (`player-fixture.mp4`, the fake-player
@@ -1204,8 +1166,8 @@ struct PlayerHostTests {
     // MARK: - Task 5: the delegate wiring
 
     @Test func pipStateFlipsOnWillStartNotDidStart() {
-        // WILL, not DID: `.enteredBackground` reads `pictureInPictureActive`, and the ordering of
-        // the AVKit delegate callback against `didEnterBackgroundNotification` is not guaranteed.
+        // WILL, not DID: the HD stager and the foreground re-resolve read `pictureInPictureActive`, and the
+        // ordering of the AVKit delegate callback against the app's background transition is not guaranteed.
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
         let controller = AVPlayerViewController()
         coordinator.playerViewControllerWillStartPictureInPicture(controller)
@@ -1289,10 +1251,6 @@ struct PlayerHostTests {
         // CF-B2-15's cost cannot arise on this screen: with backgroundPlay false the policy is .pauses
         // for EVERY stream shape, itag 140 or not, so nothing pulls video for a screen nobody sees.
         #expect(AudioSessionPolicy.backgroundPolicy(backgroundPlay: false, pictureInPictureActive: false) == .pauses)
-        #expect(AudioSessionPolicy.decide(.enteredBackground, PlaybackPolicyContext(
-            backgroundPlay: false, userAudioOnly: false, audioOnlyAvailable: true,
-            pictureInPictureActive: false, wasPlayingBeforeInterruption: false,
-            autoSwappedToAudioOnly: false)) == .none)
     }
 
     /// I4 (B4 final review): the ONE read of the setting, `PlayerHostView.effectiveBackgroundPlay`,

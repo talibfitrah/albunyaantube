@@ -300,28 +300,31 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// Plan B2 task 3: the audio-only toggle (`player.audioOnly.button`, ruling 34). Offered only
-    /// when the resolved stream carries an itag 140 rendition, so this uses
-    /// `-fitrah-fake-player-audio-only` (the bundled fixture tagged `.hls` WITH a non-nil
-    /// `audioOnlyURL`). Tapping it must raise the audio-only status surface
-    /// (`player.audioOnlyPill`) and take the quality/captions/audio-language controls away -- on an
-    /// m4a item every one of them would be inert.
+    /// when the resolved stream carries the audio file's byte ranges (`Resolved.audioOnly`), so this
+    /// runs on `screenshots.sh`'s Range server (`-fitrah-fake-player-synthetic`): the toggle comes with
+    /// the HD swap, and its audio playlist really plays. Tapping it must raise the audio-only status
+    /// surface (`player.audioOnlyPill`) and take the quality/captions/audio-language controls away --
+    /// on an audio-only item every one of them would be inert.
     func testPlayerAudioOnly() throws {
         let directory = try shotsDirectory()
+        let base = try XCTUnwrap(ProcessInfo.processInfo.environment["FITRAH_SYNTHETIC_BASE_URL"],
+                                 "FITRAH_SYNTHETIC_BASE_URL unset — run via ios/scripts/screenshots.sh")
         let screen = Screen(key: "player-audio-only",
-                            arguments: ["-fitrah-fake-player-audio-only", "-fitrah-route", "player", "fixture-video"],
+                            arguments: ["-fitrah-fake-player-synthetic", base, "-fitrah-route", "player", "fixture-video"],
                             anchor: .element("Video"))
         XCUIDevice.shared.orientation = .portrait
         let app = launch(screen, locale: Self.locales[0], extraArguments: [])
         let content = element(for: screen.anchor, in: app)
         XCTAssertTrue(content.waitForExistence(timeout: 20), "player-audio-only: AVPlayerViewController's content view never appeared")
         let button = app.buttons["player.audioOnly.button"]
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "player-audio-only: the audio-only button never appeared")
+        XCTAssertTrue(button.waitForExistence(timeout: 30), "player-audio-only: the audio-only button never appeared")
         button.tap()
         let pill = app.staticTexts["player.audioOnlyPill"]
         XCTAssertTrue(pill.waitForExistence(timeout: 10), "player-audio-only: the audio-only status surface never appeared")
         // Fix round 1, C1: a PILL, not a fill. The status used to be a full-bleed opaque rectangle
-        // over AVKit's own transport, which left no way to pause while audio-only.
-        XCTAssertLessThan(pill.frame.width, content.frame.width / 2,
+        // over AVKit's own transport, which left no way to pause while audio-only. Measured on the window: an item with
+        // no video track takes AVKit's "Video" content view away.
+        XCTAssertLessThan(pill.frame.width, app.windows.firstMatch.frame.width / 2,
                           "player-audio-only: the status must be a pill sized to its text, not a fill over the video surface")
         XCTAssertFalse(app.buttons["player.qualityMenu.button"].exists, "player-audio-only: the quality control must be hidden while audio-only")
         // VoiceOver state (plan task 7): the control reads its label AND its on/off state. It is
@@ -339,7 +342,7 @@ final class ScreenshotTests: XCTestCase {
                                       ("player-audio-only-en-a11y3-portrait", Self.locales[0], Self.accessibility3)] {
             let app = launch(screen, locale: locale, extraArguments: extra)
             let toggle = app.buttons["player.audioOnly.button"]
-            XCTAssertTrue(toggle.waitForExistence(timeout: 20), "\(name): the audio-only button never appeared")
+            XCTAssertTrue(toggle.waitForExistence(timeout: 30), "\(name): the audio-only button never appeared")
             toggle.tap()
             let pill = app.staticTexts["player.audioOnlyPill"]
             XCTAssertTrue(pill.waitForExistence(timeout: 10), "\(name): the audio-only status surface never appeared")

@@ -25,7 +25,7 @@ public final class ContentItemMapper {
 
     /** Map an approved {@link Channel} to a {@link ContentItemDto}. */
     public static ContentItemDto fromChannel(Channel channel) {
-        return ContentItemDto.channel(
+        ContentItemDto dto = ContentItemDto.channel(
                 channel.getYoutubeId(),
                 channel.getName(),
                 channel.getCategory() != null ? channel.getCategory().getName() : null,
@@ -35,11 +35,13 @@ public final class ContentItemMapper {
                 channel.getVideoCount(),
                 channel.getKeywords()
         );
+        dto.setCategoryIds(channel.getCategoryIds());
+        return dto;
     }
 
     /** Map an approved {@link Playlist} to a {@link ContentItemDto}. */
     public static ContentItemDto fromPlaylist(Playlist playlist) {
-        return ContentItemDto.playlist(
+        ContentItemDto dto = ContentItemDto.playlist(
                 playlist.getYoutubeId(),
                 playlist.getTitle(),
                 playlist.getCategory() != null ? playlist.getCategory().getName() : null,
@@ -48,6 +50,8 @@ public final class ContentItemMapper {
                 playlist.getThumbnailUrl(),
                 playlist.getKeywords()
         );
+        dto.setCategoryIds(playlist.getCategoryIds());
+        return dto;
     }
 
     /**
@@ -63,7 +67,7 @@ public final class ContentItemMapper {
 
         // Category name will be null — populated by client-side lookup to avoid a
         // Firestore query in stream operations.
-        return ContentItemDto.video(
+        ContentItemDto dto = ContentItemDto.video(
                 video.getYoutubeId(),
                 video.getTitle(),
                 null,
@@ -75,6 +79,9 @@ public final class ContentItemMapper {
                 video.getChannelTitle(),
                 video.getKeywords()
         );
+        dto.setCategoryIds(video.getCategoryIds());
+        dto.setUploadedAt(video.getUploadedAt());
+        return dto;
     }
 
     /** Spec §4.1: one current live of a LIVE-category channel entry, as a VIDEO item the 1.0.3 apps already play. */

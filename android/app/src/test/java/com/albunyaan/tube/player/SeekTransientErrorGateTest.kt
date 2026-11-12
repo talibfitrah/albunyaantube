@@ -140,4 +140,47 @@ class SeekTransientErrorGateTest {
         assertFalse(SeekTransientErrorGate.isMultiQualityAdaptive(AdaptiveType.SYNTHETIC_DASH))
         assertFalse(SeekTransientErrorGate.isMultiQualityAdaptive(AdaptiveType.NONE))
     }
+
+    // --- isInSeekTransientWindow: the 403 counter's non-claiming query ---
+
+    @Test
+    fun `window query is true right after a seek on multi-quality adaptive`() {
+        val g = gate()
+        g.onSeek()
+        now += 500
+        assertTrue(g.isInSeekTransientWindow(AdaptiveType.SYNTH_ADAPTIVE))
+        assertTrue(g.isInSeekTransientWindow(AdaptiveType.DASH))
+        assertTrue(g.isInSeekTransientWindow(AdaptiveType.HLS))
+    }
+
+    @Test
+    fun `window query is false for single-quality sources, past the window, and with no seek`() {
+        val g = gate(window = 12_000L)
+        assertFalse(g.isInSeekTransientWindow(AdaptiveType.SYNTH_ADAPTIVE)) // no seek yet
+        g.onSeek()
+        now += 100
+        assertFalse(g.isInSeekTransientWindow(AdaptiveType.NONE))
+        assertFalse(g.isInSeekTransientWindow(AdaptiveType.SYNTHETIC_DASH))
+        now += 12_000
+        assertFalse(g.isInSeekTransientWindow(AdaptiveType.SYNTH_ADAPTIVE))
+    }
+
+    @Test
+    fun `window query is false after a clean resume`() {
+        val g = gate()
+        g.onSeek()
+        g.onPlaybackResumed()
+        assertFalse(g.isInSeekTransientWindow(AdaptiveType.SYNTH_ADAPTIVE))
+    }
+
+    @Test
+    fun `window query never spends a transient refresh`() {
+        val g = gate(maxTransient = 1)
+        g.onSeek()
+        now += 100
+        repeat(5) { assertTrue(g.isInSeekTransientWindow(AdaptiveType.SYNTH_ADAPTIVE)) }
+        assertTrue(g.tryClaimSeekTransientRefresh(AdaptiveType.SYNTH_ADAPTIVE))
+        // Budget spent, but the query still reports the window: it answers "seek-induced?" only.
+        assertTrue(g.isInSeekTransientWindow(AdaptiveType.SYNTH_ADAPTIVE))
+    }
 }

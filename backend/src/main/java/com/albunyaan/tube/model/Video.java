@@ -42,11 +42,6 @@ public class Video {
      * YouTube metadata (cached from YouTube API)
      */
     private String title;
-    /**
-     * Lowercase version of title for case-insensitive prefix queries.
-     * Auto-maintained by setTitle().
-     */
-    private String titleLower;
     private String description;
     private String thumbnailUrl;
     private Integer durationSeconds;
@@ -146,12 +141,6 @@ public class Video {
      * Optional field - can be null or empty.
      */
     private List<String> keywords;
-
-    /**
-     * Lowercase version of keywords for case-insensitive array-contains queries.
-     * Auto-maintained by setKeywords().
-     */
-    private List<String> keywordsLower;
 
     /**
      * iOS Phase 3 (offline gate): the RAW stored admin flag. Null on legacy documents and on
@@ -290,15 +279,6 @@ public class Video {
 
     public void setTitle(String title) {
         this.title = title;
-        this.titleLower = title != null ? title.toLowerCase(java.util.Locale.ROOT) : null;
-    }
-
-    public String getTitleLower() {
-        return titleLower;
-    }
-
-    public void setTitleLower(String titleLower) {
-        this.titleLower = titleLower;
     }
 
     public String getDescription() {
@@ -443,17 +423,6 @@ public class Video {
 
     public void setKeywords(List<String> keywords) {
         this.keywords = keywords;
-        this.keywordsLower = keywords != null
-                ? keywords.stream().filter(k -> k != null).map(k -> k.toLowerCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.toList())
-                : null;
-    }
-
-    public List<String> getKeywordsLower() {
-        return keywordsLower;
-    }
-
-    public void setKeywordsLower(List<String> keywordsLower) {
-        this.keywordsLower = keywordsLower;
     }
 
     public Boolean getOfflineAllowed() {

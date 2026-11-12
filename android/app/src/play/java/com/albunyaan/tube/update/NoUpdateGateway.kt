@@ -1,6 +1,9 @@
 package com.albunyaan.tube.update
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.LifecycleOwner
 import dagger.Binds
 import dagger.Module
@@ -19,9 +22,13 @@ import javax.inject.Singleton
  * UPDATE_PACKAGES_WITHOUT_USER_ACTION are absent from the merged manifest. This class
  * exists only so shared code in `src/main` keeps compiling.
  *
- * It must stay inert. Do not give it a "just check GitHub but don't install" path —
- * Settings hides every update affordance when [hasUpdater] is false, so a probe here
- * would be a network call nothing can act on. Updates for this flavor come from Play.
+ * Its one action is [openRequiredUpdate], which opens this app's Play Store page. This
+ * gateway itself makes no network call and never downloads or installs an update. Do not
+ * give it a "just check for a release but don't install" path — Settings hides every update
+ * affordance when [hasUpdater] is false, so a probe here would be a network call nothing can
+ * act on. Updates for this flavor come from Play. The minimum-version floor is separate: the
+ * shared [MinVersionGate] (src/main) reads the minimum-version file on cold start in both
+ * flavors.
  */
 @Singleton
 class NoUpdateGateway @Inject constructor() : UpdateGateway {
@@ -37,6 +44,22 @@ class NoUpdateGateway @Inject constructor() : UpdateGateway {
     ) = Unit
 
     override fun runCheck(activity: Activity, lifecycleOwner: LifecycleOwner) = Unit
+
+    /** Opens the Play Store listing; the web listing when no store app handles `market://`. */
+    override fun openRequiredUpdate(activity: Activity, lifecycleOwner: LifecycleOwner) {
+        val id = activity.packageName
+        try {
+            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$id")))
+        } catch (e: ActivityNotFoundException) {
+            try {
+                activity.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$id"))
+                )
+            } catch (e: ActivityNotFoundException) {
+                // No store and no browser: nothing can open; the button stays for a retry.
+            }
+        }
+    }
 }
 
 /**

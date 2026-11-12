@@ -232,7 +232,8 @@ struct PlayerScreen: View {
         Task { await model.retry() }
     }
 
-    /// An Up Next tap is the user's Play (round 3, m2), then the queue jump. The hold goes at the tap, as Retry's.
+    /// An Up Next tap is the user's Play (round 3, m2), then the queue jump. The hold goes at the tap, as Retry's. The
+    /// lock screen's next/previous does the same (`PlayerHostView.trackSkip`).
     static func playUpNext(_ model: PlayerViewModel, at index: Int) {
         BackgroundPlaybackController.userAskedToPlay()
         model.heldByOpen = false
@@ -649,9 +650,6 @@ struct PlayerScreen: View {
            LaunchArguments.debug.indices.contains(i + 1), let url = URL(string: LaunchArguments.debug[i + 1]) {
             return FixtureLadderResolver(rung1: url)
         }
-        if LaunchArguments.debug.contains("-fitrah-fake-player-audio-only") {
-            return FixtureAudioOnlyResolver()
-        }
         if LaunchArguments.debug.contains("-fitrah-fake-player-hls") {
             return FixtureHLSPlayerResolver()
         }
@@ -707,24 +705,6 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
         return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []),
-                         client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
-    }
-
-    func demote(_ videoId: String, failed: ClientFamily) async {}
-}
-
-/// B2 task 3 screenshot rig: the same bundled fixture as `FixtureHLSPlayerResolver`, but with a
-/// non-nil `audioOnlyURL` (the same local clip -- AVPlayer plays it either way), which is what
-/// `PlayerViewModel.audioOnlyAvailable` gates the audio-only toggle on. No real itag 140 stream
-/// (and no network) is needed to capture the audio-only surface.
-private struct FixtureAudioOnlyResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
-        guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
-            throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
-        }
-        return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: url, captionTracks: []),
                          client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
 
@@ -848,9 +828,11 @@ private func fixtureHD(base: URL) -> HDUpgrade {
               var model = try? JSONDecoder().decode(SyntheticHLS.self, from: response.0) else { return nil }
         for i in model.video.indices { model.video[i].url = base.appending(path: model.video[i].url.relativeString) }
         for i in model.audio.indices { model.audio[i].url = base.appending(path: model.audio[i].url.relativeString) }
-        return Resolved(stream: .hls(url: URL(string: "\(SyntheticHLSLoader.scheme)://\(UUID().uuidString)/master.m3u8")!,
-                                     isLive: false, audioOnlyURL: model.audio.first?.url, captionTracks: [], synthetic: model),
-                        client: .tvSamsung, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        var hd = Resolved(stream: .hls(url: URL(string: "\(SyntheticHLSLoader.scheme)://\(UUID().uuidString)/master.m3u8")!,
+                                       isLive: false, audioOnlyURL: model.audio.first?.url, captionTracks: [], synthetic: model),
+                          client: .tvSamsung, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        hd.audioOnly = model.audio.first            // as `StreamResolver.mintHD`
+        return hd
     }, failed: { _ in }, refused: {})
 }
 

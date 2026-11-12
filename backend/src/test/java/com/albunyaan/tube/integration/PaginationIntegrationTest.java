@@ -12,6 +12,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.service.ApprovalService;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.PublicContentService;
 import com.albunyaan.tube.util.TestDataBuilder;
 import com.google.cloud.Timestamp;
@@ -61,6 +62,9 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private PublicContentService publicContentService;
+
+    @Autowired
+    private PublicContentCacheService publicContentCacheService;
 
     @Autowired
     private ApprovalService approvalService;
@@ -731,13 +735,13 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             String cursor = page.getPageInfo().getNextCursor();
 
-            // Assert: Cursor should be base64-encoded, not a raw document ID
+            // Assert: Cursor should be a Base64-encoded offset, not a raw document ID
             assertNotNull(cursor);
             assertFalse(cursor.startsWith("channel-"),
                     "Cursor should not expose raw document IDs");
-            // Base64 URL-safe characters only
-            assertTrue(cursor.matches("^[A-Za-z0-9_-]+$"),
-                    "Cursor should be URL-safe base64");
+            // Standard Base64 alphabet with padding (HTTP clients percent-encode it as a query value)
+            assertTrue(cursor.matches("^[A-Za-z0-9+/]+=*$"),
+                    "Cursor should be a Base64-encoded offset");
         }
 
         @Test
@@ -954,6 +958,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
             for (int i = 25; i < 30; i++) {
                 channelRepository.deleteById(channels.get(i).getId());
             }
+            publicContentCacheService.evictPublicContentCaches(); // what the registry delete does after its write
 
             // Continue fetching with cursor
             while (cursor != null) {

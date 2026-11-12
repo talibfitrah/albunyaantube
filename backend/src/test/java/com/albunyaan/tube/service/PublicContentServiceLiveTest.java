@@ -42,6 +42,10 @@ class PublicContentServiceLiveTest {
                 mock(CategoryContentOrderRepository.class), Runnable::run, searchIndex, liveCategories);
         when(categories.findByParentId(CAT)).thenReturn(List.of());
         when(liveCategories.isLive(CAT)).thenReturn(true);
+        Category live = new Category("Channels Live", null);
+        live.setId(CAT);
+        live.setType(Category.TYPE_LIVE);
+        when(categories.findAll()).thenReturn(List.of(live)); // the kept order's tree marks CAT as LIVE for VIDEOS
         when(liveCategories.items(CAT)).thenReturn(IntStream.range(0, 5)
                 .mapToObj(i -> ContentItemDto.video("live0000000" + i, "t", null, 0, null, null, null, null, "c", null)).toList());
     }
@@ -107,9 +111,6 @@ class PublicContentServiceLiveTest {
 
     @Test
     void channelsStillListTheChannelCards() throws Exception {
-        when(channels.findApprovedByCategoryAndSubscribersDescWithCursor(anyString(), anyInt(), org.mockito.ArgumentMatchers.any()))
-                .thenReturn(new ChannelRepository.PaginatedResult<>(List.of(), null, false));
-
         service.getContent("CHANNELS", null, 10, CAT, null, null, null);
 
         verify(liveCategories, never()).items(anyString());

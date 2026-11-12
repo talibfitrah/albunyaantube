@@ -243,21 +243,12 @@ export async function getPendingSubmitters(): Promise<PendingSubmitter[]> {
  * Passing `submittedBy` narrows the queue to one person's pending submissions — the drill-down
  * from the by-user tab.
  */
-/**
- * Which half of the queue to ask for. Submissions arrive either from a moderator working in the
- * dashboard or from someone importing in bulk on their phone, and the two are reviewed
- * differently. The split is applied server-side — filtering a fetched page here let the list come
- * back empty with more pages behind it.
- */
-export type SourceScope = 'MODERATOR_QUEUE' | 'USER_IMPORTS';
-
 export async function getPendingApprovals(filters?: {
   type?: 'all' | 'channels' | 'playlists' | 'videos';
   category?: string;
   cursor?: string;
   limit?: number;
   submittedBy?: string;
-  scope?: SourceScope;
 }): Promise<PaginatedApprovals> {
   // Map frontend filter type to backend type param
   let typeParam: string | undefined;
@@ -269,7 +260,6 @@ export async function getPendingApprovals(filters?: {
   if (typeParam) params.type = typeParam;
   if (filters?.category) params.category = filters.category;
   if (filters?.submittedBy) params.submittedBy = filters.submittedBy;
-  if (filters?.scope) params.scope = filters.scope;
   params.limit = filters?.limit || 20;
   if (filters?.cursor) params.cursor = filters.cursor;
 

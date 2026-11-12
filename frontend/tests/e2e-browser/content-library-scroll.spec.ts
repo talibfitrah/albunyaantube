@@ -96,12 +96,15 @@ test.describe('Content Library scroll position', () => {
     await page.route(url => url.pathname === '/api/admin/content', route => {
       listingRequests += 1;
       const params = new URL(route.request().url()).searchParams;
-      const page_ = Number(params.get('page') ?? 0);
+      // Like the server: the cursor is the createdAt of the last row served (newest first).
+      const after = params.get('cursor');
       const size = Number(params.get('size') ?? PAGE_SIZE);
+      const rows = after ? library.filter(row => row.createdAt < after) : library;
+      const content = rows.slice(0, size);
       return route.fulfill({
         json: {
-          content: library.slice(page_ * size, page_ * size + size),
-          totalItems: library.length,
+          content,
+          nextCursor: rows.length > size ? content[content.length - 1].createdAt : null,
           truncated: false
         }
       });

@@ -112,9 +112,9 @@ export async function addContentToCategorySort(
 /**
  * One option in the "add content to a category" picker.
  *
- * Five fields, because that is what the picker draws. `thumbnailUrl` and `youtubeId` are both
- * load-bearing: `getThumbnailUrl()` reads the former and otherwise builds a URL from the latter,
- * so dropping either strips thumbnails from part of the list.
+ * `thumbnailUrl` and `youtubeId` are both load-bearing: `getThumbnailUrl()` reads the former and
+ * otherwise builds a URL from the latter, so dropping either strips thumbnails from part of the list.
+ * `visibility` is PERSONAL for a grant to specific people, which cannot go into a category.
  */
 export interface ApprovedContentItem {
   type: string;
@@ -122,28 +122,23 @@ export interface ApprovedContentItem {
   youtubeId: string | null;
   title: string;
   thumbnailUrl: string | null;
-}
-
-export interface ApprovedContentResult {
-  items: ApprovedContentItem[];
-  truncated: boolean;
+  visibility: 'PUBLIC' | 'PERSONAL';
 }
 
 /**
- * Every approved item the picker can offer, in one request.
- *
- * Previously assembled by paging `/api/admin/content` in a loop, which could not terminate on
- * its own: the server's `totalPages` describes its current fetch window, and that window grows by
- * one page per content type each round — so the finish line outran the loop and it ran to a
- * 20-page safety cap. Offset paging also re-read every earlier row on every request. At ~1,600
- * items that was 16 requests and an order of magnitude more records read than displayed.
+ * Every approved (live) item: the same set the Library counts as approved, so the picker's total
+ * equals the Library's. Paged by the server's cursor to the end; a few requests cover the library.
  */
-export async function getApprovedContent(): Promise<ApprovedContentResult> {
-  const response = await apiClient.get<ApprovedContentResult>('/api/admin/content/approved-picker');
-  return {
-    items: response.data.items ?? [],
-    truncated: response.data.truncated ?? false
-  };
+export async function getApprovedContent(): Promise<ApprovedContentItem[]> {
+  const items: ApprovedContentItem[] = [];
+  let cursor: string | null = null;
+  do {
+    const response: { data: { items?: ApprovedContentItem[]; nextCursor?: string | null } } =
+      await apiClient.get('/api/admin/content/approved-picker', { params: cursor ? { cursor } : {} });
+    items.push(...(response.data.items ?? []));
+    cursor = response.data.nextCursor ?? null;
+  } while (cursor);
+  return items;
 }
 
 export async function removeContentFromCategorySort(

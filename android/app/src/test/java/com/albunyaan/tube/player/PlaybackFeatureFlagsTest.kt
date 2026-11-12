@@ -49,15 +49,6 @@ class PlaybackFeatureFlagsTest {
         )
     }
 
-    @Test
-    fun `ios fetch uses build-time default when no override set`() {
-        assertEquals(
-            "Should use build-time default",
-            BuildConfig.ENABLE_NPE_IOS_FETCH,
-            featureFlags.isIosFetchEnabled
-        )
-    }
-
     // --- Runtime Override Tests ---
 
     @Test
@@ -70,18 +61,6 @@ class PlaybackFeatureFlagsTest {
     fun `mpd prefetch override to false takes precedence`() {
         featureFlags.setMpdPrefetchEnabled(false)
         assertFalse("Should be disabled with override", featureFlags.isMpdPrefetchEnabled)
-    }
-
-    @Test
-    fun `ios fetch override to true takes precedence`() {
-        featureFlags.setIosFetchEnabled(true)
-        assertTrue("Should be enabled with override", featureFlags.isIosFetchEnabled)
-    }
-
-    @Test
-    fun `ios fetch override to false takes precedence`() {
-        featureFlags.setIosFetchEnabled(false)
-        assertFalse("Should be disabled with override", featureFlags.isIosFetchEnabled)
     }
 
     // --- Clear Override Tests ---
@@ -109,7 +88,6 @@ class PlaybackFeatureFlagsTest {
     fun `clearAllOverrides reverts all flags to build-time defaults`() {
         // Set overrides for several flags
         featureFlags.setMpdPrefetchEnabled(!BuildConfig.ENABLE_MPD_PREFETCH)
-        featureFlags.setIosFetchEnabled(!BuildConfig.ENABLE_NPE_IOS_FETCH)
         featureFlags.setGenerousCropBudgetEnabled(true)
 
         // Clear all
@@ -121,16 +99,27 @@ class PlaybackFeatureFlagsTest {
             BuildConfig.ENABLE_MPD_PREFETCH,
             featureFlags.isMpdPrefetchEnabled
         )
-        assertEquals(
-            "iOS fetch should revert",
-            BuildConfig.ENABLE_NPE_IOS_FETCH,
-            featureFlags.isIosFetchEnabled
-        )
         // generous_crop_budget default is device-dependent (false in unit test env)
         assertFalse(
             "Generous crop budget should revert to device default",
             featureFlags.isGenerousCropBudgetEnabled
         )
+    }
+
+    @Test
+    fun `clearAllOverrides clears every flag getDiagnostics reports`() {
+        featureFlags.setMpdPrefetchEnabled(true)
+        featureFlags.setGenerousCropBudgetEnabled(true)
+        featureFlags.setPredictivePrefetchEnabled(true)
+        featureFlags.setSegmentPreloadEnabled(true)
+        featureFlags.setNeverFreezeAbrEnabled(true)
+        featureFlags.setTtlWatcherEnabled(true)
+        assertTrue(featureFlags.getDiagnostics().keys.all { featureFlags.hasOverride(it) })
+
+        featureFlags.clearAllOverrides()
+
+        val leftover = featureFlags.getDiagnostics().filterValues { it.runtimeOverride != null }.keys
+        assertTrue("overrides survived clearAllOverrides: $leftover", leftover.isEmpty())
     }
 
     // --- hasOverride Tests ---
@@ -162,14 +151,12 @@ class PlaybackFeatureFlagsTest {
         val diagnostics = featureFlags.getDiagnostics()
 
         assertTrue("Should contain mpd_prefetch", diagnostics.containsKey("mpd_prefetch"))
-        assertTrue("Should contain ios_fetch", diagnostics.containsKey("ios_fetch"))
         assertTrue("Should contain generous_crop_budget", diagnostics.containsKey("generous_crop_budget"))
-        assertTrue("Should contain client_rotation", diagnostics.containsKey("client_rotation"))
         assertTrue("Should contain predictive_prefetch", diagnostics.containsKey("predictive_prefetch"))
         assertTrue("Should contain segment_preload", diagnostics.containsKey("segment_preload"))
         assertTrue("Should contain never_freeze_abr", diagnostics.containsKey("never_freeze_abr"))
         assertTrue("Should contain ttl_watcher", diagnostics.containsKey("ttl_watcher"))
-        assertEquals("Should have 8 flags", 8, diagnostics.size)
+        assertEquals("Should have 6 flags", 6, diagnostics.size)
     }
 
     // --- Generous Crop Budget Flag Tests ---

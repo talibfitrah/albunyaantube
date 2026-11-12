@@ -19,7 +19,6 @@ import com.google.cloud.firestore.QuerySnapshot;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
-import com.albunyaan.tube.util.CursorUtils;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -304,34 +303,6 @@ public class VideoRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Find videos by category ID with limit (bounded query).
-     * This prevents quota exhaustion for large categories.
-     *
-     * @param categoryId Category ID to filter by
-     * @param limit Maximum number of results
-     * @return List of approved videos in the category
-     */
-    public List<Video> findByCategoryId(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
     /**
      * Find videos by category ID regardless of status (for status=all).
      * This allows admin Content Library to show pending/rejected items when filtering by category.
@@ -343,26 +314,6 @@ public class VideoRepository {
     public List<Video> findByCategoryIdAllStatus(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Find videos by category ID and specific status.
-     * This allows admin Content Library to filter by both category and status.
-     *
-     * @param categoryId Category ID to filter by
-     * @param status Status to filter by (APPROVED, PENDING, REJECTED)
-     * @param limit Maximum number of results
-     * @return List of videos matching both category and status
-     */
-    public List<Video> findByCategoryIdAndStatus(String categoryId, String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", status)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get();
@@ -400,10 +351,11 @@ public class VideoRepository {
     public List<Video> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
-        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
+        // ponytail: reads up to limit × categoryIds.size() docs per call; see ChannelRepository.findByCategoryIds.
         LinkedHashMap<String, Video> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Video> batch = findByCategoryOrderByUploadedAtDesc(catId, perCategoryLimit);
+            List<Video> batch = findByCategoryOrderByUploadedAtDesc(catId, limit);
             for (Video v : batch) {
                 deduped.putIfAbsent(v.getId(), v);
             }
@@ -460,43 +412,6 @@ public class VideoRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    /**
-     * Search videos by normalized titleLower field for case-insensitive prefix matching.
-     * This is the preferred search method as it supports case-insensitive queries.
-     *
-     * @param queryLower Lowercase search prefix
-     * @param limit Maximum number of results
-     * @return List of matching videos
-     */
-    public List<Video> searchByTitleLower(String queryLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("titleLower")
-                .startAt(queryLower)
-                .endAt(queryLower + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Search videos by keyword using array-contains on keywordsLower.
-     * Finds videos where any keyword exactly matches the query (case-insensitive).
-     * Complements prefix-based title search for improved recall.
-     *
-     * @param keywordLower Lowercase keyword to search for
-     * @param limit Maximum number of results
-     * @return List of matching videos
-     */
-    public List<Video> searchByKeyword(String keywordLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereArrayContains("keywordsLower", keywordLower)
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
         CatalogChanged.await(result, timeoutProperties.getWrite(), events, "VIDEO", id);
@@ -544,6 +459,19 @@ public class VideoRepository {
         return findAll(timeoutProperties.getDefaultMaxResults());
     }
 
+    /** One page of the admin Content Library; see {@link ChannelRepository#findPageAfter}. */
+    public List<Video> findPageAfter(String status, String category, boolean oldest,
+                                     com.google.cloud.Timestamp afterCreatedAt, String afterId, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Query.Direction dir = oldest ? Query.Direction.ASCENDING : Query.Direction.DESCENDING;
+        Query query = getCollection();
+        if (status != null) query = query.whereEqualTo("status", status);
+        if (category != null) query = query.whereArrayContains("categoryIds", category);
+        query = query.orderBy("createdAt", dir).orderBy(com.google.cloud.firestore.FieldPath.documentId(), dir);
+        if (afterCreatedAt != null) query = query.startAfter(afterCreatedAt, afterId);
+        return query.limit(limit).get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
     /**
      * Find all videos with a specific limit.
      *
@@ -568,189 +496,6 @@ public class VideoRepository {
      */
     public List<QueryDocumentSnapshot> findAllUnordered() throws ExecutionException, InterruptedException, TimeoutException {
         return getCollection().get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
-    }
-
-    /**
-     * Find all videos ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested.
-     *
-     * @param limit Maximum number of results
-     * @return List of videos ordered oldest-first
-     */
-    public List<Video> findAllOrderByCreatedAtAsc(int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .orderBy("createdAt", Query.Direction.ASCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Find videos by status ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested with status filter.
-     *
-     * Note: Requires Firestore composite index: status (ASC) + createdAt (ASC)
-     * Index definition in firestore.indexes.json:
-     *   { "collectionGroup": "videos", "queryScope": "COLLECTION",
-     *     "fields": [{"fieldPath": "status", "order": "ASCENDING"},
-     *                {"fieldPath": "createdAt", "order": "ASCENDING"}] }
-     *
-     * @param status Status to filter by
-     * @param limit Maximum number of results
-     * @return List of videos ordered oldest-first
-     */
-    public List<Video> findByStatusOrderByCreatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", status)
-                .orderBy("createdAt", Query.Direction.ASCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Find approved and available videos ordered by upload date with cursor-based pagination.
-     * Over-fetches to account for filtering out UNAVAILABLE/ARCHIVED videos after the query.
-     *
-     * @param limit Number of items to fetch
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing videos and next cursor
-     */
-    public PaginatedResult<Video> findApprovedByUploadedAtDescWithCursor(int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        // Over-fetch by 3x to account for filtering out UNAVAILABLE/ARCHIVED videos
-        // This ensures we consistently get enough items after filtering
-        int fetchLimit = limit * 3 + 1;
-        Query query = getCollection()
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("uploadedAt", Query.Direction.DESCENDING)
-                .limit(fetchLimit);
-
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        // Filter out UNAVAILABLE and ARCHIVED videos after fetching
-        List<Video> availableVideos = new ArrayList<>();
-        QueryDocumentSnapshot lastIncludedDoc = null;
-
-        for (QueryDocumentSnapshot doc : docs) {
-            Video video = doc.toObject(Video.class);
-            video.setId(doc.getId());
-
-            // Skip unavailable videos
-            ValidationStatus validationStatus = video.getValidationStatus();
-            if (validationStatus == ValidationStatus.UNAVAILABLE || validationStatus == ValidationStatus.ARCHIVED) {
-                continue;
-            }
-
-            availableVideos.add(video);
-
-            // Stop once we have enough (overflow indicates hasNext)
-            if (availableVideos.size() > limit) {
-                break;
-            }
-
-            // Track cursor doc only for items that will be in final result
-            lastIncludedDoc = doc;
-        }
-
-        boolean hasNext = availableVideos.size() > limit;
-        if (hasNext) {
-            availableVideos = new ArrayList<>(availableVideos.subList(0, limit));
-        }
-
-        String nextCursor = null;
-        if (hasNext && lastIncludedDoc != null) {
-            nextCursor = CursorUtils.encodeFromSnapshot(lastIncludedDoc, "uploadedAt");
-        }
-
-        return new PaginatedResult<>(availableVideos, nextCursor, hasNext);
-    }
-
-    /**
-     * Find approved and available videos by category ordered by upload date with cursor-based pagination.
-     * Over-fetches to account for filtering out UNAVAILABLE/ARCHIVED videos after the query.
-     *
-     * @param category Category ID to filter by
-     * @param limit Number of items to fetch
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing videos and next cursor
-     */
-    public PaginatedResult<Video> findApprovedByCategoryAndUploadedAtDescWithCursor(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        // Over-fetch by 3x to account for filtering out UNAVAILABLE/ARCHIVED videos
-        int fetchLimit = limit * 3 + 1;
-        Query query = getCollection()
-                .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("uploadedAt", Query.Direction.DESCENDING)
-                .limit(fetchLimit);
-
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        // Filter out UNAVAILABLE and ARCHIVED videos after fetching
-        List<Video> availableVideos = new ArrayList<>();
-        QueryDocumentSnapshot lastIncludedDoc = null;
-
-        for (QueryDocumentSnapshot doc : docs) {
-            Video video = doc.toObject(Video.class);
-            video.setId(doc.getId());
-
-            // Skip unavailable videos
-            ValidationStatus validationStatus = video.getValidationStatus();
-            if (validationStatus == ValidationStatus.UNAVAILABLE || validationStatus == ValidationStatus.ARCHIVED) {
-                continue;
-            }
-
-            availableVideos.add(video);
-
-            // Stop once we have enough (overflow indicates hasNext)
-            if (availableVideos.size() > limit) {
-                break;
-            }
-
-            // Track cursor doc only for items that will be in final result
-            lastIncludedDoc = doc;
-        }
-
-        boolean hasNext = availableVideos.size() > limit;
-        if (hasNext) {
-            availableVideos = new ArrayList<>(availableVideos.subList(0, limit));
-        }
-
-        String nextCursor = null;
-        if (hasNext && lastIncludedDoc != null) {
-            nextCursor = CursorUtils.encodeFromSnapshot(lastIncludedDoc, "uploadedAt");
-        }
-
-        return new PaginatedResult<>(availableVideos, nextCursor, hasNext);
     }
 
     // ==================== Display Order Methods ====================
@@ -893,33 +638,6 @@ public class VideoRepository {
                 .count();
         AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();
-    }
-
-    /**
-     * Generic paginated result wrapper.
-     */
-    public static class PaginatedResult<T> {
-        private final List<T> items;
-        private final String nextCursor;
-        private final boolean hasNext;
-
-        public PaginatedResult(List<T> items, String nextCursor, boolean hasNext) {
-            this.items = items;
-            this.nextCursor = nextCursor;
-            this.hasNext = hasNext;
-        }
-
-        public List<T> getItems() {
-            return items;
-        }
-
-        public String getNextCursor() {
-            return nextCursor;
-        }
-
-        public boolean hasNext() {
-            return hasNext;
-        }
     }
 
     /**

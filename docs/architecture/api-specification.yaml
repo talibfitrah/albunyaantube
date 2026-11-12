@@ -3101,20 +3101,22 @@ paths:
     get:
       summary: Approved content for the category picker
       description: |
-        Every live approved item (archived and personal-grant items left out), carrying only
-        the fields the "add content to a category" picker renders. One request, no paging.
+        Every live approved item (archived left out), the same set GET /totals?status=approved
+        counts, carrying only the fields the "add content to a category" picker renders.
+        Personal grants are included with `visibility: PERSONAL`: the picker counts them and
+        says it cannot add them. Paged by cursor with no ceiling: pass `nextCursor` back as
+        `cursor` until it is null.
 
-        Replaces a client-side loop over `/admin/content` that could not terminate on its own:
-        that endpoint's `totalPages` describes its current fetch window, which grows by one page
-        per content type each round, so the target outran the loop until it hit a client-side
-        safety cap — while offset paging re-read every earlier row on each request.
-
-        Five fields, not three: `getThumbnailUrl()` on the client reads `thumbnailUrl` first and
-        otherwise builds a URL from `youtubeId`, so both carry the image.
-
-        Bounded per content type. `truncated` reports the bound rather than applying it silently.
+        `getThumbnailUrl()` on the client reads `thumbnailUrl` first and otherwise builds a URL
+        from `youtubeId`, so both carry the image.
       operationId: listApprovedForPicker
       tags: [Content Library]
+      parameters:
+        - name: cursor
+          in: query
+          description: The previous page's `nextCursor`; omit for the first page. A malformed cursor is a 400.
+          schema:
+            type: string
       responses:
         '200':
           description: Approved content for the picker
@@ -3141,9 +3143,13 @@ paths:
                         youtubeId:
                           type: string
                           nullable: true
-                  truncated:
-                    type: boolean
-                    description: A content type filled its scan bound, so more approved content may exist
+                        visibility:
+                          type: string
+                          enum: [PUBLIC, PERSONAL]
+                  nextCursor:
+                    type: string
+                    nullable: true
+                    description: Opaque position after this page, to pass back as `cursor`. Null after the last page.
 
   /admin/content:
     get:
@@ -3159,18 +3165,12 @@ paths:
         - Keyword tags (e.g., "quran" matches items tagged with "quran recitation")
         - Description text (e.g., "arabic" matches items with "arabic" in description)
 
-        **Query Limits (Important):**
-        To prevent Firestore quota exhaustion, this endpoint uses bounded queries.
-        Browsing is bounded at 2000 items per content type; a search scans at most 200
-        per type. When the `truncated` field in the response is `true`, there may be
-        more matching items than shown — call GET /api/admin/content/totals for the
-        real size.
-
-        **Best Practices for Large Datasets:**
-        - Use specific type filters (`types=channel`) instead of fetching all types
-        - Apply category and status filters to narrow results
-        - Use pagination (`page`, `size`) for browsing
-        - For finding specific items, use the search parameter with distinctive terms
+        **Paging:**
+        Pass the response's `nextCursor` back as `cursor` for the next page; it is null
+        after the last page. Browsing and search both page by per-type cursor through every
+        matching item of every status, with no ceiling. A search matches an in-memory
+        snapshot of the registry kept current by every catalog write, then reads only the
+        page's rows. GET /api/admin/content/totals carries the registry size.
       operationId: listContent
       tags: [Content Library]
       parameters:
@@ -3198,24 +3198,21 @@ paths:
           in: query
           description: |
             Search term to filter results. Matches against title, keywords, and description
-            using case-insensitive contains matching. Note: a search issues two bounded
-            queries per content type at 200 each, so it scans at most 400 documents per
-            type, independently of the browse ceiling.
+            using case-insensitive contains matching, across every item of the selected status.
           schema:
             type: string
         - name: sort
           in: query
-          description: Sort order for results
+          description: Sort order by createdAt.
           schema:
             type: string
-            enum: [newest, oldest, custom]
+            enum: [newest, oldest]
             default: newest
-        - name: page
+        - name: cursor
           in: query
-          description: Page number (0-indexed)
+          description: The previous page's `nextCursor`; omit for the first page. A malformed cursor is a 400.
           schema:
-            type: integer
-            default: 0
+            type: string
         - name: size
           in: query
           description: Page size (max 100)
@@ -4381,36 +4378,21 @@ components:
     ContentLibraryResponse:
       type: object
       description: |
-        Paginated response for content library. The `truncated` field indicates whether
-        results may be incomplete due to bounded query limits (browse: max 2000 per
-        content type; search: two queries of 200 per type, so max 400 scanned per type). UI should display a warning to users
-        when `truncated` is true. GET /api/admin/content/totals carries the real
-        registry size, counted independently of those bounds.
+        One page of the content library. Follow `nextCursor` to load the rest; browsing
+        reaches every matching item. GET /api/admin/content/totals carries the registry
+        size, counted independently of the listing.
       properties:
         content:
           type: array
           items:
             $ref: '#/components/schemas/ContentItem'
-        totalItems:
-          type: integer
-          description: Total count of items matching filters within the bounded query window
-        currentPage:
-          type: integer
-          description: Current page number (0-indexed)
+        nextCursor:
+          type: string
+          nullable: true
+          description: Opaque position after this page, to pass back as `cursor`. Null after the last page.
         pageSize:
           type: integer
           description: Number of items per page
-        totalPages:
-          type: integer
-          description: Total number of pages within the bounded query window
-        truncated:
-          type: boolean
-          description: |
-            Indicates whether results may be incomplete due to bounded query limits.
-            When true, the server capped results to prevent Firestore quota exhaustion,
-            and there may be more items matching the filters than shown. UI should
-            display a message like "Showing most recent results. Use filters or search
-            to find specific items." when this is true.
 
     RegistryTotals:
       type: object

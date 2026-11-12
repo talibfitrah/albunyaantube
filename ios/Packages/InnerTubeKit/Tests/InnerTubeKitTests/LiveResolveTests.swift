@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import InnerTubeKit
@@ -81,5 +82,40 @@ extension Tag {
         print("[muxed-live] status=\(http.statusCode) bytes=\(data.count) contentRange=\(http.value(forHTTPHeaderField: "Content-Range") ?? "nil")")
         #expect(http.statusCode == 206)
         #expect(!data.isEmpty)
+    }
+
+    /// Audio only's live leg (2026-11-12): the resolved itag 140 as the byte-range playlist the app plays
+    /// (`PlayerHostView.source`) really plays: 60 s at real time from the start, then on past the 5-minute mark. The
+    /// bare file stays `.unknown` (probe 2026-11-12: 30 s, nothing loaded; the playlist played 329 s straight). Muted,
+    /// ~90 s. Run: `AUDIO_ONLY_LIVE=1 swift test --filter audioOnlyPlays`.
+    @Test(.tags(.live), .enabled(if: ProcessInfo.processInfo.environment["AUDIO_ONLY_LIVE"] == "1"))
+    func audioOnlyPlaysTheItag140ByteRangePlaylistPastFiveMinutes() async throws {
+        let innerTube = InnerTube(
+            keyValueStore: InMemoryKeyValueStore(),
+            availabilityGate: AlwaysAvailable(),
+            locale: InnerTubeLocale(hl: "en", gl: "US"),
+            remoteConfigURL: URL(string: "https://example.invalid/remote-config.json")!
+        )
+        let resolved = try await innerTube.resolver.resolve(
+            Self.knownGoodVideoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        let audio = try #require(resolved.audioOnly, "no byte-range itag 140 on \(resolved.client)")
+        let asset = SyntheticHLSLoader.asset(url: URL(string: "\(SyntheticHLSLoader.scheme)://live/a0.m3u8")!,
+                                             model: SyntheticHLS(video: [], audio: [audio]), userAgent: resolved.userAgent,
+                                             options: [AVURLAssetHTTPUserAgentKey: resolved.userAgent])
+        let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+        player.isMuted = true
+        player.play()
+        func log(_ label: String) {
+            print("[audio-only-live] \(label) status=\(player.currentItem?.status.rawValue ?? -1) "
+                  + "current=\(String(format: "%.1f", player.currentTime().seconds))")
+        }
+        try await Task.sleep(for: .seconds(60))
+        log("t=60s")
+        #expect(player.currentTime().seconds > 50)
+        await player.seek(to: CMTime(seconds: 295, preferredTimescale: 600))
+        try await Task.sleep(for: .seconds(20))
+        log("20 s after a seek to 295 s")
+        #expect(player.currentTime().seconds > 305)
+        player.replaceCurrentItem(with: nil)
     }
 }

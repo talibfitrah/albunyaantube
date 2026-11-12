@@ -56,6 +56,9 @@ class SimpleImportServiceTest {
     @Mock
     private VideoRepository videoRepository;
 
+    @Mock
+    private PublicContentCacheService publicContentCacheService;
+
     private SimpleImportService service;
 
     @BeforeEach
@@ -65,7 +68,8 @@ class SimpleImportServiceTest {
                 categoryMappingService,
                 channelRepository,
                 playlistRepository,
-                videoRepository
+                videoRepository,
+                publicContentCacheService
         );
     }
 
@@ -98,6 +102,39 @@ class SimpleImportServiceTest {
         assertEquals(5_000L, saved.getSubscribers());
         assertEquals(List.of("cat-1"), saved.getCategoryIds());
         assertTrue(response.isSuccess());
+    }
+
+    @Test
+    void importSimpleFormat_approvedImportAnnouncesAContentChange() throws Exception {
+        List<Map<String, String>> payload = List.of(Map.of("UC123", "T|CatA"), Collections.emptyMap(), Collections.emptyMap());
+        ChannelDetailsDto dto = new ChannelDetailsDto();
+        dto.setId("UC123");
+        dto.setName("DTO Channel");
+        when(channelRepository.findByYoutubeId("UC123")).thenReturn(Optional.empty());
+        when(channelOrchestrator.validateAndFetchChannelDto("UC123")).thenReturn(dto);
+        when(categoryMappingService.mapCategoryNamesToIds("CatA")).thenReturn(List.of("cat-1"));
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.importSimpleFormat(payload, "APPROVED", "user-1", false, Set.of());
+
+        verify(publicContentCacheService).evictPublicContentCaches();
+    }
+
+    /** PENDING rows are not in any tab, so importing them changes no tab. */
+    @Test
+    void importSimpleFormat_pendingImportAnnouncesNothing() throws Exception {
+        List<Map<String, String>> payload = List.of(Map.of("UC123", "T|CatA"), Collections.emptyMap(), Collections.emptyMap());
+        ChannelDetailsDto dto = new ChannelDetailsDto();
+        dto.setId("UC123");
+        dto.setName("DTO Channel");
+        when(channelRepository.findByYoutubeId("UC123")).thenReturn(Optional.empty());
+        when(channelOrchestrator.validateAndFetchChannelDto("UC123")).thenReturn(dto);
+        when(categoryMappingService.mapCategoryNamesToIds("CatA")).thenReturn(List.of("cat-1"));
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.importSimpleFormat(payload, "PENDING", "user-1", false, Set.of());
+
+        verify(publicContentCacheService, never()).evictPublicContentCaches();
     }
 
     @Test

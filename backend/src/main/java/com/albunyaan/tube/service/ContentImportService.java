@@ -64,6 +64,7 @@ public class ContentImportService {
     private final VideoRepository videoRepository;
     private final ValidationRunRepository validationRunRepository;
     private final LiveCategoryGuard liveCategoryGuard;
+    private final PublicContentCacheService publicContentCacheService;
 
     public ContentImportService(
             ChannelOrchestrator channelOrchestrator,
@@ -72,7 +73,8 @@ public class ContentImportService {
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
             ValidationRunRepository validationRunRepository,
-            LiveCategoryGuard liveCategoryGuard
+            LiveCategoryGuard liveCategoryGuard,
+            PublicContentCacheService publicContentCacheService
     ) {
         this.channelOrchestrator = channelOrchestrator;
         this.categoryMappingService = categoryMappingService;
@@ -81,6 +83,7 @@ public class ContentImportService {
         this.videoRepository = videoRepository;
         this.validationRunRepository = validationRunRepository;
         this.liveCategoryGuard = liveCategoryGuard;
+        this.publicContentCacheService = publicContentCacheService;
     }
 
     /**
@@ -187,6 +190,11 @@ public class ContentImportService {
                 validationRunRepository.save(run);
             } catch (Exception saveEx) {
                 logger.error("Failed to save validation run after error", saveEx);
+            }
+        } finally {
+            // Also after a run that failed midway: the rows it did write are already listed in the tabs
+            if ("APPROVED".equals(defaultStatus) && run.getTotalImported() > 0) {
+                publicContentCacheService.evictPublicContentCaches();
             }
         }
     }

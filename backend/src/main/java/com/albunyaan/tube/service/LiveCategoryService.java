@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.ContentItemMapper;
 import com.albunyaan.tube.model.Category;
@@ -14,6 +15,7 @@ import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -104,8 +106,10 @@ public class LiveCategoryService {
      * Spec §6: the category's public items. A channel entry expands into one VIDEO per current live (R3; OFFLINE and
      * UNKNOWN hidden, ERROR and suspect keep their last lives); a link is served as stored (D11) when it carries a
      * channel id (D13); duplicates keep their first position (D4). Every served id answers 200 or 404 on the public
-     * gate, never 410 (R11): one batched registry lookup per render, chunked by 30.
+     * gate, never 410 (R11): one batched registry lookup per render, chunked by 30. Cached until the next live or
+     * content eviction (both clear the public content cache), so a LIVE category's pages are not eight reads each.
      */
+    @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT, key = "'live-items-' + #categoryId")
     public List<ContentItemDto> items(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
         Members m = members(categoryId);
         Map<String, LiveChannelState> snapshot = live.snapshot();   // one read: the lookup and the filter see the same lives

@@ -13,6 +13,8 @@ import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.service.ContentReportService;
 import com.albunyaan.tube.service.ImportGraduationService;
+import com.albunyaan.tube.service.LibrarySearchSnapshot;
+import com.albunyaan.tube.service.LibrarySearchSnapshot.PageRead;
 import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
@@ -72,6 +74,7 @@ public class ContentLibraryController {
     private final UserRepository userRepository;
     private final ApplicationEventPublisher events;
     private final LiveCategoryGuard liveCategoryGuard;
+    private final LibrarySearchSnapshot librarySearch;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
@@ -85,7 +88,8 @@ public class ContentLibraryController {
             ImportGraduationService importGraduationService,
             UserRepository userRepository,
             ApplicationEventPublisher events,
-            LiveCategoryGuard liveCategoryGuard
+            LiveCategoryGuard liveCategoryGuard,
+            LibrarySearchSnapshot librarySearch
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -99,6 +103,7 @@ public class ContentLibraryController {
         this.userRepository = userRepository;
         this.events = events;
         this.liveCategoryGuard = liveCategoryGuard;
+        this.librarySearch = librarySearch;
     }
 
     /**
@@ -114,8 +119,7 @@ public class ContentLibraryController {
      * <p>{@code status} follows the listing's status filter (all, approved, pending, rejected), so
      * the header reads e.g. "approved channels" while the admin views approved content. Approved
      * means live, as in the listing: archived items keep status APPROVED, but the apps hide them
-     * and the Archived page counts them. (The Content Sorting picker also leaves out personal
-     * grants, which cannot go into a public category.) Pending and rejected
+     * and the Archived page counts them. The Content Sorting picker lists the same set. Pending and rejected
      * count every doc with that status, so pending equals the Pending Approvals queue.</p>
      */
     @GetMapping("/totals")
@@ -150,88 +154,33 @@ public class ContentLibraryController {
     /**
      * GET /api/admin/content/approved-picker
      *
-     * Every approved item, carrying only what the "add content to a category" picker draws.
-     *
-     * <p>Answers in one request what the picker previously assembled by paging {@code /content}
-     * in a loop. That loop could not terminate on its own — the server's {@code totalPages}
-     * describes the current fetch window, which grows by one page per content type each round, so
-     * the target outran the loop — and offset paging re-read every earlier row each time.
-     *
-     * <p>Filtered on status at the query, not afterwards: applying the per-type bound to every
-     * document and then discarding the non-approved ones would let a registry whose newest rows
-     * are mostly pending push approved content out of the picker entirely.
-     *
-     * <p>Visibility cannot get the same treatment. A {@code visibility == "PUBLIC"} filter would
-     * not match the legacy documents that predate the field — Firestore equality never matches a
-     * missing field — so it would drop exactly the content that has always been public. Personal
-     * grants are therefore dropped in memory, after the bound. That is the same shape of problem
-     * one paragraph up, accepted here because the alternative loses more: personal grants are a
-     * small minority of approved content, so the bound is reached by catalogue content long
-     * before they distort it.
-     *
-     * <p>Bounded per type like the listing. The bound is reported rather than applied silently:
-     * presenting a partial list as the whole library is how a picker quietly stops offering
-     * content that exists.
+     * Every approved (live) item, carrying only what the "add content to a category" picker draws,
+     * one cursor page at a time: the approved Library listing (same definition as
+     * {@code GET /totals?status=approved}, same merge and cursor), so the picker's total is the
+     * Library's. Personal grants are included and flagged: the picker counts them in that total and
+     * says why it cannot add them.
      */
     @GetMapping("/approved-picker")
-    public ResponseEntity<ApprovedPickerResponse> getApprovedForPicker()
+    public ResponseEntity<ApprovedPickerResponse> getApprovedForPicker(@RequestParam(required = false) String cursor)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<ApprovedPickerItem> items = new ArrayList<>();
-        boolean truncated = false;
-
-        // limit+1 probe: asking for exactly the bound cannot distinguish a full page from a
-        // truncated one, and warning an admin that a complete list is partial is its own bug.
-        List<Channel> probedChannel = channelRepository.findByStatus("APPROVED", MAX_ITEMS_PER_TYPE + 1);
-        truncated |= probedChannel.size() > MAX_ITEMS_PER_TYPE;
-        List<Channel> channels = withinBound(probedChannel);
-        for (Channel c : channels) {
-            if (!offerableInPicker(c.getStatus(), c.getVisibility(), c.getValidationStatus())) continue;
-            items.add(new ApprovedPickerItem("channel", c.getId(), c.getName(), c.getThumbnailUrl(), c.getYoutubeId()));
-        }
-
-        List<Playlist> probedPlaylist = playlistRepository.findByStatus("APPROVED", MAX_ITEMS_PER_TYPE + 1);
-        truncated |= probedPlaylist.size() > MAX_ITEMS_PER_TYPE;
-        List<Playlist> playlists = withinBound(probedPlaylist);
-        for (Playlist p : playlists) {
-            if (!offerableInPicker(p.getStatus(), p.getVisibility(), p.getValidationStatus())) continue;
-            items.add(new ApprovedPickerItem("playlist", p.getId(), p.getTitle(), p.getThumbnailUrl(), p.getYoutubeId()));
-        }
-
-        List<Video> probedVideo = videoRepository.findByStatus("APPROVED", MAX_ITEMS_PER_TYPE + 1);
-        truncated |= probedVideo.size() > MAX_ITEMS_PER_TYPE;
-        List<Video> videos = withinBound(probedVideo);
-        for (Video v : videos) {
-            if (!offerableInPicker(v.getStatus(), v.getVisibility(), v.getValidationStatus())) continue;
-            items.add(new ApprovedPickerItem("video", v.getId(), v.getTitle(), v.getThumbnailUrl(), v.getYoutubeId()));
-        }
-
-        log.info("Approved picker: {} items, truncated={}", items.size(), truncated);
-        return ResponseEntity.ok(new ApprovedPickerResponse(items, truncated));
+        ContentLibraryResponse page = mergePage(Set.of("channel", "playlist", "video"), "approved", false,
+                ListingCursor.decode(cursor), PICKER_PAGE,
+                (a, id, limit) -> channelRepository.findPageAfter("APPROVED", null, false, a, id, limit),
+                (a, id, limit) -> playlistRepository.findPageAfter("APPROVED", null, false, a, id, limit),
+                (a, id, limit) -> videoRepository.findPageAfter("APPROVED", null, false, a, id, limit));
+        List<ApprovedPickerItem> items = page.content.stream()
+                .map(i -> new ApprovedPickerItem(i.type, i.id, i.title, i.thumbnailUrl, i.youtubeId, i.visibility))
+                .toList();
+        return ResponseEntity.ok(new ApprovedPickerResponse(items, page.nextCursor));
     }
 
-    /** The first {@link #MAX_ITEMS_PER_TYPE} of a limit+1 probe. A view, never a mutation — the
-     * repository may hand back an immutable list. */
-    private static <T> List<T> withinBound(List<T> probed) {
-        return probed.size() > MAX_ITEMS_PER_TYPE ? probed.subList(0, MAX_ITEMS_PER_TYPE) : probed;
-    }
+    /** Rows per picker page: a few requests cover the whole approved library. */
+    private static final int PICKER_PAGE = 500;
 
     /**
-     * Whether an item can be offered as something to file into a category.
-     *
-     * <p>A personal grant is not catalogue content — it exists only for the people it was
-     * approved for, and the public feed filters it out. Filing one into a category's sort order
-     * would leave an entry there that never renders for anybody. An archived item is the same:
-     * the apps hide it, so it is not live approved content.
-     */
-    private static boolean offerableInPicker(String status, String visibility, ValidationStatus validationStatus) {
-        return "APPROVED".equalsIgnoreCase(status) && VisibilityPolicy.isPublic(visibility)
-                && !ValidationStatus.holds(validationStatus);
-    }
-
-    /**
-     * One row of the picker. Deliberately five fields: {@code getThumbnailUrl()} on the client
-     * reads {@code thumbnailUrl} first and otherwise builds a URL from {@code youtubeId}, so both
-     * carry the image — trimming to id/type/title would strip every thumbnail.
+     * One row of the picker. {@code getThumbnailUrl()} on the client reads {@code thumbnailUrl}
+     * first and otherwise builds a URL from {@code youtubeId}, so both carry the image.
+     * {@code visibility} is "PUBLIC" or "PERSONAL"; a personal grant cannot go into a category.
      */
     public static class ApprovedPickerItem {
         public final String type;
@@ -239,24 +188,27 @@ public class ContentLibraryController {
         public final String title;
         public final String thumbnailUrl;
         public final String youtubeId;
+        public final String visibility;
 
-        public ApprovedPickerItem(String type, String id, String title, String thumbnailUrl, String youtubeId) {
+        public ApprovedPickerItem(String type, String id, String title, String thumbnailUrl, String youtubeId,
+                                  String visibility) {
             this.type = type;
             this.id = id;
             this.title = title;
             this.thumbnailUrl = thumbnailUrl;
             this.youtubeId = youtubeId;
+            this.visibility = visibility;
         }
     }
 
     public static class ApprovedPickerResponse {
         public final List<ApprovedPickerItem> items;
-        /** True when a content type filled its scan bound, so more approved content may exist. */
-        public final boolean truncated;
+        /** Pass back as {@code cursor} for the next page. Null when nothing is left. */
+        public final String nextCursor;
 
-        public ApprovedPickerResponse(List<ApprovedPickerItem> items, boolean truncated) {
+        public ApprovedPickerResponse(List<ApprovedPickerItem> items, String nextCursor) {
             this.items = items;
-            this.truncated = truncated;
+            this.nextCursor = nextCursor;
         }
     }
 
@@ -277,68 +229,76 @@ public class ContentLibraryController {
         }
     }
 
-    /**
-     * Ceiling on how deep browse pagination can reach per content type, so a page request can
-     * never turn into an unbounded collection scan. Only reached by paging that deep, because
-     * {@code fetchLimit} grows with the requested page.
-     *
-     * <p>It was 200, which silently hid every item past the 200th and made {@code totalItems}
-     * report the cap as the true size. {@code GET /api/admin/content/totals} counts the registry
-     * with server-side aggregation, independently of this bound, so it stays exact even when a
-     * fetch is truncated. Past this ceiling the old symptom returns (empty deep pages, {@code
-     * totalItems} pinned at the cap).</p>
-     *
-     * <p>COST: paging here is offset-based, not cursor-based — every page re-reads the whole
-     * prefix — so cumulative reads for a full scroll are quadratic in depth, and this ceiling is
-     * what bounds that quadratic. Scrolling a 6000-item library (3 types) end to end costs roughly
-     * 1.2M document reads at 2000, against 13k at the old 200 — but the old 200 only ever showed
-     * 600 of those items. Per item actually viewed the cost is ~9x worse; the structural fix is
-     * per-type cursor pagination, which removes the re-read entirely. Raising this constant
-     * further multiplies the same quadratic.</p>
-     *
-     * <p>Search does NOT use this bound — see {@link #MAX_SEARCH_SCAN_PER_TYPE}.</p>
-     */
-    private static final int MAX_ITEMS_PER_TYPE = 2000;
+    private static final com.fasterxml.jackson.databind.ObjectMapper CURSOR_JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
     /**
-     * Ceiling on how many documents a single search scans per content type.
+     * Where a listing resumes, opaque to the client.
      *
-     * <p>Deliberately separate from {@link #MAX_ITEMS_PER_TYPE}: the search branches issue two
-     * queries per type at this limit regardless of the requested page, and search runs on every
-     * debounced keystroke in the admin UI. Tying it to the browse ceiling would multiply the cost
-     * of the most frequently exercised path by the same factor the browse ceiling was raised.</p>
+     * <p>For each type, the last row already served (createdAt to the nanosecond, then document
+     * id — the listing's order), and the types with nothing left. Resuming by position rather
+     * than offset means a page costs only its own rows, never the prefix before it, and a row
+     * deleted or added above the window shifts nothing. Browse, search and the picker share it.</p>
      */
-    private static final int MAX_SEARCH_SCAN_PER_TYPE = 200;
+    public static class ListingCursor {
+        public Map<String, Position> after = new HashMap<>();
+        public Set<String> done = new HashSet<>();
 
-    /**
-     * Helper class to track fetch results including truncation detection.
-     * Uses limit+1 approach: fetch one extra item to detect if more exist.
-     */
-    private static class BoundedFetchResult<T> {
-        final List<T> items;
-        final boolean hitLimit;
+        static ListingCursor decode(String cursor) {
+            if (cursor == null || cursor.isBlank()) return new ListingCursor();
+            try {
+                ListingCursor c = CURSOR_JSON.readValue(Base64.getUrlDecoder().decode(cursor), ListingCursor.class);
+                if (c == null || c.after == null || c.done == null
+                        || c.after.values().stream().anyMatch(p -> p == null || p.id == null)) {
+                    throw new IllegalArgumentException("Invalid cursor");
+                }
+                return c;
+            } catch (java.io.IOException | IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid cursor", e);
+            }
+        }
 
-        BoundedFetchResult(List<T> items, boolean hitLimit) {
-            this.items = items;
-            this.hitLimit = hitLimit;
+        String encode() {
+            try {
+                return Base64.getUrlEncoder().withoutPadding().encodeToString(CURSOR_JSON.writeValueAsBytes(this));
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+    }
+
+    /** A row's place in the listing order. */
+    public static class Position {
+        public long s;
+        public int n;
+        public String id;
+
+        Position() {
+        }
+
+        Position(com.google.cloud.Timestamp at, String id) {
+            this.s = at.getSeconds();
+            this.n = at.getNanos();
+            this.id = id;
+        }
+
+        com.google.cloud.Timestamp timestamp() {
+            return com.google.cloud.Timestamp.ofTimeSecondsAndNanos(s, n);
         }
     }
 
     /**
-     * Get content with filtering (bounded queries to prevent quota exhaustion)
+     * Get content with filtering, one page at a time.
      *
      * Query Parameters:
      * - types: Comma-separated list of content types (channel,playlist,video)
      * - status: Filter by status (all, approved, pending, rejected)
      * - category: Filter by category ID
-     * - search: Search in title (prefix match for search, limited results)
-     * - sort: Sort order (newest, oldest, custom)
-     * - page: Page number (0-indexed)
+     * - search: Substring of title, description or a keyword, case-insensitive
+     * - sort: newest or oldest
+     * - cursor: nextCursor of the previous page; omitted for the first page
      * - size: Page size (default 20, max 100)
      *
-     * NOTE: For large datasets, this endpoint uses bounded queries (browse: max
-     * MAX_ITEMS_PER_TYPE per type; search: max MAX_SEARCH_SCAN_PER_TYPE per type)
-     * to prevent Firestore quota exhaustion. Use specific type filters and pagination.
+     * Browse and search page by cursor through every matching row, with no ceiling.
      */
     @GetMapping
     public ResponseEntity<ContentLibraryResponse> getContent(
@@ -347,189 +307,203 @@ public class ContentLibraryController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "newest") String sort,
-            @Min(0) @RequestParam(defaultValue = "0") int page,
+            @RequestParam(required = false) String cursor,
             @Min(1) @RequestParam(defaultValue = "20") int size
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Cap page size to prevent excessive reads
         int cappedSize = Math.min(size, 100);
-
-        log.info("Content Library request: types={}, status={}, category={}, search={}, sort={}, page={}, size={}",
-                types, status, category, search, sort, page, cappedSize);
-
-        // Parse content types
         Set<String> contentTypes = parseTypes(types);
+        ListingCursor at = ListingCursor.decode(cursor);
+        boolean oldest = "oldest".equalsIgnoreCase(sort);
+        String st = "all".equalsIgnoreCase(status) ? null : status.toUpperCase(java.util.Locale.ROOT);
+        String cat = category == null || category.isBlank() ? null : category;
 
-        // Calculate how many items we need to fetch (page offset + page size)
-        // Add buffer for in-memory filtering (search)
-        int fetchLimit = Math.min((page + 1) * cappedSize + 50, MAX_ITEMS_PER_TYPE);
+        log.info("Content Library request: types={}, status={}, category={}, search={}, sort={}, hasCursor={}, size={}",
+                types, status, category, search, sort, cursor != null, cappedSize);
 
-        // Fetch content with bounded queries using limit+1 approach to detect truncation
-        // This prevents false-negatives where post-filtering might reduce count below limit
-        List<ContentItem> allContent = new ArrayList<>();
-        boolean anyTypeTruncated = false;
-        // "Approved" is live content, matching GET /totals: archived rows belong to the Archived page.
-        boolean liveOnly = "approved".equalsIgnoreCase(status);
-        // Search drops archived rows itself before trimming, and its scan bound does not grow
-        // with the limit, so only a browse deepens its window.
-        boolean deepen = liveOnly && (search == null || search.isBlank());
-        // Enough live rows to fill this page and tell the client more exist; the +50 read buffer
-        // absorbs a few archived rows without a second query.
-        int liveNeeded = Math.min(fetchLimit, (page + 1) * cappedSize + 1);
-
-        if (contentTypes.contains("channel")) {
-            BoundedFetchResult<Channel> result = fetchLive(deepen, fetchLimit, liveNeeded, Channel::getValidationStatus,
-                    limit -> fetchChannelsBounded(status, category, search, sort, limit));
-            if (result.hitLimit) {
-                anyTypeTruncated = true;
-            }
-            for (Channel ch : result.items) {
-                if (liveOnly && ValidationStatus.holds(ch.getValidationStatus())) continue;
-                allContent.add(withVisibility(new ContentItem("channel", ch.getId(), ch.getYoutubeId(), ch.getName(),
-                        ch.getDescription(), ch.getThumbnailUrl(), ch.getStatus(), ch.getCategoryIds(),
-                        ch.getCreatedAt() != null ? ch.getCreatedAt().toDate() : null,
-                        ch.getSubscribers(), ch.getDisplayOrder(), ch.getKeywords()),
-                        ch.getVisibility(), ch.getPersonalGrants()));
-            }
-        }
-
-        if (contentTypes.contains("playlist")) {
-            BoundedFetchResult<Playlist> result = fetchLive(deepen, fetchLimit, liveNeeded, Playlist::getValidationStatus,
-                    limit -> fetchPlaylistsBounded(status, category, search, sort, limit));
-            if (result.hitLimit) {
-                anyTypeTruncated = true;
-            }
-            for (Playlist pl : result.items) {
-                if (liveOnly && ValidationStatus.holds(pl.getValidationStatus())) continue;
-                allContent.add(withVisibility(new ContentItem("playlist", pl.getId(), pl.getYoutubeId(), pl.getTitle(),
-                        pl.getDescription(), pl.getThumbnailUrl(), pl.getStatus(), pl.getCategoryIds(),
-                        pl.getCreatedAt() != null ? pl.getCreatedAt().toDate() : null,
-                        pl.getItemCount() != null ? Long.valueOf(pl.getItemCount()) : null, pl.getDisplayOrder(),
-                        pl.getKeywords()),
-                        pl.getVisibility(), pl.getPersonalGrants()));
-            }
-        }
-
-        if (contentTypes.contains("video")) {
-            BoundedFetchResult<Video> result = fetchLive(deepen, fetchLimit, liveNeeded, Video::getValidationStatus,
-                    limit -> fetchVideosBounded(status, category, search, sort, limit));
-            if (result.hitLimit) {
-                anyTypeTruncated = true;
-            }
-            for (Video v : result.items) {
-                if (liveOnly && ValidationStatus.holds(v.getValidationStatus())) continue;
-                ContentItem item = new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
-                        v.getDescription(), v.getThumbnailUrl(), v.getStatus(), v.getCategoryIds(),
-                        v.getCreatedAt() != null ? v.getCreatedAt().toDate() : null,
-                        v.getViewCount(), v.getDisplayOrder(), v.getKeywords());
-                item.offlineAllowed = v.allowsOffline();
-                allContent.add(withVisibility(item, v.getVisibility(), v.getPersonalGrants()));
-            }
-        }
-
-        // Apply in-memory search filter for comprehensive keyword + title + description matching
-        // Search is fully in-memory to enable matching across all fields (title, keywords, description)
-        // This provides better search accuracy than Firestore prefix-only queries
+        ContentLibraryResponse response;
         if (search != null && !search.isBlank()) {
-            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
-            allContent = allContent.stream()
-                    .filter(item -> matchesSearch(item, searchLower))
-                    .collect(Collectors.toList());
+            LibrarySearchSnapshot.Matches m = librarySearch.find(search, st, cat);
+            response = mergePage(contentTypes, status, oldest, at, cappedSize,
+                    inOrder(m.channels(), oldest, Channel::getCreatedAt, Channel::getId),
+                    inOrder(m.playlists(), oldest, Playlist::getCreatedAt, Playlist::getId),
+                    inOrder(m.videos(), oldest, Video::getCreatedAt, Video::getId));
+            response.content = current(response.content);
+        } else {
+            response = mergePage(contentTypes, status, oldest, at, cappedSize,
+                    (a, id, limit) -> channelRepository.findPageAfter(st, cat, oldest, a, id, limit),
+                    (a, id, limit) -> playlistRepository.findPageAfter(st, cat, oldest, a, id, limit),
+                    (a, id, limit) -> videoRepository.findPageAfter(st, cat, oldest, a, id, limit));
         }
+        resolveGranteeNames(response.content);
 
-        // Sort combined results with deterministic tie-breakers
-        allContent.sort((a, b) -> {
-            int dateCmp;
-            // Custom sort uses displayOrder (nulls treated as MAX_VALUE to sort last)
-            if ("custom".equals(sort)) {
-                int orderA = a.displayOrder != null ? a.displayOrder : Integer.MAX_VALUE;
-                int orderB = b.displayOrder != null ? b.displayOrder : Integer.MAX_VALUE;
-                int cmp = Integer.compare(orderA, orderB);
-                if (cmp != 0) return cmp;
-                // Primary tie-breaker: newest first by createdAt
-                if (a.createdAt == null && b.createdAt == null) {
-                    dateCmp = 0;
-                } else if (a.createdAt == null) {
-                    return 1;
-                } else if (b.createdAt == null) {
-                    return -1;
-                } else {
-                    dateCmp = b.createdAt.compareTo(a.createdAt);
-                }
-                if (dateCmp != 0) return dateCmp;
-                // Final tie-breaker: by ID for determinism
-                return a.id.compareTo(b.id);
-            }
-            // Date-based sort
-            if (a.createdAt == null && b.createdAt == null) {
-                dateCmp = 0;
-            } else if (a.createdAt == null) {
-                return 1;
-            } else if (b.createdAt == null) {
-                return -1;
-            } else {
-                dateCmp = sort.equals("oldest") ? a.createdAt.compareTo(b.createdAt) : b.createdAt.compareTo(a.createdAt);
-            }
-            if (dateCmp != 0) return dateCmp;
-            // Final tie-breaker: by ID for determinism
-            return a.id.compareTo(b.id);
-        });
-
-        // Paginate
-        int start = page * cappedSize;
-        int end = Math.min(start + cappedSize, allContent.size());
-        List<ContentItem> pagedContent = start < allContent.size() ? allContent.subList(start, end) : List.of();
-        resolveGranteeNames(pagedContent);
-
-        // Note: totalItems may be capped due to bounded queries
-        int totalItems = allContent.size();
-        // Results are truncated if any content type hit the query limit
-        boolean isTruncated = anyTypeTruncated;
-
-        ContentLibraryResponse response = new ContentLibraryResponse(
-                pagedContent,
-                totalItems,
-                page,
-                cappedSize,
-                (int) Math.ceil((double) totalItems / cappedSize),
-                isTruncated
-        );
-
-        log.info("Returning {} items (total: {}, page: {}/{}, truncated: {})",
-                pagedContent.size(), totalItems, page + 1, response.totalPages, isTruncated);
-
+        log.info("Returning {} items (more: {})", response.content.size(), response.nextCursor != null);
         return ResponseEntity.ok(response);
     }
 
-    @FunctionalInterface
-    private interface BoundedFetch<T> {
-        BoundedFetchResult<T> fetch(int limit)
-                throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
+    /** Search matches as a {@link PageRead}: the listing order, resuming strictly after the cursor. */
+    private static <T> PageRead<T> inOrder(List<T> rows, boolean oldest,
+                                            java.util.function.Function<T, com.google.cloud.Timestamp> createdAt,
+                                            java.util.function.Function<T, String> id) {
+        Comparator<T> asc = Comparator.comparing(createdAt).thenComparing(id);
+        List<T> sorted = rows.stream().sorted(oldest ? asc : asc.reversed()).toList();
+        return (afterAt, afterId, limit) -> sorted.stream()
+                .filter(r -> {
+                    if (afterAt == null) return true;
+                    int cmp = createdAt.apply(r).compareTo(afterAt);
+                    if (cmp == 0) cmp = id.apply(r).compareTo(afterId);
+                    return oldest ? cmp > 0 : cmp < 0;
+                })
+                .limit(limit)
+                .toList();
     }
 
     /**
-     * Fetch a type's window and, for approved (live) listings, deepen it by the archived rows it
-     * held, so dropping them never leaves a page short (offset paging would skip the live rows a
-     * short page could not serve). Only when rows exist beyond the window; never past
-     * {@link #MAX_ITEMS_PER_TYPE}, where the truncated flag already says the list is partial.
+     * A search page as the documents are now. The snapshot is current for what search matches on;
+     * the page is read by id so every other field (displayOrder, written without an event) is too.
+     * A row deleted since is dropped.
      */
-    private <T> BoundedFetchResult<T> fetchLive(boolean deepen, int fetchLimit, int liveNeeded,
-                                                java.util.function.Function<T, ValidationStatus> validationStatus,
-                                                BoundedFetch<T> fetch)
+    private List<ContentItem> current(List<ContentItem> page)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        int limit = fetchLimit;
-        BoundedFetchResult<T> result = fetch.fetch(limit);
-        while (deepen && result.hitLimit) {
-            long held = result.items.stream().filter(t -> ValidationStatus.holds(validationStatus.apply(t))).count();
-            if (result.items.size() - held >= liveNeeded) break; // enough live rows already
-            // Add exactly the rows held: one archived row costs one more row, and a window that is
-            // all archived doubles, so a long archived run costs a few rounds, not one per row.
-            int deeper = (int) Math.min(limit + held, MAX_ITEMS_PER_TYPE);
-            if (deeper <= limit) break;
-            limit = deeper;
-            result = fetch.fetch(limit);
+        Map<String, Channel> ch = channelRepository.findAllByIds(idsOf(page, "channel"));
+        Map<String, Playlist> pl = playlistRepository.findAllByIds(idsOf(page, "playlist"));
+        Map<String, Video> vi = videoRepository.findAllByIds(idsOf(page, "video"));
+        List<ContentItem> out = new ArrayList<>();
+        for (ContentItem i : page) {
+            ContentItem fresh = switch (i.type) {
+                case "channel" -> ch.containsKey(i.id) ? item(ch.get(i.id)) : null;
+                case "playlist" -> pl.containsKey(i.id) ? item(pl.get(i.id)) : null;
+                default -> vi.containsKey(i.id) ? item(vi.get(i.id)) : null;
+            };
+            if (fresh != null) out.add(fresh);
         }
-        return result;
+        return out;
+    }
+
+    private static List<String> idsOf(List<ContentItem> page, String type) {
+        return page.stream().filter(i -> type.equals(i.type)).map(i -> i.id).toList();
+    }
+
+    /**
+     * One row of a page, with the full-precision createdAt its cursor position needs.
+     * {@code skipTo}: the archived row just before it that an approved listing skipped, if any.
+     */
+    private record Row(String type, String id, com.google.cloud.Timestamp createdAt, ContentItem item,
+                       Position skipTo) {
+    }
+
+    /**
+     * A k-way merge of per-type cursor pages in createdAt order.
+     *
+     * <p>Each type unfinished contributes its next {@code size} rows, so the first {@code size}
+     * of the merge can never be preceded by a row of any type not yet read. Each type's cursor
+     * then moves to the last of its rows the page served, or past the archived rows before the
+     * first it did not, so an archived run is read once. A page reads about {@code size + 1} rows per
+     * type, whatever its depth, plus any archived run it moves past.</p>
+     */
+    private ContentLibraryResponse mergePage(Set<String> contentTypes, String status, boolean oldest,
+                                             ListingCursor at, int size, PageRead<Channel> channels,
+                                             PageRead<Playlist> playlists, PageRead<Video> videos)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        // "Approved" is live content, matching GET /totals: archived rows belong to the Archived page.
+        boolean liveOnly = "approved".equalsIgnoreCase(status);
+
+        Map<String, List<Row>> windows = new LinkedHashMap<>();
+        if (contentTypes.contains("channel") && !at.done.contains("channel")) {
+            windows.put("channel", window("channel", at, size, liveOnly, Channel::getValidationStatus,
+                    Channel::getCreatedAt, Channel::getId, ContentLibraryController::item, channels));
+        }
+        if (contentTypes.contains("playlist") && !at.done.contains("playlist")) {
+            windows.put("playlist", window("playlist", at, size, liveOnly, Playlist::getValidationStatus,
+                    Playlist::getCreatedAt, Playlist::getId, ContentLibraryController::item, playlists));
+        }
+        if (contentTypes.contains("video") && !at.done.contains("video")) {
+            windows.put("video", window("video", at, size, liveOnly, Video::getValidationStatus,
+                    Video::getCreatedAt, Video::getId, ContentLibraryController::item, videos));
+        }
+
+        Comparator<Row> order = Comparator.comparing(Row::createdAt).thenComparing(Row::id).thenComparing(Row::type);
+        List<Row> merged = windows.values().stream().flatMap(List::stream)
+                .sorted(oldest ? order : order.reversed())
+                .limit(size)
+                .toList();
+
+        ListingCursor next = new ListingCursor();
+        next.after.putAll(at.after);
+        next.done.addAll(at.done);
+        for (Row row : merged) {
+            next.after.put(row.type(), new Position(row.createdAt(), row.id()));
+        }
+        windows.forEach((type, rows) -> {
+            Row left = rows.stream().filter(r -> !merged.contains(r)).findFirst().orElse(null);
+            if (left == null) next.done.add(type); // rows that continue past the page include one more
+            else if (left.skipTo() != null) next.after.put(type, left.skipTo());
+        });
+        boolean finished = contentTypes.stream().allMatch(next.done::contains);
+        List<ContentItem> page = merged.stream().map(Row::item).collect(Collectors.toList());
+        return new ContentLibraryResponse(page, finished ? null : next.encode(), size);
+    }
+
+    /**
+     * A type's next rows after its cursor: all that remain, or {@code size + 1} and more when the
+     * type continues past this page. For approved (live) listings archived rows are skipped,
+     * reading on past them so a page is never short while live rows remain.
+     */
+    private <T> List<Row> window(String type, ListingCursor at, int size, boolean liveOnly,
+                              java.util.function.Function<T, ValidationStatus> validationStatus,
+                              java.util.function.Function<T, com.google.cloud.Timestamp> createdAt,
+                              java.util.function.Function<T, String> id,
+                              java.util.function.Function<T, ContentItem> toItem,
+                              PageRead<T> query)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        Position from = at.after.get(type);
+        com.google.cloud.Timestamp afterAt = from == null ? null : from.timestamp();
+        String afterId = from == null ? null : from.id;
+        List<Row> rows = new ArrayList<>();
+        Position skipped = null;
+        while (true) {
+            // size + 1: the extra row says whether more follow, without a count.
+            List<T> raw = query.fetch(afterAt, afterId, size + 1);
+            for (T r : raw) {
+                if (!liveOnly || !ValidationStatus.holds(validationStatus.apply(r))) {
+                    rows.add(new Row(type, id.apply(r), createdAt.apply(r), toItem.apply(r), skipped));
+                    skipped = null;
+                } else {
+                    skipped = new Position(createdAt.apply(r), id.apply(r));
+                }
+            }
+            if (rows.size() > size || raw.size() <= size) return rows;
+            T last = raw.get(raw.size() - 1);
+            afterAt = createdAt.apply(last);
+            afterId = id.apply(last);
+        }
+    }
+
+    private static ContentItem item(Channel ch) {
+        return withVisibility(new ContentItem("channel", ch.getId(), ch.getYoutubeId(), ch.getName(),
+                ch.getDescription(), ch.getThumbnailUrl(), ch.getStatus(), ch.getCategoryIds(),
+                ch.getCreatedAt() != null ? ch.getCreatedAt().toDate() : null,
+                ch.getSubscribers(), ch.getDisplayOrder(), ch.getKeywords()),
+                ch.getVisibility(), ch.getPersonalGrants());
+    }
+
+    private static ContentItem item(Playlist pl) {
+        return withVisibility(new ContentItem("playlist", pl.getId(), pl.getYoutubeId(), pl.getTitle(),
+                pl.getDescription(), pl.getThumbnailUrl(), pl.getStatus(), pl.getCategoryIds(),
+                pl.getCreatedAt() != null ? pl.getCreatedAt().toDate() : null,
+                pl.getItemCount() != null ? Long.valueOf(pl.getItemCount()) : null, pl.getDisplayOrder(),
+                pl.getKeywords()),
+                pl.getVisibility(), pl.getPersonalGrants());
+    }
+
+    private static ContentItem item(Video v) {
+        ContentItem item = new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
+                v.getDescription(), v.getThumbnailUrl(), v.getStatus(), v.getCategoryIds(),
+                v.getCreatedAt() != null ? v.getCreatedAt().toDate() : null,
+                v.getViewCount(), v.getDisplayOrder(), v.getKeywords());
+        item.offlineAllowed = v.allowsOffline();
+        return withVisibility(item, v.getVisibility(), v.getPersonalGrants());
     }
 
     /**
@@ -596,296 +570,22 @@ public class ContentLibraryController {
         return Arrays.stream(types.split(","))
                 .map(String::trim)
                 .map(String::toLowerCase)
+                .filter(Set.of("channel", "playlist", "video")::contains) // an unknown type would never be done
                 .collect(Collectors.toSet());
-    }
-
-    /**
-     * Check if a content item matches the search query.
-     * Matches against title (contains) and keywords (prefix or contains match).
-     * This enables searching by keyword tags as well as title text.
-     */
-    private boolean matchesSearch(ContentItem item, String searchLower) {
-        // Check title (contains match for flexibility)
-        if (item.title != null && item.title.toLowerCase(java.util.Locale.ROOT).contains(searchLower)) {
-            return true;
-        }
-        // Check keywords (prefix or contains match for better search accuracy)
-        // This allows searching for partial keyword matches (e.g., "cook" matches "cooking")
-        if (item.keywords != null) {
-            for (String keyword : item.keywords) {
-                if (keyword != null) {
-                    String keywordLower = keyword.toLowerCase(java.util.Locale.ROOT);
-                    // Match if keyword starts with search term OR contains search term
-                    if (keywordLower.startsWith(searchLower) || keywordLower.contains(searchLower)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        // Check description for search terms (improves search accuracy)
-        if (item.description != null && item.description.toLowerCase(java.util.Locale.ROOT).contains(searchLower)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Fetch channels with bounded query to prevent quota exhaustion.
-     * Uses Firestore-level filtering with query-level limits.
-     * Returns BoundedFetchResult with limit+1 detection to avoid false-negative truncation.
-     *
-     * NOTE: Search filtering is done in-memory at the caller level to support
-     * comprehensive search across title, keywords, and description fields.
-     * This ensures keywords improve search accuracy for typical admin searches.
-     */
-    private BoundedFetchResult<Channel> fetchChannelsBounded(String status, String category, String search, String sort, int limit)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // When search is active, use Firestore-level keyword search to find matches
-        // across the ENTIRE collection, not just the first 200 items.
-        if (search != null && !search.isBlank()) {
-            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
-            List<Channel> keywordResults = channelRepository.searchByKeyword(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
-            List<Channel> nameResults = channelRepository.searchByNameLower(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
-            // Merge and deduplicate by ID
-            Map<String, Channel> merged = new java.util.LinkedHashMap<>();
-            for (Channel ch : nameResults) merged.put(ch.getId(), ch);
-            for (Channel ch : keywordResults) merged.putIfAbsent(ch.getId(), ch);
-            List<Channel> results = new ArrayList<>(merged.values());
-            // Filter by status/category if specified
-            if (category != null && !category.isBlank()) {
-                results.removeIf(ch -> ch.getCategoryIds() == null || !ch.getCategoryIds().contains(category));
-            }
-            if (!"all".equalsIgnoreCase(status)) {
-                results.removeIf(ch -> !status.equalsIgnoreCase(ch.getStatus()));
-            }
-            if ("approved".equalsIgnoreCase(status)) {
-                // Live only, and before the trim below, so held rows never take a live match's place.
-                results.removeIf(ch -> ValidationStatus.holds(ch.getValidationStatus()));
-            }
-            // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
-            boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
-                    || nameResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
-                    || results.size() > limit;
-            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
-            return new BoundedFetchResult<>(results, hitLimit);
-        }
-
-        // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
-        int queryLimit = limit + 1;
-
-        // Category + status filter - use bounded query at Firestore level
-        if (category != null && !category.isBlank()) {
-            List<Channel> results;
-            if ("all".equalsIgnoreCase(status)) {
-                // status=all: show all statuses (APPROVED, PENDING, REJECTED) for the category
-                results = channelRepository.findByCategoryIdAllStatus(category, queryLimit);
-            } else if ("approved".equalsIgnoreCase(status)) {
-                // status=approved: use the existing approved-only method
-                results = channelRepository.findByCategoryId(category, queryLimit);
-            } else {
-                // specific status (PENDING, REJECTED): use category+status combined query
-                results = channelRepository.findByCategoryIdAndStatus(category, status.toUpperCase(), queryLimit);
-            }
-            boolean hitLimit = results.size() > limit;
-            if (hitLimit) {
-                results = results.subList(0, limit);
-            }
-            return new BoundedFetchResult<>(results, hitLimit);
-        }
-
-        // Status-only filter with limit - use correct sort order at query level
-        boolean sortOldest = "oldest".equalsIgnoreCase(sort);
-        List<Channel> results;
-        if ("all".equalsIgnoreCase(status)) {
-            results = sortOldest ? channelRepository.findAllOrderByCreatedAtAsc(queryLimit) : channelRepository.findAll(queryLimit);
-        } else {
-            results = sortOldest
-                    ? channelRepository.findByStatusOrderByCreatedAtAsc(status.toUpperCase(), queryLimit)
-                    : channelRepository.findByStatus(status.toUpperCase(), queryLimit);
-        }
-        boolean hitLimit = results.size() > limit;
-        if (hitLimit) {
-            results = results.subList(0, limit);
-        }
-        return new BoundedFetchResult<>(results, hitLimit);
-    }
-
-    /**
-     * Fetch playlists with bounded query to prevent quota exhaustion.
-     * Uses Firestore-level filtering with query-level limits.
-     * Returns BoundedFetchResult with limit+1 detection to avoid false-negative truncation.
-     *
-     * NOTE: Search filtering is done in-memory at the caller level to support
-     * comprehensive search across title, keywords, and description fields.
-     */
-    private BoundedFetchResult<Playlist> fetchPlaylistsBounded(String status, String category, String search, String sort, int limit)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // When search is active, use Firestore-level keyword + title search
-        if (search != null && !search.isBlank()) {
-            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
-            List<Playlist> keywordResults = playlistRepository.searchByKeyword(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
-            List<Playlist> titleResults = playlistRepository.searchByTitleLower(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
-            // Merge and deduplicate by ID (title results first for relevance)
-            Map<String, Playlist> merged = new java.util.LinkedHashMap<>();
-            for (Playlist pl : titleResults) merged.put(pl.getId(), pl);
-            for (Playlist pl : keywordResults) merged.putIfAbsent(pl.getId(), pl);
-            List<Playlist> results = new ArrayList<>(merged.values());
-            if (category != null && !category.isBlank()) {
-                results.removeIf(pl -> pl.getCategoryIds() == null || !pl.getCategoryIds().contains(category));
-            }
-            if (!"all".equalsIgnoreCase(status)) {
-                results.removeIf(pl -> !status.equalsIgnoreCase(pl.getStatus()));
-            }
-            if ("approved".equalsIgnoreCase(status)) {
-                // Live only, and before the trim below, so held rows never take a live match's place.
-                results.removeIf(pl -> ValidationStatus.holds(pl.getValidationStatus()));
-            }
-            // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
-            boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
-                    || titleResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
-                    || results.size() > limit;
-            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
-            return new BoundedFetchResult<>(results, hitLimit);
-        }
-
-        // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
-        int queryLimit = limit + 1;
-
-        // Category + status filter - use bounded query at Firestore level
-        if (category != null && !category.isBlank()) {
-            List<Playlist> results;
-            if ("all".equalsIgnoreCase(status)) {
-                // status=all: show all statuses (APPROVED, PENDING, REJECTED) for the category
-                results = playlistRepository.findByCategoryIdAllStatus(category, queryLimit);
-            } else if ("approved".equalsIgnoreCase(status)) {
-                // status=approved: use the existing approved-only method
-                results = playlistRepository.findByCategoryId(category, queryLimit);
-            } else {
-                // specific status (PENDING, REJECTED): use category+status combined query
-                results = playlistRepository.findByCategoryIdAndStatus(category, status.toUpperCase(), queryLimit);
-            }
-            boolean hitLimit = results.size() > limit;
-            if (hitLimit) {
-                results = results.subList(0, limit);
-            }
-            return new BoundedFetchResult<>(results, hitLimit);
-        }
-
-        // Status-only filter with limit - use correct sort order at query level
-        boolean sortOldest = "oldest".equalsIgnoreCase(sort);
-        List<Playlist> results;
-        if ("all".equalsIgnoreCase(status)) {
-            results = sortOldest ? playlistRepository.findAllOrderByCreatedAtAsc(queryLimit) : playlistRepository.findAll(queryLimit);
-        } else {
-            results = sortOldest
-                    ? playlistRepository.findByStatusOrderByCreatedAtAsc(status.toUpperCase(), queryLimit)
-                    : playlistRepository.findByStatus(status.toUpperCase(), queryLimit);
-        }
-        boolean hitLimit = results.size() > limit;
-        if (hitLimit) {
-            results = results.subList(0, limit);
-        }
-        return new BoundedFetchResult<>(results, hitLimit);
-    }
-
-    /**
-     * Fetch videos with bounded query to prevent quota exhaustion.
-     * Uses Firestore-level filtering with query-level limits.
-     * Returns BoundedFetchResult with limit+1 detection to avoid false-negative truncation.
-     *
-     * NOTE: Search filtering is done in-memory at the caller level to support
-     * comprehensive search across title, keywords, and description fields.
-     */
-    private BoundedFetchResult<Video> fetchVideosBounded(String status, String category, String search, String sort, int limit)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-
-        // When search is active, use Firestore-level keyword + title search
-        if (search != null && !search.isBlank()) {
-            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
-            List<Video> keywordResults = videoRepository.searchByKeyword(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
-            List<Video> titleResults = videoRepository.searchByTitleLower(searchLower, MAX_SEARCH_SCAN_PER_TYPE);
-            // Merge and deduplicate by ID (title results first for relevance)
-            Map<String, Video> merged = new java.util.LinkedHashMap<>();
-            for (Video v : titleResults) merged.put(v.getId(), v);
-            for (Video v : keywordResults) merged.putIfAbsent(v.getId(), v);
-            List<Video> results = new ArrayList<>(merged.values());
-            if (category != null && !category.isBlank()) {
-                results.removeIf(v -> v.getCategoryIds() == null || !v.getCategoryIds().contains(category));
-            }
-            if (!"all".equalsIgnoreCase(status)) {
-                results.removeIf(v -> !status.equalsIgnoreCase(v.getStatus()));
-            }
-            if ("approved".equalsIgnoreCase(status)) {
-                // Live only, and before the trim below, so held rows never take a live match's place.
-                results.removeIf(v -> ValidationStatus.holds(v.getValidationStatus()));
-            }
-            // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
-            boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
-                    || titleResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
-                    || results.size() > limit;
-            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
-            return new BoundedFetchResult<>(results, hitLimit);
-        }
-
-        // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
-        int queryLimit = limit + 1;
-
-        // Category + status filter - use bounded query at Firestore level
-        if (category != null && !category.isBlank()) {
-            List<Video> results;
-            if ("all".equalsIgnoreCase(status)) {
-                // status=all: show all statuses (APPROVED, PENDING, REJECTED) for the category
-                results = videoRepository.findByCategoryIdAllStatus(category, queryLimit);
-            } else if ("approved".equalsIgnoreCase(status)) {
-                // status=approved: use the existing approved-only method
-                results = videoRepository.findByCategoryId(category, queryLimit);
-            } else {
-                // specific status (PENDING, REJECTED): use category+status combined query
-                results = videoRepository.findByCategoryIdAndStatus(category, status.toUpperCase(), queryLimit);
-            }
-            boolean hitLimit = results.size() > limit;
-            if (hitLimit) {
-                results = results.subList(0, limit);
-            }
-            return new BoundedFetchResult<>(results, hitLimit);
-        }
-
-        // Status-only filter with limit - use correct sort order at query level
-        boolean sortOldest = "oldest".equalsIgnoreCase(sort);
-        List<Video> results;
-        if ("all".equalsIgnoreCase(status)) {
-            results = sortOldest ? videoRepository.findAllOrderByCreatedAtAsc(queryLimit) : videoRepository.findAll(queryLimit);
-        } else {
-            results = sortOldest
-                    ? videoRepository.findByStatusOrderByCreatedAtAsc(status.toUpperCase(), queryLimit)
-                    : videoRepository.findByStatus(status.toUpperCase(), queryLimit);
-        }
-        boolean hitLimit = results.size() > limit;
-        if (hitLimit) {
-            results = results.subList(0, limit);
-        }
-        return new BoundedFetchResult<>(results, hitLimit);
     }
 
     // DTOs
 
     public static class ContentLibraryResponse {
         public List<ContentItem> content;
-        public int totalItems;
-        public int currentPage;
+        /** Opaque position after this page: pass it back as {@code cursor}. Null when nothing is left. */
+        public String nextCursor;
         public int pageSize;
-        public int totalPages;
-        /** True if results may be incomplete due to bounded query limits */
-        public boolean truncated;
-        public ContentLibraryResponse(List<ContentItem> content, int totalItems, int currentPage, int pageSize, int totalPages, boolean truncated) {
+
+        public ContentLibraryResponse(List<ContentItem> content, String nextCursor, int pageSize) {
             this.content = content;
-            this.totalItems = totalItems;
-            this.currentPage = currentPage;
+            this.nextCursor = nextCursor;
             this.pageSize = pageSize;
-            this.totalPages = totalPages;
-            this.truncated = truncated;
         }
     }
 

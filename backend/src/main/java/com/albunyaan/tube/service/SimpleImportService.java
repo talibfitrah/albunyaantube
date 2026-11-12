@@ -58,6 +58,7 @@ public class SimpleImportService {
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
+    private final PublicContentCacheService publicContentCacheService;
 
     /**
      * One simple-format value, "Title|Cat1,Cat2|keyword1,keyword2" (the keywords part optional). The one parse the
@@ -76,13 +77,15 @@ public class SimpleImportService {
             CategoryMappingService categoryMappingService,
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
-            VideoRepository videoRepository
+            VideoRepository videoRepository,
+            PublicContentCacheService publicContentCacheService
     ) {
         this.channelOrchestrator = channelOrchestrator;
         this.categoryMappingService = categoryMappingService;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
+        this.publicContentCacheService = publicContentCacheService;
     }
 
     /**
@@ -150,6 +153,12 @@ public class SimpleImportService {
         // Import videos
         if (videosMap != null && !videosMap.isEmpty()) {
             importVideos(videosMap, defaultStatus, currentUserId, validateOnly, response, storedLiveRows);
+        }
+
+        SimpleImportResponse.SimpleCounts counts = response.getCounts();
+        if (!validateOnly && "APPROVED".equals(defaultStatus)
+                && counts.getChannelsImported() + counts.getPlaylistsImported() + counts.getVideosImported() > 0) {
+            publicContentCacheService.evictPublicContentCaches();   // APPROVED rows now list in the tabs
         }
 
         response.setSuccess(true);

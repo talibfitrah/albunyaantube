@@ -19,7 +19,6 @@ import com.google.cloud.firestore.QuerySnapshot;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
-import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -285,15 +284,6 @@ public class PlaylistRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
     }
 
-    public List<Playlist> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", STATUS_APPROVED)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
     /**
      * Find playlists by category ID with limit (bounded query).
      * This prevents quota exhaustion for large categories.
@@ -332,26 +322,6 @@ public class PlaylistRepository {
     }
 
     /**
-     * Find playlists by category ID and specific status.
-     * This allows admin Content Library to filter by both category and status.
-     *
-     * @param categoryId Category ID to filter by
-     * @param status Status to filter by (APPROVED, PENDING, REJECTED)
-     * @param limit Maximum number of results
-     * @return List of playlists matching both category and status
-     */
-    public List<Playlist> findByCategoryIdAndStatus(String categoryId, String status, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", status)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
-    /**
      * Find approved playlists across multiple category IDs (parent + children aggregation).
      * Uses one query per category ID to avoid Firestore limitations.
      * Results are deduped by document ID and sorted by itemCount descending.
@@ -359,10 +329,12 @@ public class PlaylistRepository {
     public List<Playlist> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
-        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        // The full limit per category, fetched in the merge order (itemCount desc): the result is then exactly the
+        // first `limit` of the whole sorted union.
+        // ponytail: reads up to limit × categoryIds.size() docs per call; see ChannelRepository.findByCategoryIds.
         LinkedHashMap<String, Playlist> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Playlist> batch = findByCategoryId(catId, perCategoryLimit);
+            List<Playlist> batch = findByCategoryOrderByItemCountDesc(catId, limit);
             for (Playlist pl : batch) {
                 deduped.putIfAbsent(pl.getId(), pl);
             }
@@ -431,43 +403,6 @@ public class PlaylistRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
     }
 
-    /**
-     * Search playlists by normalized titleLower field for case-insensitive prefix matching.
-     * This is the preferred search method as it supports case-insensitive queries.
-     *
-     * @param queryLower Lowercase search prefix
-     * @param limit Maximum number of results
-     * @return List of matching playlists
-     */
-    public List<Playlist> searchByTitleLower(String queryLower, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("titleLower")
-                .startAt(queryLower)
-                .endAt(queryLower + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
-    /**
-     * Search playlists by keyword using array-contains on keywordsLower.
-     * Finds playlists where any keyword exactly matches the query (case-insensitive).
-     * Complements prefix-based title search for improved recall.
-     *
-     * @param keywordLower Lowercase keyword to search for
-     * @param limit Maximum number of results
-     * @return List of matching playlists
-     */
-    public List<Playlist> searchByKeyword(String keywordLower, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereArrayContains("keywordsLower", keywordLower)
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
     public void deleteById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
         CatalogChanged.await(result, timeoutProperties.getWrite(), events, "PLAYLIST", id);
@@ -515,6 +450,19 @@ public class PlaylistRepository {
         return findAll(timeoutProperties.getDefaultMaxResults());
     }
 
+    /** One page of the admin Content Library; see {@link ChannelRepository#findPageAfter}. */
+    public List<Playlist> findPageAfter(String status, String category, boolean oldest,
+                                        com.google.cloud.Timestamp afterCreatedAt, String afterId, int limit)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        Query.Direction dir = oldest ? Query.Direction.ASCENDING : Query.Direction.DESCENDING;
+        Query query = getCollection();
+        if (status != null) query = query.whereEqualTo("status", status);
+        if (category != null) query = query.whereArrayContains("categoryIds", category);
+        query = query.orderBy("createdAt", dir).orderBy(com.google.cloud.firestore.FieldPath.documentId(), dir);
+        if (afterCreatedAt != null) query = query.startAfter(afterCreatedAt, afterId);
+        return query.limit(limit).get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
     /**
      * Find all playlists with a specific limit.
      *
@@ -530,146 +478,6 @@ public class PlaylistRepository {
                 .limit(limit)
                 .get();
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
-    /**
-     * Find all playlists ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested.
-     *
-     * @param limit Maximum number of results
-     * @return List of playlists ordered oldest-first
-     */
-    public List<Playlist> findAllOrderByCreatedAtAsc(int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .orderBy("createdAt", Query.Direction.ASCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
-    /**
-     * Find playlists by status ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested with status filter.
-     *
-     * <p>Requires Firestore composite index: status (ASC) + createdAt (ASC)</p>
-     *
-     * @param status Status to filter by
-     * @param limit Maximum number of results
-     * @return List of playlists ordered oldest-first
-     */
-    public List<Playlist> findByStatusOrderByCreatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", status)
-                .orderBy("createdAt", Query.Direction.ASCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
-    /**
-     * Find approved playlists ordered by item count with cursor-based pagination.
-     *
-     * @param limit Number of items to fetch
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing playlists and next cursor
-     */
-    public PaginatedResult<Playlist> findApprovedByItemCountDescWithCursor(int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereEqualTo("status", STATUS_APPROVED)
-                .orderBy("itemCount", Query.Direction.DESCENDING)
-                .limit(limit + 1);
-
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Playlist> playlists = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Playlist playlist = doc.toObject(Playlist.class);
-            playlist.setId(doc.getId());
-            playlists.add(playlist);
-
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "itemCount");
-            }
-        }
-
-        return new PaginatedResult<>(playlists, nextCursor, hasNext);
-    }
-
-    /**
-     * Find approved playlists by category ordered by item count with cursor-based pagination.
-     *
-     * @param category Category ID to filter by
-     * @param limit Number of items to fetch
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing playlists and next cursor
-     */
-    public PaginatedResult<Playlist> findApprovedByCategoryAndItemCountDescWithCursor(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", STATUS_APPROVED)
-                .orderBy("itemCount", Query.Direction.DESCENDING)
-                .limit(limit + 1);
-
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Playlist> playlists = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Playlist playlist = doc.toObject(Playlist.class);
-            playlist.setId(doc.getId());
-            playlists.add(playlist);
-
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "itemCount");
-            }
-        }
-
-        return new PaginatedResult<>(playlists, nextCursor, hasNext);
     }
 
     // ==================== Display Order Methods ====================
@@ -957,33 +765,6 @@ public class PlaylistRepository {
         }
 
         return result;
-    }
-
-    /**
-     * Generic paginated result wrapper.
-     */
-    public static class PaginatedResult<T> {
-        private final List<T> items;
-        private final String nextCursor;
-        private final boolean hasNext;
-
-        public PaginatedResult(List<T> items, String nextCursor, boolean hasNext) {
-            this.items = items;
-            this.nextCursor = nextCursor;
-            this.hasNext = hasNext;
-        }
-
-        public List<T> getItems() {
-            return items;
-        }
-
-        public String getNextCursor() {
-            return nextCursor;
-        }
-
-        public boolean hasNext() {
-            return hasNext;
-        }
     }
 
     /**

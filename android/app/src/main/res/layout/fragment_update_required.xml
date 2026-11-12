@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Update-required terminal screen. One layout for every width: the content column is
+  centred and capped by layout_constraintWidth_max, so phone / sw600dp / sw720dp all
+  render the same block. Outer FrameLayout owns fitsSystemWindows and the inner
+  ConstraintLayout owns the padding (see fragment_age_ineligible.xml for why). The
+  ScrollView (fillViewport) keeps the button reachable on a landscape phone at large font.
+-->
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    tools:context="com.albunyaan.tube.ui.UpdateRequiredFragment">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="@dimen/spacing_lg"
+        android:paddingEnd="@dimen/spacing_lg"
+        android:paddingTop="@dimen/spacing_lg"
+        android:paddingBottom="@dimen/spacing_lg">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="@string/update_required_title"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+            android:textAlignment="center"
+            app:layout_constraintWidth_max="@dimen/onboarding_button_max_width"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/message"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintVertical_chainStyle="packed" />
+
+        <TextView
+            android:id="@+id/message"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:text="@string/update_required_message"
+            android:textAppearance="?attr/textAppearanceBodyLarge"
+            android:textAlignment="center"
+            app:layout_constraintWidth_max="@dimen/onboarding_button_max_width"
+            app:layout_constraintTop_toBottomOf="@id/title"
+            app:layout_constraintBottom_toTopOf="@id/updateButton"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/updateButton"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/auth_button_height"
+            android:layout_marginTop="@dimen/spacing_lg"
+            android:text="@string/update_required_button"
+            app:layout_constraintWidth_max="@dimen/onboarding_button_max_width"
+            app:layout_constraintTop_toBottomOf="@id/message"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+    </ScrollView>
+</FrameLayout>

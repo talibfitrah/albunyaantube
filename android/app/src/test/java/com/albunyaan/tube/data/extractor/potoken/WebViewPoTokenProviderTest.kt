@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -15,6 +16,34 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
 class WebViewPoTokenProviderTest {
+
+    @Test
+    fun `ios client po token is never minted`() {
+        val factory = object : PoTokenGenerator.Factory {
+            override suspend fun newPoTokenGenerator(context: Context): PoTokenGenerator =
+                object : PoTokenGenerator {
+                    override suspend fun generatePoToken(identifier: String) = "tok"
+                    override fun isExpired() = false
+                    override fun close() {}
+                }
+        }
+        val provider = WebViewPoTokenProvider(
+            ApplicationProvider.getApplicationContext(),
+            generatorFactory = factory,
+            fetchVisitorData = { "visitor" },
+        )
+
+        // Off the main thread: on the main thread poTokenOrNull returns null for its own reason.
+        var ios: Any? = "unset"
+        var android: String? = null
+        thread {
+            ios = provider.getIosClientPoToken("vid")
+            android = provider.getAndroidClientPoToken("vid")?.playerRequestPoToken
+        }.join(10_000)
+
+        assertNull(ios)
+        assertEquals("tok", android)
+    }
 
     @Test
     fun `callers that failed on the same generator rebuild it once, not once each`() {
@@ -47,7 +76,7 @@ class WebViewPoTokenProviderTest {
         )
 
         val results = arrayOfNulls<String>(2)
-        (0..1).map { i -> thread { results[i] = provider.getIosClientPoToken("vid")?.playerRequestPoToken } }
+        (0..1).map { i -> thread { results[i] = provider.getAndroidClientPoToken("vid")?.playerRequestPoToken } }
             .forEach { it.join(10_000) }
 
         assertEquals(listOf("tok2", "tok2"), results.toList())
@@ -88,10 +117,10 @@ class WebViewPoTokenProviderTest {
         )
 
         var aResult: Any? = "unset"
-        val a = thread { aResult = provider.getIosClientPoToken("bad") }
+        val a = thread { aResult = provider.getAndroidClientPoToken("bad") }
         aOnThird.await(5, TimeUnit.SECONDS)
         var bResult: String? = null
-        val b = thread { bResult = provider.getIosClientPoToken("good")?.playerRequestPoToken }
+        val b = thread { bResult = provider.getAndroidClientPoToken("good")?.playerRequestPoToken }
         listOf(a, b).forEach { it.join(10_000) }
 
         assertEquals(null, aResult)

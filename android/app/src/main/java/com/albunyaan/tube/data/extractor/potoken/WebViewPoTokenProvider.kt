@@ -16,15 +16,12 @@ import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
  * Supplies WebView-minted poTokens to NewPipeExtractor's YouTube client, fixing the HTTP 403
  * "Resolving stream…" loop caused by YouTube requiring a GVS PO Token on stream URLs.
  *
- * **Version contract:** NewPipeExtractor 0.26.2's `YoutubeStreamExtractor` consumes the token only
- * via [getAndroidClientPoToken] / [getIosClientPoToken] (verified in bytecode — it never calls
- * `getWebClientPoToken`). NewPipe *master* moved to a web-client poToken; that newer contract is
- * NOT what this app's pinned 0.26.2 uses. So we return the same WebView-minted token from every
- * streaming-client getter, letting the extractor apply it to whichever client it actually fetches
- * streams with. The app keeps the iOS client on (`getIosClientPoToken`): on-device it returns the
- * full HD/4K adaptive ladder (up to 16 video-only reps, 2160p) once the token is supplied, whereas
- * the android client is SABR-gutted to a single 360p muxed stream. The web-context visitorData +
- * token is accepted by the iOS client (verified: pot applied, HTTP 206, full ladder).
+ * **Version contract:** NewPipeExtractor 0.26.5's `YoutubeStreamExtractor` consumes the token via
+ * [getAndroidClientPoToken] (and [getIosClientPoToken], but only inside `if (fetchIosClient)`;
+ * verified in bytecode — it never calls `getWebClientPoToken`). The app fetches no IOS client
+ * (its audio 403s at 40-50 s, probe 2026-11-11), so [getIosClientPoToken] returns null and only
+ * the Android getter feeds NewPipe; the web getter feeds `DubAudioResolver`. The same
+ * WebView-minted token backs both.
  *
  * The extractor calls these methods synchronously from a background extraction thread, so we bridge
  * the suspend [PoTokenGenerator] with [runBlocking]. This must never be invoked on the main thread
@@ -50,7 +47,7 @@ class WebViewPoTokenProvider(
 
     override fun getAndroidClientPoToken(videoId: String): PoTokenResult? = poTokenOrNull(videoId)
 
-    override fun getIosClientPoToken(videoId: String): PoTokenResult? = poTokenOrNull(videoId)
+    override fun getIosClientPoToken(videoId: String): PoTokenResult? = null
 
     override fun getWebEmbedClientPoToken(videoId: String): PoTokenResult? = null
 
