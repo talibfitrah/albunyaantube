@@ -42,6 +42,15 @@ vi.mock('@/services/liveChannels', async (importOriginal) => ({
   getLiveStatus: () => status.fn()
 }));
 
+vi.mock('@/components/exclusions/ChannelDetailModal.vue', () => ({ default: {
+  props: ['open', 'channelId', 'channelYoutubeId'], emits: ['close'],
+  template: '<div v-if="open" data-testid="channel-detail">{{ channelId }}|{{ channelYoutubeId }}<button @click="$emit(\'close\')">close-detail</button></div>'
+} }));
+vi.mock('@/components/exclusions/PlaylistDetailModal.vue', () => ({ default: {
+  props: ['open', 'playlistId', 'playlistYoutubeId'], emits: ['close'],
+  template: '<div v-if="open" data-testid="playlist-detail">{{ playlistId }}|{{ playlistYoutubeId }}<button @click="$emit(\'close\')">close-detail</button></div>'
+} }));
+
 const ok = () => Promise.resolve({
   suspectSince: '2026-10-17T01:20:00Z',
   categories: [{ id: 'live', entries: [
@@ -141,7 +150,7 @@ describe('Content Sorting on a live category (spec §8)', () => {
       mount();
       await fireEvent.click(await screen.findByText('Channels Live'));
       await fireEvent.click(await screen.findByText(/Add Content/));
-      await fireEvent.click(await screen.findByText('Some channel'));
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Some channel' }));
       await fireEvent.click(screen.getByText('Add to Category'));
       return () => reject(refusal());
     };
@@ -179,7 +188,7 @@ describe('Content Sorting on a live category (spec §8)', () => {
     mount();
     await fireEvent.click(await screen.findByText('Channels Live'));
     await fireEvent.click(await screen.findByText(/Add Content/));
-    await fireEvent.click(await screen.findByText('Some channel'));
+    await fireEvent.click(await screen.findByRole('checkbox', { name: 'Some channel' }));
     await fireEvent.click(screen.getByText('Add to Category'));
     await fireEvent.click(screen.getByText('Cancel'));
     await fireEvent.click(await screen.findByText('Other'));
@@ -310,7 +319,7 @@ describe('Content Sorting on a live category (spec §8)', () => {
     mount();
     await fireEvent.click(await screen.findByText('Channels Live'));
     await fireEvent.click(await screen.findByText(/Add Content/));
-    await fireEvent.click(await screen.findByText('Some channel'));
+    await fireEvent.click(await screen.findByRole('checkbox', { name: 'Some channel' }));
     await fireEvent.click(screen.getByText('Add to Category'));
     await fireEvent.click(screen.getByText('Cancel'));
     const before = await svc.getCategoryContentOrder();
@@ -324,5 +333,60 @@ describe('Content Sorting on a live category (spec §8)', () => {
     await new Promise(r => setTimeout(r, 20));
 
     expect(screen.getByText('Late channel')).toBeInTheDocument();
+  });
+});
+
+describe('Content Sorting add-content: see a channel or playlist before adding it', () => {
+  const openPicker = async () => {
+    status.fn.mockImplementation(ok);
+    mount();
+    await fireEvent.click(await screen.findByText('Other'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+    await screen.findByText('Some channel');
+  };
+
+  it("clicking a channel's title opens its detail window and does not select it", async () => {
+    await openPicker();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+
+    expect(screen.getByTestId('channel-detail')).toHaveTextContent('ch-9|UCz');
+    expect(screen.queryByText(/selected/i)).toBeNull();
+  });
+
+  it("clicking a playlist's thumbnail opens its detail window and does not select it", async () => {
+    await openPicker();
+    const row = screen.getByText('Some playlist').closest('.add-content-item')!;
+
+    await fireEvent.click(row.querySelector('.add-content-thumb')!);
+
+    expect(screen.getByTestId('playlist-detail')).toHaveTextContent('pl-9|');
+    expect((row.querySelector('input[type=checkbox]') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('the rest of the row still selects, and the picker stays open behind a closed detail window', async () => {
+    await openPicker();
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+    await fireEvent.click(screen.getByText('close-detail'));
+    expect(screen.queryByTestId('channel-detail')).toBeNull();
+
+    const row = screen.getByText('Some channel').closest('.add-content-item')!;
+    await fireEvent.click(row.querySelector('.type-badge')!);
+
+    expect((row.querySelector('input[type=checkbox]') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('opens from the keyboard, lets focus into the detail window, and hands it back on close', async () => {
+    await openPicker();
+    const title = screen.getByRole('button', { name: 'Some channel' });
+    title.focus();
+    await fireEvent.click(title); // what Enter / Space do on a native button
+
+    const close = screen.getByText('close-detail');
+    close.focus();
+    expect(document.activeElement).toBe(close); // the picker's focus trap must not pull it back
+
+    await fireEvent.click(close);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Some channel' }));
   });
 });

@@ -275,21 +275,32 @@
                 >
                   <input
                     type="checkbox"
+                    :aria-label="item.title"
                     :checked="addModalSelected.has(contentKey(item))"
                     @click.stop
                     @change="toggleAddSelection(item)"
                   />
-                  <img
-                    v-if="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')"
-                    :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
-                    :alt="item.title"
-                    class="thumbnail"
-                    loading="lazy"
-                    @error="handleThumbnailError($event, item)"
-                  />
-                  <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''"></div>
+                  <!-- Channels and playlists open their detail window; the title button is the keyboard route to it. -->
+                  <span class="add-content-thumb" :class="{ 'has-detail': hasDetail(item) }" @click="onThumbClick($event, item)">
+                    <img
+                      v-if="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')"
+                      :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
+                      :alt="item.title"
+                      class="thumbnail"
+                      loading="lazy"
+                      @error="handleThumbnailError($event, item)"
+                    />
+                    <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''"></div>
+                  </span>
                   <div class="add-content-info">
-                    <span class="add-content-title">{{ item.title }}</span>
+                    <button
+                      v-if="hasDetail(item)"
+                      type="button"
+                      class="add-content-title add-content-detail"
+                      :title="t('contentSorting.viewDetails')"
+                      @click.stop="openDetail(item, $event)"
+                    >{{ item.title }}</button>
+                    <span v-else class="add-content-title">{{ item.title }}</span>
                     <span class="type-badge" :class="'type-' + item.type">{{ item.type }}</span>
                   </div>
                 </div>
@@ -324,6 +335,22 @@
         </div>
       </transition>
     </teleport>
+
+    <!-- The same detail windows as Pending Approvals and the Content Library, over the picker. -->
+    <ChannelDetailModal
+      v-if="detailItem?.type?.toLowerCase() === 'channel'"
+      :open="true"
+      :channel-id="detailItem.id"
+      :channel-youtube-id="detailItem.youtubeId ?? ''"
+      @close="closeDetail"
+    />
+    <PlaylistDetailModal
+      v-if="detailItem?.type?.toLowerCase() === 'playlist'"
+      :open="true"
+      :playlist-id="detailItem.id"
+      :playlist-youtube-id="detailItem.youtubeId ?? ''"
+      @close="closeDetail"
+    />
   </div>
 </template>
 
@@ -348,6 +375,8 @@ import {
 import { toast } from '@/utils/toast';
 import { apiErrorWithOffenders, offenderTitles } from '@/services/http';
 import { liveCategoryIds } from '@/components/contentSearch/bulk/useCategoryPicker';
+import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import { getLiveStatus, liveChips, liveYoutubeUrl, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
@@ -477,9 +506,45 @@ let addModalCategoryId = '';
 let addModalLoadToken = 0;
 const addModalContainerRef = ref<HTMLElement | null>(null);
 
-const { activate: activateFocusTrap, deactivate: deactivateFocusTrap } = useFocusTrap(addModalContainerRef, {
+const {
+  activate: activateFocusTrap, deactivate: deactivateFocusTrap, pause: pauseFocusTrap, resume: resumeFocusTrap
+} = useFocusTrap(addModalContainerRef, {
   onEscape: () => closeAddContentModal()
 });
+
+/** The channel or playlist whose detail window is open over the picker. */
+const detailItem = ref<ApprovedContentItem | null>(null);
+let detailReturnFocus: HTMLElement | null = null;
+
+function hasDetail(item: ApprovedContentItem): boolean {
+  const type = item.type?.toLowerCase();
+  return type === 'channel' || type === 'playlist';
+}
+
+function openDetail(item: ApprovedContentItem, event: Event) {
+  // Back to the row's title button on close, whether the thumbnail or the title was clicked.
+  detailReturnFocus = (event.currentTarget as HTMLElement).closest('.add-content-item')
+    ?.querySelector<HTMLElement>('.add-content-detail') ?? null;
+  // The detail window sits outside the picker; its trap would pull focus straight back.
+  pauseFocusTrap();
+  detailItem.value = item;
+  nextTick(() => {
+    const closers = document.querySelectorAll<HTMLElement>('.modal-overlay .close-btn');
+    closers[closers.length - 1]?.focus();
+  });
+}
+
+function closeDetail() {
+  detailItem.value = null;
+  resumeFocusTrap({ initialFocus: detailReturnFocus });
+}
+
+/** A video's thumbnail selects the row as before; a channel's or playlist's opens its detail. */
+function onThumbClick(event: Event, item: ApprovedContentItem) {
+  if (!hasDetail(item)) return;
+  event.stopPropagation();
+  openDetail(item, event);
+}
 
 /** Rows added to the add-content modal per "Load more" click or each time the reviewer scrolls near the bottom. */
 const ADD_MODAL_PAGE = 100;
@@ -895,6 +960,7 @@ async function openAddContentModal(categoryId: string) {
 }
 
 function closeAddContentModal() {
+  detailItem.value = null;
   deactivateFocusTrap();
   addModalOpen.value = false;
   addModalError.value = '';
@@ -1359,7 +1425,8 @@ tr.drag-over {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  /* As every view's dialogs: the shared detail windows (1000 and up) open over it. */
+  z-index: 1000;
   padding: 1rem;
 }
 
@@ -1493,6 +1560,36 @@ tr.drag-over {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.add-content-thumb {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.add-content-thumb.has-detail {
+  cursor: zoom-in;
+}
+
+.add-content-detail {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.add-content-detail:hover {
+  text-decoration: underline;
+}
+
+.add-content-detail:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 .modal-footer {

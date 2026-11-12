@@ -168,6 +168,24 @@ export function useFocusTrap(containerRef: Ref<HTMLElement | null>, options: Foc
     restoreFocus();
   }
 
+  /** Stands aside for a dialog opened on top of this one: no focus restore; `resume` takes over again. */
+  function pause(): void {
+    if (!isActive.value) {
+      return;
+    }
+    detachListeners();
+    isActive.value = false;
+  }
+
+  function resume(opts?: ActivateFocusTrapOptions): void {
+    if (isActive.value) {
+      return;
+    }
+    attachListeners();
+    isActive.value = true;
+    focusFirstFocusable(opts);
+  }
+
   onBeforeUnmount(() => {
     detachListeners();
   });
@@ -187,6 +205,8 @@ export function useFocusTrap(containerRef: Ref<HTMLElement | null>, options: Foc
   return {
     activate,
     deactivate,
+    pause,
+    resume,
     isActive
   };
 }

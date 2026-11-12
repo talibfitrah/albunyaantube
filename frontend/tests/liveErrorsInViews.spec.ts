@@ -48,7 +48,7 @@ describe('a live-category refusal is shown in the admin\'s language (spec §8)',
     mount(ContentSortingView);
     await fireEvent.click(await screen.findByText('Channels Live'));
     await fireEvent.click(await screen.findByText(/Add Content/));
-    await fireEvent.click(await screen.findByText('A playlist'));
+    await fireEvent.click(await screen.findByRole('checkbox', { name: 'A playlist' }));
     await fireEvent.click(screen.getByRole('button', { name: /^Add/ }));
 
     const reason = 'The live category accepts only channels and streams that are live right now.';
