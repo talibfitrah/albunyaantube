@@ -5,7 +5,6 @@ import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
-import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +54,6 @@ public class VideoValidationScheduler {
 
     private final ContentValidationService contentValidationService;
     private final CacheManager cacheManager;
-    private final PublicContentCacheService publicContentCacheService;
     private final ValidationProperties validationProperties;
     private final YouTubeCircuitBreaker circuitBreaker;
     private final SystemSettingsRepository systemSettingsRepository;
@@ -69,13 +67,11 @@ public class VideoValidationScheduler {
     public VideoValidationScheduler(
             ContentValidationService contentValidationService,
             CacheManager cacheManager,
-            PublicContentCacheService publicContentCacheService,
             ValidationProperties validationProperties,
             YouTubeCircuitBreaker circuitBreaker,
             SystemSettingsRepository systemSettingsRepository) {
         this.contentValidationService = contentValidationService;
         this.cacheManager = cacheManager;
-        this.publicContentCacheService = publicContentCacheService;
         this.validationProperties = validationProperties;
         this.circuitBreaker = circuitBreaker;
         this.systemSettingsRepository = systemSettingsRepository;
@@ -250,12 +246,12 @@ public class VideoValidationScheduler {
                     result.getErrorCount()
             );
 
-            // Only evict caches when validation completed successfully.
-            // If validation failed, we don't want to clear caches unnecessarily.
+            // ContentValidationService announces the content change itself (failed runs too); only a completed run
+            // also clears the videos cache here.
             if (ValidationRun.STATUS_COMPLETED.equals(result.getStatus())) {
-                evictPublicContentCaches();
+                clearVideosCache();
             } else {
-                logger.warn("{} validation did not complete successfully (status: {}), skipping cache eviction",
+                logger.warn("{} validation did not complete successfully (status: {}), skipping the videos cache clear",
                         timeOfDay, result.getStatus());
             }
 
@@ -273,17 +269,11 @@ public class VideoValidationScheduler {
     }
 
     /**
-     * Evict public content caches after validation runs.
-     * This ensures the mobile app doesn't serve stale cached data that might
-     * include videos that were just archived or whose metadata was refreshed.
-     * Goes through {@link PublicContentCacheService} so the content change is
-     * announced and the kept tab order is rebuilt too.
+     * Clear the videos cache after a completed run, so archived or refreshed videos are not served from it.
+     * The public caches and the kept tab order are dropped by ContentValidationService, which announces the run.
      */
-    private void evictPublicContentCaches() {
+    private void clearVideosCache() {
         try {
-            publicContentCacheService.evictPublicContentCaches();
-            logger.debug("Evicted public content caches after validation");
-
             var videosCache = cacheManager.getCache(CacheConfig.CACHE_VIDEOS);
             if (videosCache != null) {
                 videosCache.clear();
@@ -343,7 +333,7 @@ public class VideoValidationScheduler {
             );
 
             if (ValidationRun.STATUS_COMPLETED.equals(result.getStatus())) {
-                evictPublicContentCaches();
+                clearVideosCache();
             }
 
             return true;
