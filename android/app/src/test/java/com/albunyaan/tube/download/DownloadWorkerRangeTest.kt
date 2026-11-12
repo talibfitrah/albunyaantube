@@ -537,6 +537,30 @@ class DownloadWorkerRangeTest {
         assertArrayEquals(audio, file.readBytes())
     }
 
+    @Test
+    fun `an audio-only save of a muxed-only video re-resolves once when itag 18 first 403s`() = runTest {
+        var refused = false
+        answer = { request ->
+            if (!refused) {
+                refused = true
+                MockResponse().setResponseCode(403)
+            } else googlevideo(request)
+        }
+        val audio = byteArrayOf(4, 2)
+        val merger = org.mockito.kotlin.mock<FFmpegMerger> {
+            onBlocking { extractAudio(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doAnswer { call ->
+                call.getArgument<File>(1).writeBytes(audio)
+            }
+        }
+
+        val result = runDownload(audioOnly = true, muxedOnly = true, merger = merger)
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        assertTrue("the retry uses the re-resolved URL", gets[1].path!!.endsWith("n=2"))
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertArrayEquals(audio, file.readBytes())
+    }
+
     // Round 4 (review m6): FFmpeg failing on the fallback ends in MERGE and leaves no temp behind.
     @Test
     fun `an FFmpeg failure on the audio fallback ends in MERGE with no temp left`() = runTest {

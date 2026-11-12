@@ -280,14 +280,8 @@ class DownloadWorker @AssistedInject constructor(
             )
         uploaderChannelId?.let { storage.saveChannelId(downloadId, it) }
 
-        // A muxed-only video (kids: ANDROID itag 18) has its "audio track" derived from the MP4 itself;
-        // saving that URL as-is would commit the whole 360p video as the audio copy.
-        if (audioOnly && resolvedStream is ResolvedStream.Progressive && resolvedStream.url == muxedFallbackUrl) {
-            return downloadMuxedFallback(resolvedStream.url, downloadId, title, audioOnly = true)
-        }
-
         return try {
-            executeDownload(resolvedStream, downloadId, title, audioOnly)
+            executeOrExtractAudio(resolvedStream, downloadId, title, audioOnly)
         } catch (e: IOException) {
             // An expired URL (403) or a chunk the server placed elsewhere: restart once from byte 0.
             if (!(e is DownloadHttpException && e.isForbidden) && e !is MisalignedRangeException) throw e
@@ -299,7 +293,7 @@ class DownloadWorker @AssistedInject constructor(
                     message = "Failed to re-resolve stream for $videoId after: ${e.message}"
                 )
             try {
-                executeDownload(freshStream, downloadId, title, audioOnly)
+                executeOrExtractAudio(freshStream, downloadId, title, audioOnly)
             } catch (again: DownloadHttpException) {
                 // A 403 that persists after a re-resolve (seen on made-for-kids videos, whose adaptive
                 // formats come only from the IOS client, with no PO token this app can mint).
@@ -333,6 +327,23 @@ class DownloadWorker @AssistedInject constructor(
             storage.discardTemp(muxedFile)
         }
     }
+
+    /**
+     * A muxed-only video (kids: ANDROID itag 18) has its "audio track" derived from the MP4 itself;
+     * saving that URL as-is would commit the whole 360p video as the audio copy. Routed through here
+     * so its first fetch gets the same re-resolve-once-on-403 as every other stream.
+     */
+    private suspend fun executeOrExtractAudio(
+        stream: ResolvedStream,
+        downloadId: String,
+        title: String,
+        audioOnly: Boolean,
+    ): File =
+        if (audioOnly && stream is ResolvedStream.Progressive && stream.url == muxedFallbackUrl) {
+            downloadMuxedFallback(stream.url, downloadId, title, audioOnly = true)
+        } else {
+            executeDownload(stream, downloadId, title, audioOnly)
+        }
 
     private suspend fun executeDownload(
         stream: ResolvedStream,
