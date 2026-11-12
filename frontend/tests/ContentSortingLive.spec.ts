@@ -42,13 +42,25 @@ vi.mock('@/services/liveChannels', async (importOriginal) => ({
   getLiveStatus: () => status.fn()
 }));
 
+// Shaped like the real windows: teleported to <body> as a .modal-overlay with a .close-btn. The channel window
+// opens a video preview (a role="dialog" overlay that, mounted already open, never takes focus) and a playlist
+// over itself, as ChannelDetailModal does.
 vi.mock('@/components/exclusions/ChannelDetailModal.vue', () => ({ default: {
   props: ['open', 'channelId', 'channelYoutubeId'], emits: ['close'],
-  template: '<div v-if="open" data-testid="channel-detail">{{ channelId }}|{{ channelYoutubeId }}<button @click="$emit(\'close\')">close-detail</button></div>'
+  data: () => ({ preview: false, nested: false }),
+  template: `<Teleport to="body">
+    <div v-if="open" class="modal-overlay" data-testid="channel-detail">{{ channelId }}|{{ channelYoutubeId }}
+      <button class="close-btn" @click="$emit('close')">close-detail</button>
+      <button @click="preview = true">open-preview</button><button @click="nested = true">open-playlist</button></div>
+    <div v-if="preview" class="modal-overlay" role="dialog" tabindex="-1" data-testid="video-preview" @keydown.escape="preview = false">
+      <button class="close-btn" @click="preview = false">close-preview</button></div>
+    <div v-if="nested" class="modal-overlay" data-testid="nested-playlist">
+      <button class="close-btn" @click="nested = false">close-playlist</button></div>
+  </Teleport>`
 } }));
 vi.mock('@/components/exclusions/PlaylistDetailModal.vue', () => ({ default: {
   props: ['open', 'playlistId', 'playlistYoutubeId'], emits: ['close'],
-  template: '<div v-if="open" data-testid="playlist-detail">{{ playlistId }}|{{ playlistYoutubeId }}<button @click="$emit(\'close\')">close-detail</button></div>'
+  template: '<Teleport to="body"><div v-if="open" class="modal-overlay" data-testid="playlist-detail">{{ playlistId }}|{{ playlistYoutubeId }}<button class="close-btn" @click="$emit(\'close\')">close-detail</button></div></Teleport>'
 } }));
 
 const ok = () => Promise.resolve({
@@ -399,6 +411,28 @@ describe('Content Sorting add-content: see a channel or playlist before adding i
     expect(screen.queryByTestId('channel-detail')).toBeNull();
     expect(screen.getByText('Add Content to Category')).toBeInTheDocument();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Some channel' }));
+  });
+
+  it('Escape with a video preview open over the detail closes only the preview (Cubic P2)', async () => {
+    await openPicker();
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+    await fireEvent.click(screen.getByText('open-preview'));
+
+    await fireEvent.keyDown(document.body, { key: 'Escape' }); // the preview never took focus
+
+    expect(screen.queryByTestId('video-preview')).toBeNull();
+    expect(screen.getByTestId('channel-detail')).toBeInTheDocument();
+  });
+
+  it('Escape in a playlist opened from the channel detail closes only that playlist', async () => {
+    await openPicker();
+    await fireEvent.click(screen.getByRole('button', { name: 'Some channel' }));
+    await fireEvent.click(screen.getByText('open-playlist'));
+
+    await fireEvent.keyDown(screen.getByText('close-playlist'), { key: 'Escape' });
+
+    expect(screen.queryByTestId('nested-playlist')).toBeNull();
+    expect(screen.getByTestId('channel-detail')).toBeInTheDocument();
   });
 
   it('the covered picker cannot be reached while the detail window is open', async () => {

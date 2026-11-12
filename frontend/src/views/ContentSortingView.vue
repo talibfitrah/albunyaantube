@@ -549,9 +549,15 @@ function closeDetail() {
  */
 function onDetailEscape(event: KeyboardEvent) {
   if (event.key !== 'Escape') return;
-  // A video preview opened from the detail closes itself on Escape (its overlay is the dialog).
+  // A video preview that holds focus closes itself on Escape (its overlay is the dialog).
   if ((event.target as Element | null)?.closest?.('.modal-overlay[role="dialog"]')) return;
-  closeDetail();
+  // Otherwise close the top window wherever focus is: the detail, or a preview or playlist it opened over itself
+  // (a preview mounted already open never takes focus). All are teleported to <body> after the picker, so the
+  // last overlay is the top one, and each closes from its .close-btn (openDetail focuses the same button).
+  const overlays = document.querySelectorAll<HTMLElement>('body > .modal-overlay:not(.modal-leave-active)');
+  const close = overlays[overlays.length - 1]?.querySelector<HTMLElement>('.close-btn');
+  if (close) close.click();
+  else closeDetail();
 }
 function setDetailOwnsKeyboard(owns: boolean) {
   for (const el of [document.getElementById('app'), addModalContainerRef.value]) el?.toggleAttribute('inert', owns);
