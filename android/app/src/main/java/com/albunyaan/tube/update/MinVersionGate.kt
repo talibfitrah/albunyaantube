@@ -101,9 +101,14 @@ private val configAdapter = Moshi.Builder().build().adapter<Map<String, Any?>>(
     Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java)
 )
 
-/** `minAppVersion` from the config body; null on any parse error, non-string or blank value. */
+private val dottedNumeric = Regex("""^\d+(\.\d+)*$""")
+
+/**
+ * `minAppVersion` from the config body, trimmed; null on any parse error, non-string value, or
+ * anything but dotted digits ("1.0.x" must not overwrite a good cached floor).
+ */
 internal fun parseMinAppVersion(body: String): String? = try {
-    (configAdapter.fromJson(body)?.get("minAppVersion") as? String)?.takeIf { it.isNotBlank() }
+    (configAdapter.fromJson(body)?.get("minAppVersion") as? String)?.trim()?.takeIf { dottedNumeric.matches(it) }
 } catch (e: Exception) {
     null
 }

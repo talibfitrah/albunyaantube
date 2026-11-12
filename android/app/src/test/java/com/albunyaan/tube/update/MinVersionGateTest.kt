@@ -91,6 +91,14 @@ class MinVersionGateTest {
         assertNull(parseMinAppVersion("""{ "minAppVersion": "  " }"""))
     }
 
+    @Test fun `non-numeric-dotted values parse to null, a trimmed one parses`() {
+        assertNull(parseMinAppVersion("""{ "minAppVersion": "abc" }"""))
+        assertNull(parseMinAppVersion("""{ "minAppVersion": "1.0.x" }"""))
+        assertNull(parseMinAppVersion("""{ "minAppVersion": "" }"""))
+        assertNull(parseMinAppVersion("""{ "minAppVersion": "1.0.7-beta" }"""))
+        assertEquals("1.0.7", parseMinAppVersion("""{ "minAppVersion": " 1.0.7 " }"""))
+    }
+
     // --- fetchAndDecide / decideFromCache ---
 
     @Test fun `200 with a higher floor caches it and decides required`() = runTest {
@@ -125,6 +133,15 @@ class MinVersionGateTest {
         server.enqueue(MockResponse().setResponseCode(500))
         assertTrue(gate().fetchAndDecide("1.0.6"))
         server.enqueue(MockResponse().setBody("garbage"))
+        assertTrue(gate().fetchAndDecide("1.0.6"))
+    }
+
+    @Test fun `malformed fetched value keeps a cached higher floor`() = runTest {
+        server.enqueue(MockResponse().setBody("""{ "minAppVersion": "1.0.7" }"""))
+        assertTrue(gate().fetchAndDecide("1.0.6"))
+        server.enqueue(MockResponse().setBody("""{ "minAppVersion": "abc" }"""))
+        assertTrue(gate().fetchAndDecide("1.0.6"))
+        server.enqueue(MockResponse().setBody("""{ "minAppVersion": "1.0.x" }"""))
         assertTrue(gate().fetchAndDecide("1.0.6"))
     }
 
