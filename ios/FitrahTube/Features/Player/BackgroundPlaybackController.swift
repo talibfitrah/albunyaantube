@@ -351,6 +351,7 @@ import UIKit
 
     private func track(_ skip: (() -> Void)?) -> MPRemoteCommandHandlerStatus {
         guard player != nil, let skip else { return .noSuchContent }
+        interrupted = false   // next/previous is the user's Play: it ends this player's hold (Cubic r3)
         skip()
         return .success
     }
