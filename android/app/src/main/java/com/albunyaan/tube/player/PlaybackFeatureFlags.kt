@@ -52,9 +52,7 @@ class PlaybackFeatureFlags @Inject constructor(
         // Preference keys for runtime overrides (null means use build-time default)
         // Made public for API consistency with clearOverride()
         const val KEY_MPD_PREFETCH = "mpd_prefetch"
-        const val KEY_IOS_FETCH = "ios_fetch"
         const val KEY_GENEROUS_CROP_BUDGET = "generous_crop_budget"
-        const val KEY_CLIENT_ROTATION = "client_rotation"
         const val KEY_PREDICTIVE_PREFETCH = "predictive_prefetch"
         const val KEY_SEGMENT_PRELOAD = "segment_preload"
         const val KEY_NEVER_FREEZE_ABR = "never_freeze_abr"
@@ -63,9 +61,7 @@ class PlaybackFeatureFlags @Inject constructor(
         /** Set of all valid override keys for validation */
         private val VALID_KEYS = setOf(
             KEY_MPD_PREFETCH,
-            KEY_IOS_FETCH,
             KEY_GENEROUS_CROP_BUDGET,
-            KEY_CLIENT_ROTATION,
             KEY_PREDICTIVE_PREFETCH,
             KEY_SEGMENT_PRELOAD,
             KEY_NEVER_FREEZE_ABR,
@@ -127,9 +123,7 @@ class PlaybackFeatureFlags @Inject constructor(
     private fun clearAllOverridesInternal() {
         prefs.edit()
             .remove(KEY_MPD_PREFETCH)
-            .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
-            .remove(KEY_CLIENT_ROTATION)
             .remove(KEY_PREDICTIVE_PREFETCH)
             .remove(KEY_SEGMENT_PRELOAD)
             .remove(KEY_NEVER_FREEZE_ABR)
@@ -149,17 +143,6 @@ class PlaybackFeatureFlags @Inject constructor(
         get() = resolveFlag(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH)
 
     /**
-     * Whether iOS client fetch is enabled in NewPipeExtractor.
-     *
-     * When enabled, uses iOS client fetch for better HLS manifest availability.
-     * Requires iOS User-Agent for HLS playback.
-     *
-     * Build-time default: [BuildConfig.ENABLE_NPE_IOS_FETCH]
-     */
-    val isIosFetchEnabled: Boolean
-        get() = resolveFlag(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH)
-
-    /**
      * Whether generous crop budget (20%) is used for fullscreen aspect ratio.
      *
      * When enabled, AspectPolicy uses [AspectPolicy.GENEROUS_CROP_BUDGET] (20%) instead
@@ -171,17 +154,6 @@ class PlaybackFeatureFlags @Inject constructor(
      */
     val isGenerousCropBudgetEnabled: Boolean
         get() = resolveFlag(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra())
-
-    /**
-     * Whether client-side rotation handling is enabled for the shorts player.
-     *
-     * When enabled, the shorts player manages orientation changes internally
-     * rather than relying on system rotation.
-     *
-     * Build-time default: [BuildConfig.ENABLE_CLIENT_ROTATION]
-     */
-    val isClientRotationEnabled: Boolean
-        get() = resolveFlag(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION)
 
     val isPredictivePrefetchEnabled: Boolean
         get() = resolveFlag(KEY_PREDICTIVE_PREFETCH, BuildConfig.ENABLE_PREDICTIVE_PREFETCH)
@@ -205,30 +177,12 @@ class PlaybackFeatureFlags @Inject constructor(
     }
 
     /**
-     * Set a runtime override for iOS fetch.
-     * @param enabled true to enable, false to disable, null to use build-time default
-     */
-    fun setIosFetchEnabled(enabled: Boolean?) {
-        setOverride(KEY_IOS_FETCH, enabled)
-        Log.i(TAG, "IOS_FETCH override set to: $enabled (effective: $isIosFetchEnabled)")
-    }
-
-    /**
      * Set a runtime override for generous crop budget.
      * @param enabled true to enable, false to disable, null to use device-based default
      */
     fun setGenerousCropBudgetEnabled(enabled: Boolean?) {
         setOverride(KEY_GENEROUS_CROP_BUDGET, enabled)
         Log.i(TAG, "GENEROUS_CROP_BUDGET override set to: $enabled (effective: $isGenerousCropBudgetEnabled)")
-    }
-
-    /**
-     * Set a runtime override for client rotation.
-     * @param enabled true to enable, false to disable, null to use build-time default
-     */
-    fun setClientRotationEnabled(enabled: Boolean?) {
-        setOverride(KEY_CLIENT_ROTATION, enabled)
-        Log.i(TAG, "CLIENT_ROTATION override set to: $enabled (effective: $isClientRotationEnabled)")
     }
 
     fun setPredictivePrefetchEnabled(enabled: Boolean?) {
@@ -268,9 +222,7 @@ class PlaybackFeatureFlags @Inject constructor(
     fun clearAllOverrides() {
         prefs.edit()
             .remove(KEY_MPD_PREFETCH)
-            .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
-            .remove(KEY_CLIENT_ROTATION)
             .remove(KEY_PREDICTIVE_PREFETCH)
             .remove(KEY_SEGMENT_PRELOAD)
             .remove(KEY_NEVER_FREEZE_ABR)
@@ -295,9 +247,7 @@ class PlaybackFeatureFlags @Inject constructor(
     fun getDiagnostics(): Map<String, FlagState> {
         return mapOf(
             KEY_MPD_PREFETCH to getFlagState(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH),
-            KEY_IOS_FETCH to getFlagState(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH),
             KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra()),
-            KEY_CLIENT_ROTATION to getFlagState(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION),
             KEY_PREDICTIVE_PREFETCH to getFlagState(KEY_PREDICTIVE_PREFETCH, BuildConfig.ENABLE_PREDICTIVE_PREFETCH),
             KEY_SEGMENT_PRELOAD to getFlagState(KEY_SEGMENT_PRELOAD, BuildConfig.ENABLE_SEGMENT_PRELOAD),
             KEY_NEVER_FREEZE_ABR to getFlagState(KEY_NEVER_FREEZE_ABR, BuildConfig.ENABLE_NEVER_FREEZE_ABR),

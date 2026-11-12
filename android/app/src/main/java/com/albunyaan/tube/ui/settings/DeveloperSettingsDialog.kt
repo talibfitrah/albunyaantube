@@ -108,17 +108,6 @@ class DeveloperSettingsDialog : DialogFragment() {
             featureFlags.setMpdPrefetchEnabled(if (enabled == BuildConfig.ENABLE_MPD_PREFETCH) null else enabled)
         }
 
-        addFeatureToggle(
-            contentView,
-            getString(R.string.dev_settings_ios_fetch_title),
-            getString(R.string.dev_settings_ios_fetch_desc),
-            featureFlags.isIosFetchEnabled,
-            BuildConfig.ENABLE_NPE_IOS_FETCH,
-            diagnostics["ios_fetch"]?.runtimeOverride
-        ) { enabled ->
-            featureFlags.setIosFetchEnabled(if (enabled == BuildConfig.ENABLE_NPE_IOS_FETCH) null else enabled)
-        }
-
         // Build default for generous crop is device-dependent (S25 Ultra = true, others = false).
         // Use diagnostics.buildDefault to get the true device-detected default, not the effective value.
         val cropBudgetDeviceDefault = diagnostics["generous_crop_budget"]?.buildDefault ?: false

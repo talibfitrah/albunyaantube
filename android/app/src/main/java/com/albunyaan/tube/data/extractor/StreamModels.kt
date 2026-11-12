@@ -186,7 +186,10 @@ enum class ExtractionClient {
      * produces it. Android UA.
      */
     ANDROID_VR,
-    /** NewPipe iOS client; iOS UA. */
+    /**
+     * Every NewPipe resolve (VISIONOS + ANDROID URLs); fetched with the iOS-app UA they were
+     * proven with, probe 2026-11-11. The NewPipe IOS client itself is off.
+     */
     NEWPIPE_IOS,
     /** NewPipe Android client; Android UA. */
     NEWPIPE_ANDROID;

@@ -19,13 +19,10 @@ object HttpConstants {
     /**
      * User-Agent for YouTube HLS stream requests (YouTube iOS app format).
      *
-     * When iOS client fetch is enabled (setFetchIosClient=true), HLS manifest URLs are returned
-     * by YouTube's iOS endpoint. These HLS segment URLs expect iOS-like headers.
-     * Using the YouTube iOS app User-Agent prevents HTTP 403 errors on HLS segment requests.
+     * Used for every NewPipe resolve (VISIONOS + ANDROID URLs); those URLs were proven with this
+     * UA, probe 2026-11-11. NewPipe's own IOS client is off.
      *
      * IMPORTANT: This is the YouTube iOS app UA (not iOS Safari browser).
-     * This matches NewPipeExtractor's iOS client version strings used in YoutubeStreamExtractor.
-     * The coupling is intentional: NPE iOS fetch returns URLs that expect this specific UA.
      *
      * @see org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor
      */

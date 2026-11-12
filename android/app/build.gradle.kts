@@ -123,16 +123,6 @@ android {
         val shareBaseUrl = localProperties.getProperty("share.base.url", "https://app.fitrahtube.com")
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
 
-        // PR6.2: iOS client fetch feature flag
-        // Enables NewPipeExtractor iOS client fetch for better HLS manifest availability.
-        // Default ON: the iOS client provides the full HD/4K adaptive ladder and now works once the
-        // WebView poToken is supplied (see WebViewPoTokenProvider.getIosClientPoToken). The android
-        // client is SABR-gutted to a single 360p muxed stream, so iOS must stay on. Disable only for
-        // debugging: npe.ios.fetch.enabled=false
-        // WARNING: Requires iOS User-Agent for HLS playback (configured in MultiQualityMediaSourceFactory)
-        val enableNpeIosFetch = localProperties.getProperty("npe.ios.fetch.enabled", "true").toBoolean()
-        buildConfigField("boolean", "ENABLE_NPE_IOS_FETCH", "$enableNpeIosFetch")
-
         // ===================================================================================
         // Playback reliability feature flags (Phases 1-5)
         // ===================================================================================
@@ -151,8 +141,6 @@ android {
         val enableMpdPrefetch = localProperties.getProperty("playback.mpd.prefetch.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_MPD_PREFETCH", "$enableMpdPrefetch")
 
-        val enableClientRotation = localProperties.getProperty("playback.client.rotation.enabled", "true").toBoolean()
-        buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "$enableClientRotation")
         // Predictive prefetch starts extraction when list cells attach so
         // tap-to-open is instant. OFF by default — turning it on with the
         // current controller fires for every visible cell, which on a
