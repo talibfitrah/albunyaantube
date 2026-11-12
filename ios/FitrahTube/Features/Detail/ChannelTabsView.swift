@@ -124,10 +124,6 @@ private struct ChannelListTab<Item: Sendable & Equatable, Skeleton: View, Rows: 
             if !fits, pending { triggerScrollLoadMore() } else { triggerAutoFill() }
         }
         .onChange(of: state().items.count) { _, _ in triggerAutoFill() }
-        .onChange(of: viewModel.query) { _, _ in
-            autofill.reset()
-            triggerAutoFill()
-        }
     }
 
     @ViewBuilder
@@ -193,10 +189,8 @@ private struct ChannelListTab<Item: Sendable & Equatable, Skeleton: View, Rows: 
             Task { await runLoadMore() }
         } else if let delay = attempt.recordAppend(accepted: false, at: now) {
             autofill = attempt
-            let generation = attempt.generation
             Task {
                 try? await Task.sleep(for: .seconds(delay))
-                guard autofill.generation == generation else { return }
                 autofill.recheckFired()
                 triggerAutoFill()
             }
@@ -224,7 +218,7 @@ private struct ChannelVideoTab: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        ChannelListTab(viewModel: viewModel, tab: tab, state: { viewModel.visible(tab) }) {
+        ChannelListTab(viewModel: viewModel, tab: tab, state: { viewModel[tab] }) {
             if tab.skeletonKind == .shortsGrid {
                 SkeletonShorts(columns: shortsColumns, rows: 2)
             } else {
@@ -300,7 +294,7 @@ private struct ChannelPlaylistsTab: View {
     @Environment(\.widthClass) private var widthClass
 
     var body: some View {
-        ChannelListTab(viewModel: viewModel, tab: .playlists, state: { viewModel.visiblePlaylists }) {
+        ChannelListTab(viewModel: viewModel, tab: .playlists, state: { viewModel.playlists }) {
             SkeletonListView().padding(Spacing.md(widthClass))
         } rows: { tiles, nearEnd in
             LazyVStack(spacing: 0) {
@@ -351,7 +345,7 @@ private struct ChannelAboutTab: View {
 
 private enum ChannelTabStates {
     static func empty(key: String, widthClass: WidthClass) -> some View {
-        EmptyStateView(systemImage: key == "search_no_results" ? "magnifyingglass" : "tray",
+        EmptyStateView(systemImage: "tray",
                        message: String(localized: String.LocalizationValue(key)))
             .padding(.top, Spacing.lg(widthClass))
     }

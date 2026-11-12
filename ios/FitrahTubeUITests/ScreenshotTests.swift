@@ -1644,15 +1644,6 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    private func typeSearch(_ app: XCUIApplication, _ text: String) {
-        let field = app.textFields.firstMatch
-        field.tap()
-        if let current = field.value as? String, !current.isEmpty, current != "Search…" {
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
-        }
-        field.typeText(text)
-    }
-
     /// Swipes the paged tab body (below the strip, above the tab bar) -- not the strip itself.
     private func swipeTabs(_ app: XCUIApplication, left: Bool) {
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.85 : 0.15, dy: 0.7))
@@ -1713,9 +1704,9 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// iPhone leg. Channel: header, five tabs, strip metrics, swipe, per-tab bodies, selection
-    /// surviving rotation, search + `search_no_results`, Subscribe flip + the cap, autofill + Load
+    /// surviving rotation, the search button, Subscribe flip + the cap, autofill + Load
     /// more, the footer error, empty copy, degraded mode, 410. Playlist: hero, three cells (no
-    /// Download), 1-based positions across page 2, search, Save/Saved, Play All / Shuffle / row
+    /// Download), 1-based positions across page 2, the search button, Save/Saved, Play All / Shuffle / row
     /// tap into the player, kebab Share/Report, the report sheet's rules, 201 and 429. Then ar-dark,
     /// en-dark, ar-light and `.accessibility3`. Notes go to `c-task6-iphone-measurements.txt`.
     func testDetailCTask6IPhone() throws {
@@ -1810,23 +1801,12 @@ final class ScreenshotTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         settle(app, landscape: false)
 
-        // -- C. Search: per-tab filter, About ignores it, zero matches -> search_no_results.
+        // -- C. Search: the header carries Home's magnifier (global search), not a local filter.
         app.buttons["channel.tab.videos"].tap()
         XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForExistence(timeout: 10))
-        typeSearch(app, "Video 3")
-        XCTAssertTrue(any(app, "channel.videos.row.video-0-3").waitForExistence(timeout: 10), "c6 search: the match never appeared")
-        XCTAssertTrue(any(app, "channel.videos.row.video-0-0").waitForNonExistence(timeout: 5), "c6 search: non-matching rows must go")
-        XCTAssertFalse(app.buttons["listFooter.loadMore"].exists, "c6 search: no Load more while filtered")
-        notes.append("iphone-en search 'Video 3': rows=\(ids(app, prefix: "channel.videos.row.").map { $0.identifier })")
-        try write(named: "detail-c6-iphone-en-light-channel-search-match", into: directory)
-        typeSearch(app, "zzz")
-        let noResults = app.staticTexts["No results found"]
-        XCTAssertTrue(noResults.waitForExistence(timeout: 10), "c6 search: zero matches must show search_no_results")
-        try write(named: "detail-c6-iphone-en-light-channel-search-none", into: directory)
-        app.buttons["channel.tab.live"].tap()
-        XCTAssertTrue(noResults.waitForExistence(timeout: 10), "c6 search: the filter is per tab (Live has no 'zzz' either)")
-        app.buttons["channel.tab.about"].tap()
-        XCTAssertTrue(aboutSubs.waitForExistence(timeout: 10), "c6 search: About must ignore the query")
+        XCTAssertTrue(app.buttons["Search"].firstMatch.waitForExistence(timeout: 10), "c6 search: the header must show Home's search button")
+        XCTAssertTrue(app.textFields.firstMatch.exists == false, "c6 search: no local filter field")
+        try write(named: "detail-c6-iphone-en-light-channel-search-button", into: directory)
 
         // -- D. Subscribe cap: 30 seeded, the 31st shows me_subscription_cap_reached.
         app = launch(channelScreen(["-fitrah-seed-subscriptions"]), locale: en, extraArguments: [])
@@ -1907,7 +1887,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// iPhone leg, playlist + report: hero, three cells (no Download), 1-based positions across
-    /// page 2, search, Save/Saved, Play All / Shuffle / row tap into the player, the kebab, the
+    /// page 2, the search button, Save/Saved, Play All / Shuffle / row tap into the player, the kebab, the
     /// report sheet's rules, 201 and 429. Split from the channel leg so each run stays inside a
     /// foreground watchdog. Notes append to `c-task6-iphone-measurements.txt`.
     func testDetailCTask6IPhonePlaylist() throws {
@@ -1917,7 +1897,7 @@ final class ScreenshotTests: XCTestCase {
         var app: XCUIApplication
         XCUIDevice.shared.orientation = .portrait
 
-        // -- I. Playlist, en light: hero, three cells, positions, Save, page 2, search.
+        // -- I. Playlist, en light: hero, three cells, positions, Save, page 2, the search button.
         app = launch(playlistScreen(), locale: en, extraArguments: [])
         let pTitle = app.staticTexts["playlist.title"]
         XCTAssertTrue(pTitle.waitForExistence(timeout: 20), "c6 playlist: title never appeared")
@@ -1951,13 +1931,9 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(any(app, "playlist.row.13").exists, "c6 playlist: page 2 must continue the 1-based positions")
         try write(named: "detail-c6-iphone-en-light-playlist-page2", into: directory)
         app.swipeDown(); app.swipeDown(); app.swipeDown(); app.swipeDown()
-        typeSearch(app, "Item 3")
-        XCTAssertTrue(any(app, "playlist.row.4").waitForExistence(timeout: 10), "c6 playlist search: Item 3 is position 4")
-        XCTAssertFalse(any(app, "playlist.row.1").exists, "c6 playlist search: non-matching rows must go")
-        try write(named: "detail-c6-iphone-en-light-playlist-search-match", into: directory)
-        typeSearch(app, "zzz")
-        XCTAssertTrue(app.staticTexts["No results found"].waitForExistence(timeout: 10), "c6 playlist search: zero matches -> search_no_results (ruling 46)")
-        try write(named: "detail-c6-iphone-en-light-playlist-search-none", into: directory)
+        XCTAssertTrue(app.buttons["Search"].firstMatch.waitForExistence(timeout: 10), "c6 playlist: the header must show Home's search button")
+        XCTAssertTrue(app.textFields.firstMatch.exists == false, "c6 playlist: no local filter field")
+        try write(named: "detail-c6-iphone-en-light-playlist-search-button", into: directory)
         app = launch(playlistScreen(["-fitrah-fake-browse-pages", "1", "0"]), locale: en, extraArguments: [])
         XCTAssertTrue(app.staticTexts["This playlist has no videos yet"].waitForExistence(timeout: 20), "c6 playlist: playlist_empty_state")
         XCTAssertFalse(app.buttons["playlist.playAll"].isEnabled, "c6 empty playlist: Play All disabled")

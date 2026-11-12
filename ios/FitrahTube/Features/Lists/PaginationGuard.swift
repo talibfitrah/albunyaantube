@@ -16,12 +16,12 @@ nonisolated struct PaginationGuard: Sendable {
     /// (wave-3 D1) covers same-ViewModel supersession only, and misses both of these:
     ///  - `HomeView` *replaces* its ViewModel on a filter change, and the orphaned old one's
     ///    generation never moves, so its late `loadMore()` still answers `true`;
-    ///  - a view that resets the guard the instant a filter/query changes (`PlaylistDetailScreen`) can
-    ///    outrun the ViewModel, whose generation only bumps once the reload actually starts.
+    ///  - a view that resets the guard the instant a filter changes can outrun the ViewModel, whose
+    ///    generation only bumps once the reload actually starts.
     /// Bumped by `reset()` alone, so a copy taken before a reset is refused at commit time.
     private(set) var generation = 0
 
-    /// External reset -- search/filter change, pull-to-refresh, ViewModel replacement (Android's
+    /// External reset -- filter change, pull-to-refresh, ViewModel replacement (Android's
     /// explicit `reset()` call sites). Invalidates any attempt copy taken before it.
     mutating func reset() {
         let next = generation + 1

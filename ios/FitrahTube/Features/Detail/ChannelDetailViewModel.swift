@@ -34,7 +34,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
 }
 
 /// Android's `ChannelDetailViewModel.kt` over `BrowseSource`: header + Videos in parallel on open,
-/// the other tabs lazily on first selection, in-header search per tab, the Subscribe toggle.
+/// the other tabs lazily on first selection, the Subscribe toggle.
 @MainActor @Observable final class ChannelDetailViewModel {
     nonisolated struct AboutRow: Equatable, Sendable {
         let key: String
@@ -49,7 +49,6 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
     private(set) var shorts: TabState<VideoItem> = .idle
     private(set) var playlists: TabState<PlaylistTile> = .idle
     var selectedTab: ChannelTabKind = .videos
-    var query = ""
     private(set) var isSubscribed = false
     /// Task 30 (fork F14): an IMPORTED channel an admin has not reviewed yet.
     ///
@@ -99,15 +98,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
         [AboutRow(key: "subscribers", text: subscriberLine(for: header.subscriberCount, locale: locale))]
     }
 
-    /// The search-filtered view of a video tab (About has nothing to filter; Playlists is
-    /// `visiblePlaylists`). Filtered states carry no continuation, so no trigger fires mid-search.
-    func visible(_ tab: ChannelTabKind) -> TabState<VideoItem> {
-        self[tab].filtered(query: query)
-    }
-
-    var visiblePlaylists: TabState<PlaylistTile> { playlists.filtered(query: query) }
-
-    private subscript(tab: ChannelTabKind) -> TabState<VideoItem> {
+    private(set) subscript(tab: ChannelTabKind) -> TabState<VideoItem> {
         get {
             switch tab {
             case .videos: videos
@@ -198,7 +189,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
     /// Next page from the surviving cursor; false when nothing started (`ChannelTabAutofill`'s commit contract).
     func loadMore(_ tab: ChannelTabKind) async -> Bool {
         if tab == .playlists {
-            guard let c = visiblePlaylists.continuation, !playlists.isAppending else { return false }
+            guard let c = playlists.continuation, !playlists.isAppending else { return false }
             let current = playlists.items
             playlists = .loaded(items: current, continuation: c, isAppending: true, showsLoadMore: false)
             let g = bump(tab)
@@ -213,7 +204,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
             isDegraded = await browse.isDegraded()   // Cubic #14: the latch can trip on a page fetch too
             return true
         }
-        guard let c = visible(tab).continuation, !self[tab].isAppending else { return false }
+        guard let c = self[tab].continuation, !self[tab].isAppending else { return false }
         let current = self[tab].items
         self[tab] = .loaded(items: current, continuation: c, isAppending: true, showsLoadMore: false)
         let g = bump(tab)

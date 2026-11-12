@@ -12,7 +12,7 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
 }
 
 /// Android's `PlaylistDetailViewModel.kt` over `BrowseSource.playlistItems` -- one `TabState`, the
-/// in-header search over loaded items, the Save toggle, and the B5 launch contract's three call
+/// the Save toggle, and the B5 launch contract's three call
 /// sites (`playAllArgs(shuffled:)` ×2, `playerArgs(forRowAt:)`).
 @MainActor @Observable final class PlaylistDetailViewModel {
     nonisolated struct Row: Identifiable, Sendable {
@@ -29,7 +29,6 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
     let category: String?
     private(set) var header: PlaylistHeader
     private(set) var items: TabState<VideoItem> = .idle
-    var query = ""
     private(set) var isSaved = false
     /// RULING 14/15: the gate answered 410. Terminal -- no Retry, the catalog pulled this playlist.
     private(set) var isUnavailable = false
@@ -56,24 +55,8 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
 
     // MARK: - Derived
 
-    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    /// What the list renders: the loaded state, or its search-filtered view (no continuation while
-    /// filtering, so neither trigger fires mid-search -- `PlaylistDetailFragment.kt:326-346`).
-    /// Derived from `rows` -- the one filter pass -- so a zero-match search is
-    /// `.empty("search_no_results")` (RULING 5) and `.loaded` never carries `[]` (CF-C-7).
-    var visible: TabState<VideoItem> {
-        guard !trimmedQuery.isEmpty, !items.items.isEmpty else { return items }
-        let hits = rows.map(\.item)
-        guard !hits.isEmpty else { return .empty(messageKey: "search_no_results") }
-        return .loaded(items: hits, continuation: nil, isAppending: false, showsLoadMore: false)
-    }
-
     var rows: [Row] {
-        let trimmed = trimmedQuery
-        return items.items.enumerated().compactMap { index, item in
-            trimmed.isEmpty || SearchFilter.matches(item, trimmed) ? Row(index: index, item: item) : nil
-        }
+        items.items.enumerated().map { Row(index: $0, item: $1) }
     }
 
     var canRetry: Bool { !isUnavailable }
@@ -124,7 +107,7 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
     /// Next page from the surviving cursor. Returns whether a fetch actually started (the
     /// `PaginationGuard` commit contract `ContentListView` uses).
     func loadMore() async -> Bool {
-        guard let continuation = visible.continuation, !items.isAppending else { return false }
+        guard let continuation = items.continuation, !items.isAppending else { return false }
         let current = items.items
         items = .loaded(items: current, continuation: continuation, isAppending: true, showsLoadMore: false)
         generation += 1
@@ -164,7 +147,7 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
         args.targetVideoId = target
         if !items.items.isEmpty {
             args.queueItems = items.items.map { ContentItem(video: $0) }   // the queue source's own mapping (PlayerQueue.swift:130)
-            args.queueContinuation = items.continuation                    // `items`, never `visible`: filtering nils it
+            args.queueContinuation = items.continuation
         }
         return args
     }

@@ -2,7 +2,7 @@ import InnerTubeKit
 import SwiftUI
 
 /// Android's `PlaylistDetailFragment` (`fragment_playlist_detail.xml`): hero, three-cell action bar
-/// (rulings 28/56 delete Download), in-header search, the positioned list with `ListFooter`, the
+/// (rulings 28/56 delete Download), the search button, the positioned list with `ListFooter`, the
 /// kebab. Pagination is Phase 1's `PaginationGuard`, wired exactly as `ContentListView` wires it
 /// (ruling 55; reconciliation note 2 -- NOT `ChannelTabAutofill`).
 struct PlaylistDetailScreen: View {
@@ -31,7 +31,11 @@ struct PlaylistDetailScreen: View {
             VStack(spacing: 0) {
                 titleBlock
                 actionBar
-                SearchField(text: queryBinding, accessibilityLabel: String(localized: "cd_search_icon"))
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    SearchButton()
+                }
+                .padding(.horizontal, Spacing.md(widthClass))
                 listBody
             }
         }
@@ -49,10 +53,6 @@ struct PlaylistDetailScreen: View {
         }
         .transientBanner($banner)
         .onChange(of: viewModel?.items) { _, _ in triggerAutoFill() }
-        .onChange(of: queryBinding.wrappedValue) { _, _ in
-            paginationGuard.reset()
-            triggerAutoFill()
-        }
         .task {
             if viewModel == nil {
                 viewModel = PlaylistDetailViewModel(playlistId: id, title: title, category: category, count: count,
@@ -164,12 +164,12 @@ struct PlaylistDetailScreen: View {
     @ViewBuilder
     private var listBody: some View {
         if let viewModel {
-            let state = viewModel.visible
+            let state = viewModel.items
             switch state {
             case .idle, .loadingInitial:
                 SkeletonListView()
             case .empty(let key):
-                EmptyStateView(systemImage: key == "search_no_results" ? "magnifyingglass" : "list.bullet.rectangle",
+                EmptyStateView(systemImage: "list.bullet.rectangle",
                                message: String(localized: String.LocalizationValue(key)))
                     .padding(.top, Spacing.lg(widthClass))
             case .errorInitial(let key):
@@ -227,19 +227,15 @@ struct PlaylistDetailScreen: View {
 
     // MARK: - Pagination (ContentListView.swift:570-618, verbatim wiring)
 
-    private var queryBinding: Binding<String> {
-        Binding(get: { viewModel?.query ?? "" }, set: { viewModel?.query = $0 })
-    }
-
     private func triggerScrollLoadMore() {
-        guard let viewModel, viewModel.visible.continuation != nil, !isLoadingMore else { return }
+        guard let viewModel, viewModel.items.continuation != nil, !isLoadingMore else { return }
         isLoadingMore = true
         Task { await runLoadMore() }
     }
 
     private func triggerAutoFill() {
         guard !isLoadingMore, let viewModel else { return }
-        let state = viewModel.visible
+        let state = viewModel.items
         var paginationError = false
         if case .errorAppend = state { paginationError = true }
         var attempt = paginationGuard

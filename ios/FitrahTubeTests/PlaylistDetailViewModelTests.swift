@@ -201,7 +201,7 @@ struct PlaylistDetailViewModelTests {
         source.gate = gate
         let task = Task { await vm.loadMore() }
         while !vm.items.isAppending { await Task.yield() }
-        #expect(vm.visible.isAppending)
+        #expect(vm.items.isAppending)
         gate.release()
         #expect(await task.value)
         #expect(vm.items.isAppending == false)
@@ -284,18 +284,6 @@ struct PlaylistDetailViewModelTests {
         #expect(args.queueContinuation == "1")
     }
 
-    /// `items`, never `visible`: filtering nils `visible`'s continuation and hides rows.
-    @Test func aFilteredRowTapStillSeedsTheWholeListAndItsToken() async {
-        let vm = makeVM()
-        await vm.load()
-        vm.query = "Item 3"
-        #expect(vm.rows.count == 1)
-        let args = vm.playerArgs(for: vm.rows[0])
-        #expect(args.queueItems?.map(\.id) == ["0-0", "0-1", "0-2", "0-3", "0-4"])
-        #expect(args.queueContinuation == "1")
-        #expect(args.startIndex == 3)
-    }
-
     @Test func playAllSeedsTheLoadedRows() async {
         let vm = makeVM()
         await vm.load()
@@ -317,30 +305,6 @@ struct PlaylistDetailViewModelTests {
         #expect(args?.queueContinuation == nil)
         gate.release()
         await reload.value
-    }
-
-    // MARK: - Search
-
-    @Test func searchFiltersLoadedItemsAndSuppressesPagination() async {
-        // PlaylistDetailFragment.kt:326-346 -- and RULING 46's distinct copy for zero matches, which
-        // Android does not have (its empty_state is never configured at all, :427-433).
-        let vm = makeVM()
-        await vm.load()
-        vm.query = "zzz"
-        #expect(vm.visible.emptyMessageKey == "search_no_results")
-        #expect(vm.rows.isEmpty)
-        vm.query = "Item 3"
-        #expect(vm.rows.map(\.position) == [4])
-        #expect(vm.visible.continuation == nil)
-        #expect(await vm.loadMore() == false)
-        vm.query = ""
-        #expect(vm.visible.continuation == "1")
-        let source = FakeSource()
-        source.perPage = 0
-        source.pages = 1
-        let empty = makeVM(source: source)
-        await empty.load()
-        #expect(empty.visible.emptyMessageKey == "playlist_empty_state")
     }
 
     // MARK: - Header + copy

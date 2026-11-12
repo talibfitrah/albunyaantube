@@ -288,27 +288,6 @@ struct ChannelDetailViewModelTests {
         #expect(args.channelAvatarURL == URL(string: "https://x/avatar.jpg"))
     }
 
-    // MARK: - Search
-
-    @Test func searchFiltersEachTabIndependentlyAndLeavesAboutAlone() async {
-        // brief 5.4
-        let vm = makeVM()
-        await vm.load()
-        await vm.ensureTabLoaded(.live)
-        await vm.ensureTabLoaded(.playlists)
-        vm.query = "Live 3"
-        #expect(vm.visible(.live).items.map(\.id) == ["live-0-3"])
-        #expect(vm.visible(.videos).emptyMessageKey == "search_no_results")
-        #expect(vm.visiblePlaylists.emptyMessageKey == "search_no_results")
-        #expect(vm.visible(.live).continuation == nil)
-        #expect(await vm.loadMore(.live) == false)
-        #expect(vm.aboutRows(locale: Locale(identifier: "en")).count == 1)   // About never filters
-        vm.query = "playlist 1"
-        #expect(vm.visiblePlaylists.items.map(\.id) == ["PL1"])
-        vm.query = ""
-        #expect(vm.visible(.videos).continuation == "1")
-    }
-
     // MARK: - Pagination
 
     @Test func loadMoreAppendsAndAnAppendFailureKeepsTheItems() async {

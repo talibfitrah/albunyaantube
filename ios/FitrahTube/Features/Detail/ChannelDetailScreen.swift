@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Android's `ChannelDetailFragment` (`fragment_channel_detail.xml`): banner + avatar header,
-/// subscriber line, Subscribe, in-header search, then `ChannelTabsView`. Ruling F: the header
+/// subscriber line, Subscribe, the search button, then `ChannelTabsView`. Ruling F: the header
 /// PINS above the paged tabs (a per-tab scroll inside an outer scroll never collapses); the strip
 /// and the swipe are the non-negotiable half of ruling 9.
 struct ChannelDetailScreen: View {
@@ -66,7 +66,7 @@ struct ChannelDetailScreen: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             // C T6 finding: the header pins (ruling F), so at compact height (iPhone landscape) the
             // banner + avatar block alone pushed the strip under the tab bar and left the tab body
-            // with no height at all. Drop that block there; name, Subscribe, search and the strip stay.
+            // with no height at all. Drop that block there; name, Subscribe, the search button and the strip stay.
             if verticalSizeClass != .compact {
                 ZStack(alignment: .bottomLeading) {
                     ZStack {
@@ -107,8 +107,11 @@ struct ChannelDetailScreen: View {
                     .accessibilityIdentifier("channel.degradedNotice")
             }
 
-            SearchField(text: Binding(get: { viewModel.query }, set: { viewModel.query = $0 }),
-                        accessibilityLabel: String(localized: "cd_search_icon"))
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                SearchButton()
+            }
+            .padding(.horizontal, Spacing.md(widthClass))
         }
         .padding(.bottom, Spacing.sm)
     }

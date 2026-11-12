@@ -106,42 +106,7 @@ struct ChannelTabPaginationTests {
         #expect(r12)
     }
 
-    @Test func resetBumpsTheGenerationSoAStaleCopyIsRefused() {
-        // Same discipline as PaginationGuard (gate wave-4 V1/V6): a copy taken before a search-change
-        // reset must not be committed after it.
-        var a = ChannelTabAutofill()
-        let copy = a
-        a.reset()
-        #expect(copy.generation != a.generation)
-        #expect(a.showsLoadMore == false)
-    }
-
     // MARK: - TabState
-
-    @Test func searchDisablesPaginationByDroppingTheCursor() {
-        // BaseChannelListTabFragment.kt:269-294 / PlaylistDetailFragment.kt:336 -- the filtered Loaded
-        // state carries nextPage = nil, so the near-end trigger cannot fire mid-search.
-        let items = Self.videos(3)
-        let filtered = TabState.loaded(items: items, continuation: "TOKEN", isAppending: false, showsLoadMore: true)
-            .filtered(query: "lecture")
-        #expect(filtered.continuation == nil)
-        #expect(filtered.items.count == 3)
-        #expect(filtered == .loaded(items: items, continuation: nil, isAppending: false, showsLoadMore: false))
-    }
-
-    @Test func anEmptyQueryLeavesTheStateUntouched() {
-        let state = TabState.loaded(items: Self.videos(2), continuation: "TOKEN", isAppending: false, showsLoadMore: true)
-        #expect(state.filtered(query: "   ") == state)
-    }
-
-    @Test func zeroMatchesRendersTheSearchNoResultsCopyNotTheTabsEmptyCopy() {
-        // RULING 5, fixing Android defect 6 (brief 5.4): Android shows "This channel has no videos yet"
-        // when a search matches nothing, which is a lie about the channel.
-        let loaded = TabState.loaded(items: Self.videos(3), continuation: "TOKEN", isAppending: false, showsLoadMore: false)
-        #expect(loaded.filtered(query: "zzzz").emptyMessageKey == "search_no_results")
-        #expect(TabState<VideoItem>.empty(messageKey: "channel_videos_empty").emptyMessageKey == "channel_videos_empty")
-        #expect(loaded.emptyMessageKey == nil)
-    }
 
     @Test func appendFailureKeepsTheItemsAndTheCursor() {
         // ChannelDetailViewModel.kt:951-979 -- an append error must never blank a populated list.
@@ -151,26 +116,5 @@ struct ChannelTabPaginationTests {
         #expect(state == .errorAppend(messageKey: "load_more_error", items: items, continuation: "TOKEN", showsLoadMore: false))
         #expect(state.items == items)
         #expect(state.continuation == "TOKEN")
-        // ...and a search over the failed state still filters the items it kept.
-        #expect(state.filtered(query: "Lecture 4").items.map(\.id) == ["v4"])
-    }
-
-    // MARK: - SearchFilter
-
-    @Test func searchIsTrimmedCaseAndDiacriticInsensitiveOverTitleOrChannel() {
-        let items = [
-            VideoItem(id: "a", title: "Tafsīr of Sūrah al-Fātiḥah", channelName: "Masjid"),
-            VideoItem(id: "b", title: "Friday khutbah", channelName: "Madīnah Lectures"),
-            VideoItem(id: "c", title: "Seerah part 3", channelName: nil),
-        ]
-        #expect(SearchFilter.apply(items, query: "  TAFSIR ").map(\.id) == ["a"])
-        #expect(SearchFilter.apply(items, query: "madinah").map(\.id) == ["b"])
-        #expect(SearchFilter.apply(items, query: "").map(\.id) == ["a", "b", "c"])
-        let tiles = [PlaylistTile(id: "p", title: "Ramadān series", channelName: "Masjid")]
-        #expect(SearchFilter.apply(tiles, query: "ramadan").map(\.id) == ["p"])
-        #expect(SearchFilter.apply(tiles, query: "nothing").isEmpty)
-        // Arabic harakat are combining marks: a bare query must match a vowelled title.
-        let arabic = [VideoItem(id: "q", title: "تفسير القُرْآن", channelName: nil)]
-        #expect(SearchFilter.apply(arabic, query: "القرآن").map(\.id) == ["q"])
     }
 }
