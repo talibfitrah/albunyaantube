@@ -696,8 +696,9 @@ extension StreamState {
     /// The lock screen's next/previous (`PlayerHostView.trackSkip`): the neighbour `offset` away, without the loading
     /// card. One that does not play is passed over in the same direction, at most `AutoSkipPolicy`'s 3 as an
     /// auto-advance, while the outgoing lecture plays on: a state with nothing playable dismantles the host, and with it
-    /// the audio session and the lock screen's controls. The last try applies what it gets, so with nothing playable
-    /// past it the failure shows its card; so does a cooldown, the limiter's answer for any lecture.
+    /// the audio session and the lock screen's controls. Only a lecture that is not available is passed over; the last
+    /// try applies what it gets, so with nothing playable past it its card shows. A cooldown or an error (offline, a
+    /// blip) is no answer about the lecture: it shows on the one pressed to, whose Retry plays it.
     /// ponytail: the loaded queue only -- a failing last loaded lecture shows its card while a next page is out.
     func skip(by offset: Int) async {
         var skipped = 0
@@ -1841,13 +1842,11 @@ extension StreamState {
             if let miss = liveMiss, miss.generation == generation - 1 { liveMiss = (generation, miss.trigger) }
             return
         }
-        // A lock-screen skip passing over a lecture that does not play keeps the outgoing one on screen (`skip(by:)`); a
-        // cooldown is applied, as walking on would only ask the limiter again.
-        if holdFailure, !result.isPlayable {
-            if case .cooldown = result {} else {
-                heldGeneration = generation
-                return
-            }
+        // A lock-screen skip passing over a lecture that does not play keeps the outgoing one on screen (`skip(by:)`). Only
+        // the lecture's own answer: a cooldown or an `.error` (offline, a blip) says nothing about it, and shows.
+        if holdFailure, result == .contentUnavailable {
+            heldGeneration = generation
+            return
         }
         // §9.3(a): a proactive refresh of a live stream only ever replaces it with a stream that is still live now.
         if silent, state.isLiveNow, !result.isLiveNow { return }

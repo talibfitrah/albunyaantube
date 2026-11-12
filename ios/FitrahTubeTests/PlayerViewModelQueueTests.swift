@@ -394,6 +394,18 @@ struct PlayerViewModelQueueTests {
         #expect(!resolver.calls.contains { $0.videoId == "c" && $0.kind == .player })
     }
 
+    /// Cubic + Codex P2: a transport failure (offline, a blip) says nothing about the lecture. It shows on the lecture
+    /// pressed to, whose Retry then plays it, instead of walking the list past lectures that would play.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenSkipStopsOnATransientFailure() async throws {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        resolver.outcomes = ["b": .failure(.transport("offline"))]
+        try await pressTrack(vm, by: 1, from: "a")
+        #expect(vm.args.videoId == "b")
+        #expect(vm.state == .error(messageKey: "player_error_message"))
+        #expect(!resolver.calls.contains { $0.videoId == "c" && $0.kind == .player })
+    }
+
     /// Codex P2: the same lecture again further down the list, and it does not play this time: the outgoing play keeps
     /// its place, and the skip goes on past it.
     @Test(.timeLimit(.minutes(1))) func aLockScreenSkipPassesOverAFailingRepeatOfTheLectureOnScreen() async throws {
