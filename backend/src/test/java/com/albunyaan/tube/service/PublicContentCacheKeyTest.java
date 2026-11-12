@@ -31,7 +31,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -184,8 +183,6 @@ class PublicContentCacheKeyTest {
     @Test
     void contentWithCategoryNullNeverBlanksTheUnfilteredTab() throws Exception {
         tabOrderHoldsOneVideo();
-        when(videos.findApprovedByCategoryAndUploadedAtDescWithCursor(eq("null"), anyInt(), isNull()))
-                .thenReturn(new VideoRepository.PaginatedResult<>(List.of(), null, false));
 
         assertTrue(service.getContent("VIDEOS", null, 20, "null", null, null, null).getData().isEmpty(), "precondition");
 
@@ -193,13 +190,14 @@ class PublicContentCacheKeyTest {
     }
 
     @Test
-    void contentWithSortNullNeverReplacesTheUnsortedTab() throws Exception {
-        // sort=null takes the legacy path (empty here), whose page must not answer the unsorted request.
+    void aCursorThatEndsAFilteredListNeverBlanksItsFirstPage() throws Exception {
+        // "0" is not an offset cursor, so the list ends; the first page's cache key is also "0" (cacheCursorKey).
         tabOrderHoldsOneVideo();
 
-        assertTrue(service.getContent("VIDEOS", null, 20, null, null, null, "null").getData().isEmpty(), "precondition");
+        assertTrue(service.getContent("VIDEOS", "0", 20, null, "SHORT", null, "MOST_POPULAR").getData().isEmpty(),
+                "precondition");
 
-        assertEquals(1, service.getContent("VIDEOS", null, 20, null, null, null, null).getData().size());
+        assertEquals(1, service.getContent("VIDEOS", null, 20, null, "SHORT", null, "MOST_POPULAR").getData().size());
     }
 
     @Test

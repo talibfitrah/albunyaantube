@@ -45,14 +45,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** The no-filter CHANNELS / PLAYLISTS / VIDEOS tabs walk the categories in Content Sorting order. */
+/** The CHANNELS / PLAYLISTS / VIDEOS tabs walk the categories in Content Sorting order; filters read that kept order. */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class PublicContentServiceTabOrderTest {
@@ -142,18 +141,20 @@ class PublicContentServiceTabOrderTest {
             assertNull(page.getPageInfo().getNextCursor(), old);
         }
     }
-    @Test void videoFiltersCategoriesAndExplicitSortKeepTheirPaths() throws Exception {
-        when(videoRepository.findApprovedByUploadedAtDescWithCursor(eq(4), isNull()))
-                .thenReturn(new VideoRepository.PaginatedResult<>(List.of(), null, false));
-        when(channelRepository.findApprovedByCategoryAndSubscribersDescWithCursor(eq("c2"), eq(4), isNull()))
-                .thenReturn(new ChannelRepository.PaginatedResult<>(List.of(), null, false));
-        service.getContent("VIDEOS", null, 4, null, null, null, "NEWEST");
-        service.getContent("VIDEOS", null, 4, null, "SHORT", null, null);
-        service.getContent("CHANNELS", null, 4, "c2", null, null, null);
-        verify(videoRepository).findApprovedByUploadedAtDescWithCursor(4, null);
-        verify(videoRepository).findAllByOrderByUploadedAtDesc(anyInt());
-        verify(channelRepository).findApprovedByCategoryAndSubscribersDescWithCursor("c2", 4, null);
-        verify(categoryRepository, never()).findAll(); // none of them walked the tab order
+    @Test void categoriesFiltersAndSortsReadTheKeptOrderOnly() throws Exception {
+        // c2's channels by subscribers (none set: the tab order stands); c1 holds its subcategory c1a's D too.
+        assertEquals(List.of("yt-ch-C", "yt-ch-A", "yt-ch-I", "yt-ch-H"), ids("CHANNELS", "c2", null, null));
+        assertEquals(List.of("yt-v-C", "yt-v-B", "yt-v-D"), ids("VIDEOS", "c1", null, "NEWEST"));
+        assertEquals(List.of("yt-pl-C", "yt-pl-B", "yt-pl-D"), ids("PLAYLISTS", "c1", null, null));
+        assertEquals(List.of("yt-v-D"), ids("VIDEOS", "c1a", "SHORT", null));
+        verify(categoryRepository, times(1)).findAll();
+        verify(categoryRepository, never()).findByParentId("c2"); // the kept tree answers, not a read per page
+        verify(videoRepository, never()).findAllByOrderByUploadedAtDesc(anyInt());
+    }
+
+    private List<String> ids(String tab, String category, String length, String sort) throws Exception {
+        return service.getContent(tab, null, 20, category, length, null, sort).getData().stream()
+                .map(ContentItemDto::getId).toList();
     }
 
     @Test void sortDefaultServesTheCuratedVideosTab() throws Exception {
