@@ -45,11 +45,12 @@
                     android:padding="@dimen/spacing_lg"
                     android:gravity="center">
 
-                    <!-- App Icon Placeholder -->
-                    <View
+                    <ImageView
+                        android:id="@+id/aboutLogo"
                         android:layout_width="@dimen/channel_avatar_size"
                         android:layout_height="@dimen/channel_avatar_size"
-                        android:background="@color/primary_variant"
+                        android:src="@drawable/albunyaantube_logo"
+                        android:contentDescription="@string/about_app_logo_description"
                         android:layout_marginBottom="@dimen/spacing_md"/>
 
                     <TextView

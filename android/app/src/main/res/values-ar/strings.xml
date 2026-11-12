@@ -575,6 +575,7 @@
     <string name="about_privacy_policy">سياسة الخصوصية</string>
     <string name="about_terms_of_service">شروط الخدمة</string>
     <string name="about_open_source_licenses">تراخيص المصادر المفتوحة</string>
+    <string name="about_app_logo_description">شعار فطرة تيوب</string>
     <string name="settings_support_center">مركز المساعدة</string>
     <string name="settings_support_center_desc">احصل على المساعدة وأرسل ملاحظاتك</string>
     <string name="cancel">إلغاء</string>
