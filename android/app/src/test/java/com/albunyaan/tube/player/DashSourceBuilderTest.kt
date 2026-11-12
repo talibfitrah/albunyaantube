@@ -370,7 +370,6 @@ class DashSourceBuilderTest {
         for (client in listOf(
             ExtractionClient.NEWPIPE_IOS,
             ExtractionClient.NEWPIPE_ANDROID,
-            ExtractionClient.ANDROID_VR,
         )) {
             val decision = builder.decide(mpdEligibleStreams(client))
             assertTrue("Expected LocalDash for $client but got: $decision", decision is SourceDecision.LocalDash)
@@ -411,7 +410,7 @@ class DashSourceBuilderTest {
                 videoOnlyTrack(1080, itag = 137),
             ),
             audioTracks = listOf(audioTrack(itag = 140)),
-            extractionClient = ExtractionClient.ANDROID_VR,
+            extractionClient = ExtractionClient.NEWPIPE_IOS,
         )
 
         val decision = builder.decide(resolved, forceProgressive = true)

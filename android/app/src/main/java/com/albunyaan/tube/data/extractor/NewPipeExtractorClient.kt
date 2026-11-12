@@ -122,20 +122,7 @@ class NewPipeExtractorClient(
         // played 1:49+ on a 1080p SYNTH_ADAPTIVE source with zero 403s. yt-dlp now marks every
         // client GVS-poToken-required, so do not reintroduce a "token-free client" fast path.
         try {
-            val handler = streamLinkHandlerFactory.fromId(videoId)
-            val extractor = youtubeService.getStreamExtractor(handler)
-            // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
-            extractor.fetchPage()
-            val info = StreamInfo.getInfo(extractor)
-            val urlGeneratedAt = clock()
-            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt, ExtractionClient.NEWPIPE_IOS)
-            if (resolved == null) return@withContext null
-            // Live is never cached — see isStreamCacheUsable.
-            if (!resolved.isLive) {
-                synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
-            }
-            metrics.onStreamResolveSuccess(videoId, clock() - start)
-            resolved
+            extractAndCache(videoId, start)
         } catch (c: CancellationException) {
             throw c
         } catch (throwable: Throwable) {
@@ -147,19 +134,7 @@ class NewPipeExtractorClient(
                 throwable.message?.contains("visitorData", ignoreCase = true) == true
             ) {
                 try {
-                    val retryHandler = streamLinkHandlerFactory.fromId(videoId)
-                    val retryExtractor = youtubeService.getStreamExtractor(retryHandler)
-                    retryExtractor.fetchPage()
-                    val retryInfo = StreamInfo.getInfo(retryExtractor)
-                    val urlGeneratedAt = clock()
-                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt, ExtractionClient.NEWPIPE_IOS)
-                    if (resolved != null) {
-                        synchronized(streamCacheLock) {
-                            if (!resolved.isLive) streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
-                        }
-                        metrics.onStreamResolveSuccess(videoId, clock() - start)
-                        return@withContext resolved
-                    }
+                    extractAndCache(videoId, start)?.let { return@withContext it }
                 } catch (cancellation: CancellationException) {
                     // Structured concurrency: never swallow cancellation. The outer
                     // catch path only rethrows CancellationException for the first
@@ -176,6 +151,22 @@ class NewPipeExtractorClient(
                 throw ExtractionException("Unexpected stream extraction failure", throwable)
             }
         }
+    }
+
+    /** One NewPipe extraction: resolve, cache non-live results, record success. Null when nothing is playable. */
+    private fun extractAndCache(videoId: String, start: Long): ResolvedStreams? {
+        val extractor = youtubeService.getStreamExtractor(streamLinkHandlerFactory.fromId(videoId))
+        // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
+        extractor.fetchPage()
+        val info = StreamInfo.getInfo(extractor)
+        val urlGeneratedAt = clock()
+        val resolved = info.toResolvedStreams(videoId, urlGeneratedAt, ExtractionClient.NEWPIPE_IOS) ?: return null
+        // Live is never cached — see isStreamCacheUsable.
+        if (!resolved.isLive) {
+            synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
+        }
+        metrics.onStreamResolveSuccess(videoId, clock() - start)
+        return resolved
     }
 
     override suspend fun fetchVideoMetadata(ids: List<String>): Map<String, VideoMetadata> {

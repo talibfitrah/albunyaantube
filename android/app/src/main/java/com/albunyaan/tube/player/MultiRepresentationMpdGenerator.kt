@@ -110,7 +110,7 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
     /**
      * Generate a multi-representation DASH MPD from resolved streams.
      *
-     * @param resolved The resolved streams from NewPipe / ANDROID_VR
+     * @param resolved The resolved streams from NewPipe
      * @param qualityCapHeight Optional maximum height to include (null = include all)
      * @return Result.Success with MPD content, or Result.Failure with reason
      */

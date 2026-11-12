@@ -567,6 +567,7 @@
     <string name="about_privacy_policy">Privacy Policy</string>
     <string name="about_terms_of_service">Terms of Service</string>
     <string name="about_open_source_licenses">Open Source Licenses</string>
+    <string name="about_app_logo_description">FitrahTube logo</string>
     <string name="settings_support_center">Support Center</string>
     <string name="settings_support_center_desc">Get help and send feedback</string>
     <string name="settings_icon_wifi">WiFi only setting icon</string>
