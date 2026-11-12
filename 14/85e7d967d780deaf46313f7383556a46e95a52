@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceTabOrderTest.java
+  s_8a936fc306f37b::t_9a1cd981e6272a 374
+backend/src/test/java/com/albunyaan/tube/service/PublicContentCacheKeyTest.java
+  s_8a936fc306f37b::t_6d190c1dcc0b06 244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1485e7d967d780deaf46313f7383556a46e95a52",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
