@@ -1448,11 +1448,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                 "source invalid/expired (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
                             )
                         } else {
-                            // Use safe context access to prevent crash if fragment is detached
-                            surfaceRecoveryExhausted()
-                            context?.let { ctx ->
-                                Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
-                            }
+                            surfaceStreamUnavailable()
                         }
                     }
                     // Decoder errors - 4K/VP9/AV1 may not be supported on all devices
@@ -2213,9 +2209,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             if (player?.isPlaying != true) {
                 // No extraction allowed, but an adaptive VOD source still has its muxed track
                 // in hand: play that (no extraction, no limiter) before giving up.
-                if (preparedIsAdaptive &&
-                    hasMuxedFallback((viewModel.state.value.streamState as? StreamState.Ready)?.selection?.resolved)
-                ) {
+                if (preparedIsAdaptive && currentHasMuxedFallback()) {
                     playMuxedFromCurrentStreams("refresh rate-limited: $reason")
                     return
                 }
@@ -2267,6 +2261,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         currentPlayer.stop()
         maybePrepareStream(viewModel.state.value)
     }
+
+    private fun currentHasMuxedFallback(): Boolean =
+        hasMuxedFallback((viewModel.state.value.streamState as? StreamState.Ready)?.selection?.resolved)
 
     /** Save where to resume and drop the prepared-source state so the next prepare rebuilds. */
     private fun captureResumeAndResetPrepared(streamId: String, resumePosition: Long, playWhenReady: Boolean) {
@@ -2459,7 +2456,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // The source that 403'd, read before any arm resets prepared state or a backoff delay
             // lets it change.
             val playingMuxed = !preparedIsAdaptive
-            val hasMuxed = hasMuxedFallback((viewModel.state.value.streamState as? StreamState.Ready)?.selection?.resolved)
+            val hasMuxed = currentHasMuxedFallback()
+            fun recover403(reason: String) =
+                when (next403Step(forbidden403s, currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
+                    Forbidden403Step.REFRESH -> {
+                        onStreamRefresh()
+                        requestStreamRefreshAndResume(reason)
+                    }
+                    Forbidden403Step.PLAY_MUXED -> playMuxedFromCurrentStreams("repeat 403: $reason")
+                    Forbidden403Step.EXHAUSTED -> surfaceStreamUnavailable()
+                }
 
             // Handle based on failure classification
             when (failureType) {
@@ -2513,14 +2519,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         Toast.makeText(ctx, R.string.player_stream_expired, Toast.LENGTH_SHORT).show()
                     }
 
-                    when (next403Step(forbidden403s, currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
-                        Forbidden403Step.REFRESH -> {
-                            onStreamRefresh()
-                            requestStreamRefreshAndResume("URL expired (403)")
-                        }
-                        Forbidden403Step.PLAY_MUXED -> playMuxedFromCurrentStreams("repeat 403 (URL expired)")
-                        Forbidden403Step.EXHAUSTED -> surfaceStreamUnavailable()
-                    }
+                    recover403("URL expired (403)")
                     return
                 }
 
@@ -2538,15 +2537,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         // The user may have switched video during the backoff: the state captured
                         // above belongs to the 403'd video, so act only if it is still current.
                         if (viewModel.state.value.currentItem?.streamId != videoId) return@launch
-                        when (next403Step(forbidden403s, currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
-                            Forbidden403Step.REFRESH -> {
-                                onStreamRefresh()
-                                requestStreamRefreshAndResume("HTTP $httpResponseCode (${failureType.name})")
-                            }
-                            Forbidden403Step.PLAY_MUXED ->
-                                playMuxedFromCurrentStreams("repeat 403 (${failureType.name})")
-                            Forbidden403Step.EXHAUSTED -> surfaceStreamUnavailable()
-                        }
+                        recover403("HTTP $httpResponseCode (${failureType.name})")
                     }
                     return
                 }

@@ -102,7 +102,8 @@ class MainActivity : AppCompatActivity() {
         navController // trigger lazy init if toolbar needed later
 
         // The NavHostFragment restored its back stack in super.onCreate, so its graph is set.
-        if (SplashRouter.restoreBlockedByMinVersion(savedInstanceState != null) {
+        if (navController.currentDestination?.id != R.id.updateRequiredFragment &&
+            SplashRouter.restoreBlockedByMinVersion(savedInstanceState != null) {
                 minVersionGate.decideFromCache(BuildConfig.VERSION_NAME)
             }
         ) {
