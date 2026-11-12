@@ -618,6 +618,17 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
+    /// Cubic r4 P2: every rung answering without a stream (and a malformed id) is the lecture's own answer, shown as the
+    /// generic error card but passed over like an unavailable one, so the locked phone keeps playing.
+    @Test(.timeLimit(.minutes(1))) func anAutoAdvancePassesOverALectureNoRungPlays() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c", "d"])
+        await vm.open()
+        resolver.outcomes = ["b": .failure(.allRungsFailed), "c": .failure(.invalidVideoId)]
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "d")
+        #expect(vm.state.isPlayable)
+    }
+
     /// The same rule as the lock screen's skip: an error (offline, a blip) says nothing about the lecture, so it shows
     /// on the next one, whose Retry plays it, instead of walking the list.
     @Test(.timeLimit(.minutes(1))) func anAutoAdvanceStopsOnATransientFailure() async {

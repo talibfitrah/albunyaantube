@@ -658,10 +658,10 @@ extension StreamState {
         swapArgs(to: item)
         let landed = await resolve(forceRefresh: false, kind: .player, showLoading: showLoading, holdFailure: holdFailure)
         if landed, heldGeneration == generation { return true }
-        // Round 5 (re-review N1): landed, so the lecture is the user's from here, an advance's included. Kept through the
-        // prefetch, the flag resumed a lecture the user paused after an interruption, and swallowed the end of a short
-        // next lecture.
-        if landed, state.isPlayable { isAdvancing = false }
+        // Round 5 (re-review N1): landed, so the lecture is the user's from here, an advance's included, and a failure
+        // shown ends it too (Cubic r4). Kept through the prefetch, the flag resumed a lecture the user paused after an
+        // interruption, and swallowed the end of a short next lecture.
+        if landed { isAdvancing = false }
         // The same lecture again further down the list: the host keeps its item and position, so the pick starts over.
         if landed, item.id == playing { await currentPlayer?.seek(to: .zero) }
         await prefetchUpcoming()
@@ -675,7 +675,7 @@ extension StreamState {
     /// The lock screen's next/previous (`PlayerHostView.trackSkip`): the neighbour `offset` away, without the loading
     /// card. One that does not play is passed over in the same direction, at most `AutoSkipPolicy`'s 3 as an
     /// auto-advance, while the outgoing lecture plays on: a state with nothing playable dismantles the host, and with it
-    /// the audio session and the lock screen's controls. Only a lecture that is not available is passed over; the last
+    /// the audio session and the lock screen's controls. Only the lecture's own failure is passed over; the last
     /// try applies what it gets, so with nothing playable past it its card shows. A cooldown or an error (offline, a
     /// blip) is no answer about the lecture: it shows on the one pressed to, whose Retry plays it.
     /// Also the auto-advance (`advance()`), so each hop pages first, as the advance always did; a pick meanwhile wins.
@@ -1790,6 +1790,7 @@ extension StreamState {
                                 holdFailure: Bool) async {
         let videoId = args.videoId
         let result: StreamState
+        var theLecturesOwn = false
         do {
             let resolved = try await resolver.resolve(
                 videoId, purpose: .player, kind: kind,
@@ -1797,6 +1798,7 @@ extension StreamState {
             result = Self.map(resolved)
         } catch {
             result = Self.map(error)
+            theLecturesOwn = Self.isTheLecturesOwn(error)
         }
         // A superseding `open()`/`retry()` both cancels this job and bumps `generation` before its
         // own resolve starts -- either signal alone is enough to discard a late/stale completion,
@@ -1824,9 +1826,9 @@ extension StreamState {
             if let miss = liveMiss, miss.generation == generation - 1 { liveMiss = (generation, miss.trigger) }
             return
         }
-        // A lock-screen skip passing over a lecture that does not play keeps the outgoing one on screen (`skip(by:)`). Only
-        // the lecture's own answer: a cooldown or an `.error` (offline, a blip) says nothing about it, and shows.
-        if holdFailure, result == .contentUnavailable {
+        // A skip passing over a lecture that does not play keeps the outgoing one on screen (`skip(by:)`). Only the
+        // lecture's own answer (`isTheLecturesOwn`): a cooldown, a bot check or a transport failure says nothing about it.
+        if holdFailure, theLecturesOwn {
             heldGeneration = generation
             return
         }
@@ -1878,6 +1880,18 @@ extension StreamState {
         state = .recoveryExhausted(resolved)
     }
     #endif
+
+    /// A failure that is the lecture's own answer, which a skip passes over: every `.contentUnavailable` reason, a
+    /// malformed id, and every rung answering without a stream for it (Cubic r4).
+    private static func isTheLecturesOwn(_ error: Error) -> Bool {
+        guard let extractionError = error as? ExtractionError else { return false }
+        switch extractionError {
+        case .unavailable, .liveOffline, .ageRestricted, .geoBlocked, .private, .removed, .invalidVideoId, .allRungsFailed:
+            return true
+        case .cooldown, .botCheck, .cancelled, .transport:
+            return false
+        }
+    }
 
     private static func map(_ error: Error) -> StreamState {
         guard let extractionError = error as? ExtractionError else {
