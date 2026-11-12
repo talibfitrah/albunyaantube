@@ -1,0 +1,26 @@
+frontend/src/services/approvalService.ts
+  s_8a936fc306f37b::t_8ceff79f0aea85 9
+  s_8a936fc306f37b::t_18fdf69607333d 122-123
+frontend/src/views/PendingApprovalsView.vue
+  s_8a936fc306f37b::t_2af73a10a1a9cf 1029
+frontend/tests/PendingApprovalsView.spec.ts
+  s_8a936fc306f37b::t_d7c99c2a90e20f 79,89,139-155
+frontend/tests/approvalService.spec.ts
+  s_8a936fc306f37b::t_2809fabe415b3e 14-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f39495289926e6a2bce339009569b45a738ea949",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
