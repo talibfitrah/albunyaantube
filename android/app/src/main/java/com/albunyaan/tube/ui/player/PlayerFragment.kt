@@ -77,6 +77,7 @@ import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import com.albunyaan.tube.player.Forbidden403Step
 import com.albunyaan.tube.player.next403Step
+import com.albunyaan.tube.player.counts403
 import com.albunyaan.tube.player.hasMuxedFallback
 import com.albunyaan.tube.player.applyCaptionStyle
 import com.albunyaan.tube.player.normalizeSubtitleCue
@@ -253,9 +254,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var adaptiveFailedForCurrentStream: String? = null
 
     /**
-     * HTTP 403s seen on [forbidden403StreamId]. Unlike the listener's streamRefreshCount it
-     * survives a resume, so a stream that plays ~40 s and 403s again is seen as a repeat
-     * ([next403Step] plays muxed). Resets on a new stream and on the two manual retry buttons.
+     * Counted HTTP 403s ([counts403]) on [forbidden403StreamId]. Unlike the listener's
+     * streamRefreshCount it survives a resume, so a stream that plays ~40 s and 403s again on
+     * fresh URLs is seen as a repeat ([next403Step] plays muxed). Resets when a different
+     * stream is prepared, on the two manual retry buttons and in onDestroyView.
      */
     private var forbidden403StreamId: String? = null
     private var forbidden403Count = 0
@@ -887,6 +889,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         preparedQualityCapHeight = null
         factorySelectedVideoTrack = null
         adaptiveFailedForCurrentStream = null
+        forbidden403StreamId = null
+        forbidden403Count = 0
         lastMetadataSyncedItemId = null
 
         // Cancel any pending artwork loading and clear callback
@@ -2405,12 +2409,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 forbidden403StreamId = videoId
                 forbidden403Count = 0
             }
-            val forbidden403s = ++forbidden403Count
+            // Asked of the source that 403'd, before requestStreamRefreshAndResume claims the gate.
+            val inSeekWindow = seekTransientErrorGate.isInSeekTransientWindow(preparedAdaptiveType)
+            if (counts403(failureType, inSeekWindow)) forbidden403Count++
+            // An uncounted 403 reads as a first one: it refreshes while the episode budget lasts.
+            val forbidden403s = maxOf(forbidden403Count, 1)
 
             android.util.Log.w(
                 "PlayerFragment",
                 "HTTP 403 detected: type=$failureType, videoId=$videoId, " +
-                    "streamRefreshCount=$currentStreamRefreshCount, 403sThisStream=$forbidden403s"
+                    "streamRefreshCount=$currentStreamRefreshCount, 403sThisStream=$forbidden403Count, " +
+                    "inSeekWindow=$inSeekWindow"
             )
 
             // Phase 0 metrics: track 403 error with classification
@@ -2947,6 +2956,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             if (adaptiveFailedForCurrentStream != null && adaptiveFailedForCurrentStream != streamState.streamId) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
                 adaptiveFailedForCurrentStream = null
+            }
+            // A refresh nulls preparedStreamKey too, so the 403 state is cleared only when the
+            // prepared stream really changes (A, B, then A again starts fresh).
+            if (forbidden403StreamId != streamState.streamId) {
+                forbidden403StreamId = streamState.streamId
+                forbidden403Count = 0
             }
             // Reset resize mode for new stream — AspectPolicy recomputes in onVideoSizeChanged().
             userToggledResizeMode = false

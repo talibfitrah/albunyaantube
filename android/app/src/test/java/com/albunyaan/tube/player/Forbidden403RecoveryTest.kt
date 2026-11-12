@@ -5,6 +5,7 @@ import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.player.Forbidden403Step.EXHAUSTED
 import com.albunyaan.tube.player.Forbidden403Step.PLAY_MUXED
 import com.albunyaan.tube.player.Forbidden403Step.REFRESH
+import com.albunyaan.tube.player.StreamRequestTelemetry.FailureType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -39,4 +40,9 @@ class Forbidden403RecoveryTest {
     // Live ignores forceProgressive (DashSourceBuilder.decide), so PLAY_MUXED would rebuild the same live source.
     @Test fun `live never has a muxed fallback`() = assertFalse(hasMuxedFallback(streams(true, track(false))))
     @Test fun `no streams has none`() = assertFalse(hasMuxedFallback(null))
+
+    // counts403: only a 403 that fresh URLs should have fixed is evidence for PLAY_MUXED.
+    @Test fun `fresh-URL 403 is counted`() = assertTrue(counts403(FailureType.UNKNOWN_403, inSeekWindow = false))
+    @Test fun `seek-window 403 is not counted`() = assertFalse(counts403(FailureType.UNKNOWN_403, inSeekWindow = true))
+    @Test fun `URL expiry is not counted`() = assertFalse(counts403(FailureType.URL_EXPIRED, inSeekWindow = false))
 }

@@ -14,8 +14,8 @@ internal enum class Forbidden403Step { REFRESH, PLAY_MUXED, EXHAUSTED }
  * ~40 s, 403s, refreshes, plays, and 403s again. While muxed, or with no muxed track, the
  * refresh ladder holds.
  *
- * @param forbidden403sThisStream 403s on the current stream including this one; survives
- *   resume, resets on a new stream or a manual retry.
+ * @param forbidden403sThisStream counted 403s ([counts403]) on the current stream, at least 1;
+ *   survives resume, resets on a new stream or a manual retry.
  * @param refreshesThisEpisode the player's refresh count, reset when playback resumes.
  * @param playingMuxed the prepared source is progressive.
  * @param hasMuxed the current stream set has a muxed (video+audio) track.
@@ -40,3 +40,12 @@ internal fun next403Step(
  */
 internal fun hasMuxedFallback(resolved: ResolvedStreams?): Boolean =
     resolved != null && !resolved.isLive && resolved.videoTracks.any { !it.isVideoOnly }
+
+/**
+ * Whether a 403 counts toward [next403Step]'s per-stream repeat: only one that fresh URLs
+ * should have fixed. A URL expiry is fixed by a refresh, and a 403 inside the seek-transient
+ * window is a range-rejected seek on a healthy stream; counting either would pin 360p on a
+ * long lecture or after two seeks. An uncounted 403 still passes at least 1 to [next403Step].
+ */
+internal fun counts403(failureType: StreamRequestTelemetry.FailureType, inSeekWindow: Boolean): Boolean =
+    failureType != StreamRequestTelemetry.FailureType.URL_EXPIRED && !inSeekWindow
