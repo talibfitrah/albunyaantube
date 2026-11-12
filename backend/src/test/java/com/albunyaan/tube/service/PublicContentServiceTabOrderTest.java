@@ -67,13 +67,11 @@ class PublicContentServiceTabOrderTest {
 
     private PublicContentService service;
     private List<Category> categories;
-    private long now; // the service's nano clock: tests advance it, never sleep
 
     @BeforeEach
     void catalog() throws Exception {
         service = new PublicContentService(channelRepository, playlistRepository, videoRepository,
                 categoryRepository, orderRepository, Runnable::run, searchIndex, liveCategoryService);
-        service.nanoClock = () -> now;
 
         Category c1 = cat("c1", 1, null);
         Category c1a = cat("c1a", 0, "c1");
@@ -204,40 +202,10 @@ class PublicContentServiceTabOrderTest {
         assertEquals(List.of("yt-ch-C","yt-ch-A","yt-ch-I","yt-ch-H","yt-ch-B","yt-ch-D","yt-ch-F","yt-ch-O","yt-ch-E"),
                 walk("CHANNELS", "CHANNEL"));
     }
-    @Test void aFailedBuildIsRepeatedWithoutRereadingDuringTheBackoff() throws Exception {
+    @Test void aFailedReadThatIsNotATimeoutIsNotKeptEither() throws Exception {
         when(categoryRepository.findAll()).thenThrow(denied()).thenReturn(categories);
         assertThrows(ExecutionException.class, () -> first("CHANNELS"));
-        now += PublicContentService.TAB_ORDER_FAILURE_BACKOFF.toNanos() - 1;
-        assertThrows(ExecutionException.class, () -> first("PLAYLISTS"));
-        verify(categoryRepository, times(1)).findAll();
-        verify(channelRepository, never()).findByStatus("APPROVED");
-    }
-    @Test void theFirstRequestAfterTheBackoffRebuilds() throws Exception {
-        when(categoryRepository.findAll()).thenThrow(denied()).thenReturn(categories);
-        assertThrows(ExecutionException.class, () -> first("CHANNELS"));
-        now += PublicContentService.TAB_ORDER_FAILURE_BACKOFF.toNanos();
         assertEquals("yt-ch-C", first("CHANNELS"));
-        verify(categoryRepository, times(2)).findAll();
-    }
-    @Test void aContentChangeEndsTheBackoff() throws Exception {
-        when(categoryRepository.findAll()).thenThrow(denied()).thenReturn(categories);
-        assertThrows(ExecutionException.class, () -> first("CHANNELS"));
-        service.onContentChanged(new PublicContentCacheService.ContentChanged());
-        assertEquals("yt-ch-C", first("CHANNELS"));
-        verify(categoryRepository, times(2)).findAll();
-    }
-    @Test void aFailedBuildThatAContentChangeOvertookIsNotRemembered() throws Exception {
-        when(categoryRepository.findAll()).thenAnswer(inv -> {
-            service.onContentChanged(new PublicContentCacheService.ContentChanged());
-            throw denied();
-        }).thenReturn(categories);
-        assertThrows(ExecutionException.class, () -> first("CHANNELS"));
-        assertEquals("yt-ch-C", first("CHANNELS"));
-    }
-    @Test void aTimedOutBuildIsNotRememberedTheNextRequestRebuilds() throws Exception {
-        when(categoryRepository.findAll()).thenThrow(new TimeoutException("firestore")).thenReturn(categories);
-        assertThrows(TimeoutException.class, () -> first("CHANNELS"));
-        assertEquals("yt-ch-C", first("CHANNELS")); // no clock advance, no content change
         verify(categoryRepository, times(2)).findAll();
     }
     @Test void anAToZTwinOfTheSameItemIsListedOnce() throws Exception {
@@ -295,7 +263,7 @@ class PublicContentServiceTabOrderTest {
         verify(categoryRepository, times(2)).findAll();
     }
 
-    /** A deterministic read failure (e.g. a missing index or a permission error), unlike a timeout. */
+    /** A read failure that is not a timeout (e.g. gRPC UNAVAILABLE, a missing index, a permission error). */
     private static ExecutionException denied() {
         return new ExecutionException("PERMISSION_DENIED", new RuntimeException("firestore"));
     }
