@@ -578,7 +578,6 @@
     <string name="search_no_results">No results found</string>
     <string name="search_try_different">Try different keywords for \"%1$s\"</string>
     <string name="search_try_different_hint">Try different keywords</string>
-    <string name="search_error">Search failed: %1$s</string>
     <string name="search_error_generic">Search failed. Please try again.</string>
     <string name="search_loading">Searching…</string>
     <string name="search_closest_results">No exact match — showing closest results</string>

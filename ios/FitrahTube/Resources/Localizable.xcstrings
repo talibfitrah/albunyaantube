@@ -13752,28 +13752,6 @@
         }
       }
     },
-    "search_error": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "فشل البحث: %1$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Search failed: %1$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zoeken mislukt: %1$@"
-          }
-        }
-      }
-    },
     "search_error_generic": {
       "localizations": {
         "ar": {

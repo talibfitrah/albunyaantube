@@ -591,7 +591,6 @@
     <string name="search_no_results">لا توجد نتائج</string>
     <string name="search_try_different">جرب كلمات مختلفة لـ \"%1$s\"</string>
     <string name="search_try_different_hint">جرب كلمات مختلفة</string>
-    <string name="search_error">فشل البحث: %1$s</string>
     <string name="search_error_generic">فشل البحث. يرجى المحاولة مرة أخرى.</string>
     <string name="search_loading">جارٍ البحث…</string>
     <string name="search_closest_results">لا يوجد تطابق تام — إليك أقرب النتائج</string>
