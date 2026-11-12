@@ -288,10 +288,11 @@ public actor StreamResolver {
         // VOD only: a live stream has no byte ranges, so `select` never picks it (R7). `isLive` and `isLiveNow` stay
         // false; a future live HD path must not wrap this one. No `title`: TVHTML5 answers carry no `videoDetails.title`,
         // so the app keeps the title it adopted from the 360p walk.
-        let resolved = Resolved(
+        var resolved = Resolved(
             stream: .hls(url: URL(string: "\(SyntheticHLSLoader.scheme)://\(UUID().uuidString)/master.m3u8")!, isLive: false,
                          audioOnlyURL: model.audio.first?.url, captionTracks: streaming.captionTracks, synthetic: model),
             client: .tvSamsung, userAgent: context.userAgent ?? "", resolvedAt: now, expiresAt: expiry(streaming, from: now))
+        resolved.audioOnly = model.audio.first
         return (resolved, respondedAt)
     }
 
@@ -525,10 +526,12 @@ public actor StreamResolver {
             let now = wallClock.wallNow
             let userAgent = context.userAgent ?? ""
             if expectHLS, let hls = streaming.hlsManifestURL {
-                return .resolved(Resolved(
+                var resolved = Resolved(
                     stream: .hls(url: hls, isLive: streaming.isLive, audioOnlyURL: streaming.itag140URL, captionTracks: streaming.captionTracks),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
-                    isLiveNow: streaming.isLiveNow, title: streaming.title, channelId: streaming.channelId))
+                    isLiveNow: streaming.isLiveNow, title: streaming.title, channelId: streaming.channelId)
+                resolved.audioOnly = TVAdaptive.audioOnly(streaming.itag140URL, in: (try? responseParser.adaptiveFormats(body)) ?? [])
+                return .resolved(resolved)
             }
             if !expectHLS, let itag18 = streaming.itag18URL {
                 var resolved = Resolved(

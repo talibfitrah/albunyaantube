@@ -17,9 +17,11 @@ struct HDStagerTests {
 
     /// `.invalid` never resolves, so the players these tests build make no network traffic.
     private static func hd(resolvedAt: Date = Date(), expiresAt: Date? = nil) -> Resolved {
-        Resolved(stream: .hls(url: URL(string: "fitrah-hls://\(UUID().uuidString)/master.m3u8")!, isLive: false,
-                              audioOnlyURL: URL(string: "https://fixture.invalid/a0.m4a")!, captionTracks: [], synthetic: model),
-                 client: .tvSamsung, userAgent: "TV-UA", resolvedAt: resolvedAt, expiresAt: expiresAt)
+        var hd = Resolved(stream: .hls(url: URL(string: "fitrah-hls://\(UUID().uuidString)/master.m3u8")!, isLive: false,
+                                       audioOnlyURL: model.audio[0].url, captionTracks: [], synthetic: model),
+                          client: .tvSamsung, userAgent: "TV-UA", resolvedAt: resolvedAt, expiresAt: expiresAt)
+        hd.audioOnly = model.audio[0]                       // as `StreamResolver.mintHD` sets it
+        return hd
     }
 
     /// The bundled 2 s clip (Debug only), and the same file under another URL string -- a different stream to AVPlayer.
@@ -56,11 +58,14 @@ struct HDStagerTests {
         player.replaceCurrentItem(with: nil)
     }
 
-    @Test func audioOnlyOnASyntheticStreamPlaysTheDirectM4a() throws {
+    /// 2026-11-12: the bare m4a never started (googlevideo throttles AVPlayer's open-ended GET); audio only plays the
+    /// default audio group's byte-range playlist through the loader instead.
+    @Test func audioOnlyOnASyntheticStreamPlaysTheAudioPlaylist() throws {
         let player = try #require(PlayerHostView.player(for: .ready(Self.hd()), replacing: nil, audioOnly: true))
         let asset = try #require(player.currentItem?.asset as? AVURLAsset)
-        #expect(asset.url.absoluteString == "https://fixture.invalid/a0.m4a")
-        #expect(asset.resourceLoader.delegate == nil)
+        #expect(asset.url.scheme == "fitrah-hls")
+        #expect(asset.url.lastPathComponent == "a0.m3u8")
+        #expect(asset.resourceLoader.delegate is SyntheticHLSLoader)
         player.replaceCurrentItem(with: nil)
     }
 

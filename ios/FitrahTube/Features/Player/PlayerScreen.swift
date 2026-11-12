@@ -233,11 +233,11 @@ struct PlayerScreen: View {
     }
 
     /// An Up Next tap is the user's Play (round 3, m2), then the queue jump. The hold goes at the tap, as Retry's. The
-    /// lock screen's next/previous track too (`PlayerHostView.trackSkip`), without the loading card.
-    static func playUpNext(_ model: PlayerViewModel, at index: Int, showLoading: Bool = true) {
+    /// lock screen's next/previous does the same (`PlayerHostView.trackSkip`).
+    static func playUpNext(_ model: PlayerViewModel, at index: Int) {
         BackgroundPlaybackController.userAskedToPlay()
         model.heldByOpen = false
-        Task { await model.play(at: index, showLoading: showLoading) }
+        Task { await model.play(at: index) }
     }
 
     /// The Save button's gate question: the channel playback's own check asks about, so Save never
@@ -714,10 +714,10 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
     func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
-/// B2 task 3 screenshot rig: the same bundled fixture as `FixtureHLSPlayerResolver`, but with a
-/// non-nil `audioOnlyURL` (the same local clip -- AVPlayer plays it either way), which is what
-/// `PlayerViewModel.audioOnlyAvailable` gates the audio-only toggle on. No real itag 140 stream
-/// (and no network) is needed to capture the audio-only surface.
+/// B2 task 3 screenshot rig: the same bundled fixture as `FixtureHLSPlayerResolver`, but with an
+/// audio rendition (`Resolved.audioOnly`), which is what `PlayerViewModel.audioOnlyAvailable` gates
+/// the audio-only toggle on. No real itag 140 stream (and no network) is needed to capture the
+/// audio-only surface; its playlist (the clip is no fMP4) never plays.
 private struct FixtureAudioOnlyResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
@@ -725,8 +725,11 @@ private struct FixtureAudioOnlyResolver: StreamResolving {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
-        return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: url, captionTracks: []),
-                         client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        var resolved = Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: url, captionTracks: []),
+                                client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        resolved.audioOnly = .init(url: url, codecs: "mp4a.40.2", bandwidth: 1, initRange: 0...1, indexRange: 2...3,
+                                   contentLength: 9, isDefault: true)
+        return resolved
     }
 
     func demote(_ videoId: String, failed: ClientFamily) async {}
@@ -849,9 +852,11 @@ private func fixtureHD(base: URL) -> HDUpgrade {
               var model = try? JSONDecoder().decode(SyntheticHLS.self, from: response.0) else { return nil }
         for i in model.video.indices { model.video[i].url = base.appending(path: model.video[i].url.relativeString) }
         for i in model.audio.indices { model.audio[i].url = base.appending(path: model.audio[i].url.relativeString) }
-        return Resolved(stream: .hls(url: URL(string: "\(SyntheticHLSLoader.scheme)://\(UUID().uuidString)/master.m3u8")!,
-                                     isLive: false, audioOnlyURL: model.audio.first?.url, captionTracks: [], synthetic: model),
-                        client: .tvSamsung, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        var hd = Resolved(stream: .hls(url: URL(string: "\(SyntheticHLSLoader.scheme)://\(UUID().uuidString)/master.m3u8")!,
+                                       isLive: false, audioOnlyURL: model.audio.first?.url, captionTracks: [], synthetic: model),
+                          client: .tvSamsung, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        hd.audioOnly = model.audio.first            // as `StreamResolver.mintHD`
+        return hd
     }, failed: { _ in }, refused: {})
 }
 

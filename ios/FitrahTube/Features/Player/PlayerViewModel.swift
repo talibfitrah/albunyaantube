@@ -525,16 +525,13 @@ extension StreamState {
     /// also B5's auto-advance hook -- Up Next reads THIS, not `SettingsStore` directly.
     var safeMode: Bool { settings.safeMode }
 
-    /// Audio-only needs a real itag 140 URL. Rung 2 (a single muxed 360p progressive) has none, so
-    /// the toggle is hidden there -- the same "hide the control that has no backing" rule spec §10
-    /// applies to the quality control on rung 2.
+    /// Audio-only needs the audio file's byte ranges (`Resolved.audioOnly`; `PlayerHostView.source`). Rung 2 (a single
+    /// muxed 360p progressive) has none, so the toggle is hidden there -- the same "hide the control that has no
+    /// backing" rule spec §10 applies to the quality control on rung 2.
     static func audioOnlyAvailable(for state: StreamState) -> Bool {
-        // ponytail: no `isLive` check -- a live HLS has never been seen carrying an itag 140 url, so
-        // the `audioOnlyURL != nil` test already excludes it. Add one here if a live stream ever
-        // resolves with one (the swap would then hand AVPlayer a non-live audio rendition).
-        guard case .ready(let resolved) = state,
-              case .hls(_, _, let audioOnlyURL, _, _) = resolved.stream else { return false }
-        return audioOnlyURL != nil
+        // No `isLive` check: a live stream has no byte ranges, so it never carries the rendition.
+        guard case .ready(let resolved) = state else { return false }
+        return resolved.audioOnly != nil
     }
 
     func open() async {
@@ -676,16 +673,40 @@ extension StreamState {
     /// show the loading card with the new thumbnail -- unless `showLoading` is false: the lock screen's next/previous,
     /// where a `.loading` hop would dismantle the host and its audio session. Index-addressed (Cubic P2): a duplicate
     /// id in the playlist must play the tapped occurrence, not the first one.
-    func play(at index: Int, showLoading: Bool = true) async {
+    /// `holdFailure`: a failure is not applied (`skip(by:)`), and the pick answers `true` at once, with nothing awaited
+    /// after it, so the next try cannot race a newer action.
+    @discardableResult
+    func play(at index: Int, showLoading: Bool = true, holdFailure: Bool = false) async -> Bool {
         let playing = hostVideoId   // the stream on screen, not a skip still resolving (Cubic r3)
-        guard let item = queue.select(at: index) else { return }
+        guard let item = queue.select(at: index) else { return false }
         swapArgs(to: item)
         consecutiveSkips = 0
-        let landed = await resolve(forceRefresh: false, kind: .player, showLoading: showLoading)
+        let landed = await resolve(forceRefresh: false, kind: .player, showLoading: showLoading, holdFailure: holdFailure)
+        if landed, heldGeneration == generation { return true }
         // The same lecture again further down the list: the host keeps its item and position, so the pick starts over.
         if landed, item.id == playing { await currentPlayer?.seek(to: .zero) }
         await prefetchUpcoming()
         await pageIfNeeded()
+        return false
+    }
+
+    /// The resolve whose failure `holdFailure` kept off the screen.
+    private var heldGeneration: Int?
+
+    /// The lock screen's next/previous (`PlayerHostView.trackSkip`): the neighbour `offset` away, without the loading
+    /// card. One that does not play is passed over in the same direction, at most `AutoSkipPolicy`'s 3 as an
+    /// auto-advance, while the outgoing lecture plays on: a state with nothing playable dismantles the host, and with it
+    /// the audio session and the lock screen's controls. The last try applies what it gets, so with nothing playable
+    /// past it the failure shows its card; so does a cooldown, the limiter's answer for any lecture.
+    /// ponytail: the loaded queue only -- a failing last loaded lecture shows its card while a next page is out.
+    func skip(by offset: Int) async {
+        var skipped = 0
+        while let index = queueNeighbour(offset) {
+            let passOver = AutoSkipPolicy.decide(consecutive: skipped, limit: 3)
+                && queue.items.indices.contains(index + offset)
+            guard await play(at: index, showLoading: false, holdFailure: passOver) else { return }
+            skipped += 1
+        }
     }
 
     /// The loaded queue's index `offset` away from the lecture on screen (the lock screen's next/previous), if any.
@@ -1749,7 +1770,7 @@ extension StreamState {
     /// it; every other caller is either itself the superseder or has nothing left to do.
     @discardableResult
     private func resolve(forceRefresh: Bool, kind: RequestKind, resetBudget: Bool = true,
-                         showLoading: Bool = true, silent: Bool = false) async -> Bool {
+                         showLoading: Bool = true, silent: Bool = false, holdFailure: Bool = false) async -> Bool {
         generation += 1
         let myGeneration = generation
         resolveTask?.cancel()
@@ -1768,7 +1789,7 @@ extension StreamState {
         if showLoading { state = .loading }
         let task = Task {
             await self.performResolve(generation: myGeneration, forceRefresh: forceRefresh,
-                                      kind: kind, silent: silent)
+                                      kind: kind, silent: silent, holdFailure: holdFailure)
         }
         resolveTask = task
         await task.value
@@ -1782,7 +1803,8 @@ extension StreamState {
         return myGeneration == generation
     }
 
-    private func performResolve(generation: Int, forceRefresh: Bool, kind: RequestKind, silent: Bool) async {
+    private func performResolve(generation: Int, forceRefresh: Bool, kind: RequestKind, silent: Bool,
+                                holdFailure: Bool) async {
         let videoId = args.videoId
         let result: StreamState
         do {
@@ -1818,6 +1840,14 @@ extension StreamState {
             // current when this refresh began (`resolve` bumps by one); a miss a landed resolve superseded stays dead.
             if let miss = liveMiss, miss.generation == generation - 1 { liveMiss = (generation, miss.trigger) }
             return
+        }
+        // A lock-screen skip passing over a lecture that does not play keeps the outgoing one on screen (`skip(by:)`); a
+        // cooldown is applied, as walking on would only ask the limiter again.
+        if holdFailure, !result.isPlayable {
+            if case .cooldown = result {} else {
+                heldGeneration = generation
+                return
+            }
         }
         // §9.3(a): a proactive refresh of a live stream only ever replaces it with a stream that is still live now.
         if silent, state.isLiveNow, !result.isLiveNow { return }

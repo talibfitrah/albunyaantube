@@ -53,13 +53,13 @@ import UIKit
         seek(to: position)
     }
 
-    /// The production item: the loader on the master, or the direct m4a when Audio only is on (M14, accepted). A `sidx`
-    /// refused after its retry is reported through `onRefused` (R42).
+    /// The production item: the loader on the master, or on the audio playlist when Audio only is on (M14, accepted). A
+    /// `sidx` refused after its retry is reported through `onRefused` (R42).
     convenience init(upgrade: Resolved, masterURL: URL, audioOnly: Bool, position: TimeInterval,
                      onRefused: (@Sendable () -> Void)?, configure: @escaping (AVPlayerItem) -> Void) {
-        let url = PlayerHostView.streamURL(upgrade.stream, audioOnly: audioOnly)
+        let (url, synthetic) = PlayerHostView.source(upgrade, audioOnly: audioOnly)
         self.init(item: AVPlayerItem(asset: PlayerHostView.asset(url: url, userAgent: upgrade.userAgent,
-                                                                 synthetic: upgrade.stream.synthetic, onRefused: onRefused)),
+                                                                 synthetic: synthetic, onRefused: onRefused)),
                   masterURL: masterURL, position: position, configure: configure)
     }
 

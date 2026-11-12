@@ -132,6 +132,7 @@ import Testing
         #expect(synthetic.video.first?.height == 1080)
         #expect((synthetic.video + synthetic.audio).allSatisfy { $0.url.scheme == "https" && $0.url.absoluteString.contains("n=SOLVEDN") })
         #expect(audioOnlyURL == synthetic.audio.first?.url)
+        #expect(hd.audioOnly == synthetic.audio.first)   // audio only plays the default audio group's byte ranges
         #expect(rig.resolver.hasChallengeSolver)
     }
 

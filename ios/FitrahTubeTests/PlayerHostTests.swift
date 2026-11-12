@@ -745,26 +745,15 @@ struct PlayerHostTests {
 
     // MARK: - Task 3: audio-only URL selection and the same-player swap
 
-    @Test func audioOnlySelectsTheItag140URL() {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let audio = URL(string: "https://127.0.0.1:9/a140")!
-        let stream = ResolvedStream.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: [])
-        #expect(PlayerHostView.streamURL(stream, audioOnly: false) == video)
-        #expect(PlayerHostView.streamURL(stream, audioOnly: true) == audio)
-    }
-
-    @Test func audioOnlyFallsBackToVideoWhenNoAudioTrackExists() {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let stream = ResolvedStream.hls(url: video, isLive: false, audioOnlyURL: nil, captionTracks: [])
-        #expect(PlayerHostView.streamURL(stream, audioOnly: true) == video)
-        let progressive = ResolvedStream.progressive(url: video, label: "360p")
-        #expect(PlayerHostView.streamURL(progressive, audioOnly: true) == video)
-    }
-
-    @Test func togglingAudioOnlyReplacesTheItemAndKeepsThePlayer() throws {
-        let video = URL(string: "https://127.0.0.1:9/x.m3u8")!
-        let audio = URL(string: "https://127.0.0.1:9/a140")!
-        let resolved = Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: []))
+    /// 2026-11-12: the bare itag 140 file never started -- AVPlayer reads it with one open-ended GET, which googlevideo
+    /// throttles. Audio only plays it as a byte-range playlist through the loader, on the same player, and an update pass
+    /// on the same stream keeps that item. `.invalid` never resolves: no network.
+    @Test func togglingAudioOnlyPlaysTheItag140AsAByteRangePlaylistOnTheSamePlayer() throws {
+        let video = URL(string: "https://fixture.invalid/x.m3u8")!
+        let audio = URL(string: "https://fixture.invalid/a140")!
+        var resolved = Self.resolved(.hls(url: video, isLive: false, audioOnlyURL: audio, captionTracks: []))
+        resolved.audioOnly = .init(url: audio, codecs: "mp4a.40.2", bandwidth: 1, initRange: 0...1, indexRange: 2...3,
+                                   contentLength: 9, isDefault: true)
         let state = StreamState.ready(resolved)
         let first = PlayerHostView.player(for: state, replacing: nil, audioOnly: false)
 
@@ -772,7 +761,25 @@ struct PlayerHostTests {
 
         #expect(second === first)  // same AVPlayer -- position carries via replaceCurrentItem + seek
         let asset = try #require(second?.currentItem?.asset as? AVURLAsset)
-        #expect(asset.url == audio)
+        #expect(asset.url.scheme == "fitrah-hls")
+        #expect(asset.url.lastPathComponent == "a0.m3u8")
+        #expect(asset.resourceLoader.delegate is SyntheticHLSLoader)
+        let item = try #require(second?.currentItem)
+        #expect(PlayerHostView.player(for: state, replacing: second, audioOnly: true)?.currentItem === item,
+                "an update pass on the same stream rebuilt the audio item")
+        let back = PlayerHostView.player(for: state, replacing: second, audioOnly: false)
+        #expect((back?.currentItem?.asset as? AVURLAsset)?.url == video)
+        back?.replaceCurrentItem(with: nil)
+    }
+
+    /// No byte-range rendition (the toggle is hidden then: `audioOnlyAvailable`): the video plays on, never the bare file.
+    @Test func audioOnlyKeepsTheVideoWithoutAByteRangeRendition() throws {
+        let video = URL(string: "https://fixture.invalid/x.m3u8")!
+        let state = StreamState.ready(Self.resolved(.hls(url: video, isLive: false,
+                                                         audioOnlyURL: URL(string: "https://fixture.invalid/a140")!, captionTracks: [])))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: true))
+        #expect((player.currentItem?.asset as? AVURLAsset)?.url == video)
+        player.replaceCurrentItem(with: nil)
     }
 
     @Test func audioOnlyAssetCarriesTheResolvedUserAgent() {

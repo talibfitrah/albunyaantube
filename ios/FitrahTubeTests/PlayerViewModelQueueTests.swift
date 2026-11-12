@@ -308,6 +308,108 @@ struct PlayerViewModelQueueTests {
         #expect(player.currentTime().seconds < 0.1)
     }
 
+    /// Presses the lock screen's next (`offset` 1) or previous (-1) and waits until the skip settles: a lecture on
+    /// screen that is not `from`, or a state with nothing playable (which dismantles the host, its audio session and
+    /// the lock screen's controls).
+    private func pressTrack(_ vm: PlayerViewModel, by offset: Int, from: String) async throws {
+        let press = try #require(PlayerHostView.trackSkip(vm, by: offset))
+        press()
+        while vm.state.isPlayable, vm.hostVideoId == from { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    /// Owner report 2026-11-12: a lock-screen next onto a lecture that does not play stopped the phone. The skip passes
+    /// over it to the next playable one, and the stream on screen never leaves the playable branch on the way.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenNextPassesOverALectureThatDoesNotPlay() async throws {
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"], unplayable: ["b"])
+        await vm.open()
+        try await pressTrack(vm, by: 1, from: "a")
+        #expect(vm.state.isPlayable, "the skip showed \(vm.state) and stopped the locked phone")
+        #expect(vm.hostVideoId == "c")
+        #expect(vm.args.videoId == "c")
+        #expect(vm.queueNeighbour(1) == nil)
+    }
+
+    /// The same for previous: the pass-over keeps the direction of the press.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenPreviousPassesOverALectureThatDoesNotPlay() async throws {
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"], unplayable: ["b"])
+        await vm.open()
+        await vm.play(at: 2)
+        try await pressTrack(vm, by: -1, from: "c")
+        #expect(vm.state.isPlayable, "the skip showed \(vm.state) and stopped the locked phone")
+        #expect(vm.hostVideoId == "a")
+        #expect(vm.queue.index == 0)
+    }
+
+    /// Bounded as an auto-advance (`AutoSkipPolicy`, 3): past three lectures that do not play, the fourth's card shows,
+    /// as today, instead of walking the whole list.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenSkipStopsOnTheFourthLectureThatDoesNotPlay() async throws {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"),
+                                       queue: ["a", "x1", "x2", "x3", "x4", "z"], unplayable: ["x1", "x2", "x3", "x4"])
+        await vm.open()
+        try await pressTrack(vm, by: 1, from: "a")
+        #expect(vm.args.videoId == "x4")
+        #expect(vm.state == .contentUnavailable)
+        #expect(!resolver.calls.contains { $0.videoId == "z" && $0.kind == .player })
+    }
+
+    /// The queue's last lecture does not play either: nothing is past it, so its card shows.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenSkipShowsTheCardWhenNothingPlayableIsPastIt() async throws {
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"], unplayable: ["b", "c"])
+        await vm.open()
+        try await pressTrack(vm, by: 1, from: "a")
+        #expect(vm.args.videoId == "c")
+        #expect(vm.state == .contentUnavailable)
+    }
+
+    /// Review P1: a skip that has landed is done. A pick the user makes while its prefetch is still out wins, even
+    /// while that pick's own resolve is still running.
+    @Test(.timeLimit(.minutes(1))) func aPickDuringALockScreenSkipWins() async throws {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"),
+                                       queue: ["a", "b", "c", "d", "e", "f", "g"], unplayable: ["b"])
+        await vm.open()
+        resolver.hold("d")
+        resolver.hold("f")
+        let skip = Task { await vm.skip(by: 1) }
+        while !resolver.calls.contains(where: { $0.videoId == "d" }) { try await Task.sleep(for: .milliseconds(5)) }
+        let pick = Task { await vm.play(at: 5) }
+        while !resolver.calls.contains(where: { $0.videoId == "f" && $0.kind == .player }) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        resolver.release(id: "d")
+        await skip.value
+        resolver.release(id: "f")
+        await pick.value
+        #expect(vm.args.videoId == "f")
+        #expect(!resolver.calls.contains { $0.videoId == "g" && $0.kind == .player }, "the skip moved past the user's pick")
+    }
+
+    /// Review P2: a cooldown is the rate limiter's answer, not the lecture's: walking on would only ask again. It shows.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenSkipStopsOnACooldown() async throws {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        let until = Date().addingTimeInterval(60)
+        resolver.outcomes = ["b": .failure(.cooldown(until: until))]
+        try await pressTrack(vm, by: 1, from: "a")
+        #expect(vm.state == .cooldown(until: until))
+        #expect(!resolver.calls.contains { $0.videoId == "c" && $0.kind == .player })
+    }
+
+    /// Codex P2: the same lecture again further down the list, and it does not play this time: the outgoing play keeps
+    /// its place, and the skip goes on past it.
+    @Test(.timeLimit(.minutes(1))) func aLockScreenSkipPassesOverAFailingRepeatOfTheLectureOnScreen() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "a", "c"])
+        await vm.open()
+        let player = AVPlayer(url: url)
+        vm.currentPlayer = player
+        await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        resolver.outcomes = ["a": .failure(.unavailable(videoId: "a"))]
+        await vm.skip(by: 1)
+        #expect(vm.hostVideoId == "c")
+        #expect(vm.state.isPlayable)
+        #expect(player.currentTime().seconds > 0.5, "the held repeat restarted the lecture still playing")
+    }
+
     @Test func queueEndedIsEquatableToItself() {
         // `StreamState.==` has a `default: return false` arm -- without an explicit tuple case the
         // assertion above would silently fail forever (reconciliation note 9's enumeration table).

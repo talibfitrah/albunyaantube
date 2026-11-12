@@ -17,7 +17,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// prepare" contract.
     let quality: QualityOption
     /// `PlayerViewModel.audioOnly` (ruling 34): swaps the built item's URL to the resolved stream's
-    /// itag 140 rendition. A flip yields a DIFFERENT url, so `player(for:replacing:audioOnly:)`'s
+    /// audio playlist (`source`). A flip yields a DIFFERENT url, so `player(for:replacing:audioOnly:)`'s
     /// existing identity check already gives Android's behaviour -- an audio-mode change counts as a
     /// quality switch, position preserved (`PlayerFragment.kt:2841-2842`).
     let audioOnly: Bool
@@ -261,14 +261,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
     }
 
     /// The lock screen's next/previous lecture: the queue neighbour `offset` away, else nil (the button is disabled).
-    /// An Up Next pick without the loading card: a `.loading` hop dismantles this host, and with it the audio session
-    /// that keeps a locked phone playing. The neighbour is read again at the press: a skip that lands before SwiftUI
-    /// reruns this pass must not replay the index it captured.
+    /// The user's Play, as an Up Next tap (`PlayerScreen.playUpNext`), then `PlayerViewModel.skip(by:)`. The neighbour
+    /// is read again at the press: a skip that lands before SwiftUI reruns this pass must not replay the one it captured.
     static func trackSkip(_ model: PlayerViewModel, by offset: Int) -> (() -> Void)? {
         guard model.queueNeighbour(offset) != nil else { return nil }
         return { [weak model] in
-            guard let model, let index = model.queueNeighbour(offset) else { return }
-            PlayerScreen.playUpNext(model, at: index, showLoading: false)
+            guard let model, model.queueNeighbour(offset) != nil else { return }
+            BackgroundPlaybackController.userAskedToPlay()
+            model.heldByOpen = false
+            Task { await model.skip(by: offset) }
         }
     }
 
@@ -880,7 +881,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             existing?.pause()
             return nil
         }
-        let url = streamURL(resolved.stream, audioOnly: audioOnly)
+        let (url, synthetic) = source(resolved, audioOnly: audioOnly)
         // I7 (B1 final review): reuse the live item only while it can still play. An
         // `AVPlayerItem` that reached `.failed` never recovers, so handing it back on a same-URL
         // re-resolve (exactly what manual Retry and the recovery ladder do) froze the player on a
@@ -901,8 +902,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let reused = rebuild && continuesCurrentVideo ? existing?.currentItem.flatMap { current in
             current.status != .failed && current !== failedItem && (current.asset as? AVURLAsset)?.url == url ? current.asset : nil
         } : nil
-        let item = LandingItem(asset: reused ?? asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
-                                                       onRefused: onRefused))
+        // A refused `sidx` reports a tv_samsung refusal (R42) only for a tv_samsung file, not for Audio only's itag 140.
+        let item = LandingItem(asset: reused ?? asset(url: url, userAgent: resolved.userAgent, synthetic: synthetic,
+                                                       onRefused: resolved.client == .tvSamsung ? onRefused : nil))
         // A live player's own clock is authoritative when we have one; `resumeFallback` (the VM's
         // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
         // host and a fresh AVPlayer is being built. `continuesCurrentVideo == false` (an
@@ -1007,18 +1009,19 @@ struct PlayerHostView: UIViewControllerRepresentable {
         return (live?.isFinite == true ? live : nil) ?? fallback
     }
 
-    /// Not private: `PlayerHostTests` pins the audio-only selection directly.
-    static func streamURL(_ stream: ResolvedStream, audioOnly: Bool = false) -> URL {
+    static func streamURL(_ stream: ResolvedStream) -> URL {
         switch stream {
-        case .hls(let url, _, let audioOnlyURL, _, _):
-            // The `?? url` fallback is belt-and-braces: `PlayerViewModel.audioOnlyAvailable` hides
-            // the toggle when there is no itag 140 URL, so a true
-            // `audioOnly` with a nil rendition should be unreachable -- and if it ever is reached,
-            // video is the right thing to keep playing.
-            return audioOnly ? (audioOnlyURL ?? url) : url
-        case .progressive(let url, _):
-            return url   // rung 2 has no separate audio rendition; the toggle is hidden there anyway
+        case .hls(let url, _, _, _, _), .progressive(let url, _): url
         }
+    }
+
+    /// What an item plays: the stream, or with Audio only (ruling 34) the stream's audio file as a byte-range playlist
+    /// through `SyntheticHLSLoader` (`Resolved.audioOnly`: the bare file never started). The URL is a function of the
+    /// file, so an update pass on the same stream keeps the item. No rendition (the toggle is hidden then): the video.
+    static func source(_ resolved: Resolved, audioOnly: Bool) -> (url: URL, synthetic: SyntheticHLS?) {
+        guard audioOnly, let audio = resolved.audioOnly else { return (streamURL(resolved.stream), resolved.stream.synthetic) }
+        let key = String(UInt(bitPattern: audio.url.absoluteString.hashValue), radix: 36)
+        return (URL(string: "\(SyntheticHLSLoader.scheme)://audio-\(key)/a0.m3u8")!, SyntheticHLS(video: [], audio: [audio]))
     }
 }
 
