@@ -650,9 +650,6 @@ struct PlayerScreen: View {
            LaunchArguments.debug.indices.contains(i + 1), let url = URL(string: LaunchArguments.debug[i + 1]) {
             return FixtureLadderResolver(rung1: url)
         }
-        if LaunchArguments.debug.contains("-fitrah-fake-player-audio-only") {
-            return FixtureAudioOnlyResolver()
-        }
         if LaunchArguments.debug.contains("-fitrah-fake-player-hls") {
             return FixtureHLSPlayerResolver()
         }
@@ -709,27 +706,6 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
         }
         return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []),
                          client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
-    }
-
-    func demote(_ videoId: String, failed: ClientFamily) async {}
-}
-
-/// B2 task 3 screenshot rig: the same bundled fixture as `FixtureHLSPlayerResolver`, but with an
-/// audio rendition (`Resolved.audioOnly`), which is what `PlayerViewModel.audioOnlyAvailable` gates
-/// the audio-only toggle on. No real itag 140 stream (and no network) is needed to capture the
-/// audio-only surface; its playlist (the clip is no fMP4) never plays.
-private struct FixtureAudioOnlyResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
-        guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
-            throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
-        }
-        var resolved = Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: url, captionTracks: []),
-                                client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
-        resolved.audioOnly = .init(url: url, codecs: "mp4a.40.2", bandwidth: 1, initRange: 0...1, indexRange: 2...3,
-                                   contentLength: 9, isDefault: true)
-        return resolved
     }
 
     func demote(_ videoId: String, failed: ClientFamily) async {}
