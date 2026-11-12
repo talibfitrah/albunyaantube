@@ -1,0 +1,21 @@
+android/app/src/main/java/com/albunyaan/tube/ui/detail/adapters/ChannelLiveAdapter.kt
+  s_8a936fc306f37b::t_5e581c4379bd21 16,72-74
+android/app/src/main/java/com/albunyaan/tube/ui/detail/adapters/PlaylistVideosAdapter.kt
+  s_8a936fc306f37b::t_5e581c4379bd21 16,64-66,105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c1e810994a99726d18f3c41f563cf8cd87302d0",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
