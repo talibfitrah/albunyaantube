@@ -106,7 +106,7 @@ class PublicContentServicePaginationTest {
 
         // Assert
         assertNotNull(response);
-        // Legacy pagination generates fake cursor
+        // Filters run in memory, so the Firestore cursor query is never used
         verify(videoRepository, never()).findApprovedByUploadedAtDescWithCursor(anyInt(), any());
     }
 
@@ -451,6 +451,58 @@ class PublicContentServicePaginationTest {
 
         assertEquals(List.of("yt-video-2", "yt-video-3", "yt-video-1"),
                 response.getData().stream().map(ContentItemDto::getId).toList());
+    }
+
+    @Test
+    void getContent_videos_mostPopular_pagesWithoutRepeats() throws Exception {
+        List<Video> videos = createTestVideos(7);
+        for (int i = 0; i < 7; i++) videos.get(i).setViewCount((long) (i * 37 % 7)); // views 0,2,4,6,1,3,5
+        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt()))
+                .thenAnswer(inv -> videos.subList(0, Math.min(inv.<Integer>getArgument(0), videos.size())));
+
+        assertEquals(List.of("yt-video-4", "yt-video-7", "yt-video-3", "yt-video-6", "yt-video-2", "yt-video-5", "yt-video-1"),
+                allPages(null, null, "MOST_POPULAR"));
+    }
+
+    @Test
+    void getContent_videos_categoryLengthFilter_pagesWithoutRepeats() throws Exception {
+        List<Video> videos = createTestVideos(8);
+        for (int i = 0; i < 8; i++) videos.get(i).setDurationSeconds(i % 2 == 0 ? 60 : 1800); // odd ids SHORT
+        when(categoryRepository.findByParentId("kids")).thenReturn(Collections.emptyList());
+        when(videoRepository.findByCategoryOrderByUploadedAtDesc(eq("kids"), anyInt()))
+                .thenAnswer(inv -> videos.subList(0, Math.min(inv.<Integer>getArgument(1), videos.size())));
+
+        assertEquals(List.of("yt-video-1", "yt-video-3", "yt-video-5", "yt-video-7"),
+                allPages("kids", "SHORT", null));
+    }
+
+    @Test
+    void getContent_videos_sortedCursorPastTheWindow_endsTheListWithoutReads() throws Exception {
+        String pastWindow = java.util.Base64.getEncoder().encodeToString("200".getBytes());
+
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "VIDEOS", pastWindow, 20, null, null, null, "MOST_POPULAR");
+
+        assertTrue(response.getData().isEmpty());
+        assertNull(response.getPageInfo().getNextCursor());
+        verifyNoInteractions(videoRepository);
+    }
+
+    /** Every VIDEOS page, limit 3, following nextCursor; fails on a page that repeats an id. */
+    private List<String> allPages(String category, String length, String sort) throws Exception {
+        List<String> ids = new ArrayList<>();
+        String cursor = null;
+        for (int page = 0; page < 10; page++) {
+            CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                    "VIDEOS", cursor, 3, category, length, null, sort);
+            for (ContentItemDto item : response.getData()) {
+                assertFalse(ids.contains(item.getId()), "page " + (page + 1) + " repeats " + item.getId() + " after " + ids);
+                ids.add(item.getId());
+            }
+            cursor = response.getPageInfo().getNextCursor();
+            if (cursor == null) return ids;
+        }
+        return fail("no last page after 10 pages: " + ids);
     }
 
     private List<Video> createTestVideos(int count) {

@@ -477,11 +477,20 @@ public class PublicContentService {
             return new CursorPageDto<>(items, result.getNextCursor());
         }
 
-        // Fall back to legacy approach when filters are applied
-        List<ContentItemDto> items = getVideos(limit, category, allCategoryIds, length, date, sort);
-        String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
-        return new CursorPageDto<>(items, nextCursor);
+        // Filters and sorts run in memory, with no Firestore cursor to resume from: every page filters and sorts the
+        // same window and cuts it by offset, so page 2 starts where page 1 ended. A cursor that is not an offset, or
+        // one past the window, ends the list without a read.
+        // ponytail: the window is the newest FILTERED_VIDEOS_WINDOW × 3 approved videos (getVideos' buffer), read
+        // per page; sort the whole catalog (an indexed viewCount query or the kept tab order) if that cap shows.
+        long offset = parseCursorOffset(cursor);
+        if (offset < 0 || offset >= FILTERED_VIDEOS_WINDOW) {
+            return new CursorPageDto<>(new ArrayList<>(), null);
+        }
+        return pageOf(getVideos(FILTERED_VIDEOS_WINDOW, category, allCategoryIds, length, date, sort), cursor, limit);
     }
+
+    /** Most items a filtered or sorted VIDEOS list pages through (getVideosWithCursor). */
+    private static final int FILTERED_VIDEOS_WINDOW = 200;
 
     private List<ContentItemDto> getVideos(int limit, String category, List<String> allCategoryIds,
                                            String length, String date, String sort) throws ExecutionException, InterruptedException, TimeoutException {
@@ -1566,7 +1575,7 @@ public class PublicContentService {
     }
 
     /**
-     * Offset paging over a whole in-memory list (the expanded LIVE list, the kept tab order).
+     * Offset paging over a whole in-memory list (the expanded LIVE list, the kept tab order, a filtered VIDEOS window).
      * ponytail: every page builds the full list, entries × lives per channel (≤ 30 entries, LIVE_CATEGORY_FULL, a
      * few lives each), still small; page inside items() if the cap or the lives per channel grow.
      */
