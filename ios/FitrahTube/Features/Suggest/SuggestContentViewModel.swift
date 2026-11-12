@@ -49,8 +49,7 @@ nonisolated enum SuggestUiState: Equatable {
         }
     }
 
-    /// Visible (not `private`) only so tests can `await model.searchTask?.value` — the same
-    /// rationale as `ContentListViewModel.searchTask`.
+    /// Visible (not `private`) only so tests can `await model.searchTask?.value`.
     private(set) var searchTask: Task<Void, Never>?
 
     /// The unfiltered page(s). `state` shows `applyFilter(allItems)`.

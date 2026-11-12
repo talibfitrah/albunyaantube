@@ -35,7 +35,7 @@ struct FeaturedViewModelTests {
             homeCalls.append(HomeCall(cursor: cursor, categoryLimit: categoryLimit, contentLimit: contentLimit, category: category))
             return homePages[cursor ?? "first"] ?? CursorPage(items: [], nextCursor: nil)
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             contentCalls.append(ContentCall(type: type, cursor: cursor, limit: limit, category: filter.categoryId))
             return contentPages[cursor ?? "first"] ?? CursorPage(items: [], nextCursor: nil)
         }
@@ -59,7 +59,7 @@ struct FeaturedViewModelTests {
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
             throw Boom() // probe always fails -> flat mode
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             contentCallCount += 1
             if contentCallCount == 1 { return firstPage }
             throw Boom()
@@ -72,7 +72,7 @@ struct FeaturedViewModelTests {
         struct Boom: LocalizedError { var errorDescription: String? { "network unreachable" } }
         func categories() async throws -> [FitrahTube.Category] { [] }
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> { throw Boom() }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> { throw Boom() }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> { throw Boom() }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
@@ -91,7 +91,7 @@ struct FeaturedViewModelTests {
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
             CursorPage(items: [], nextCursor: nil) // always empty -> flat mode every time
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             contentCallCount += 1
             if contentCallCount > 1 { await gate.block() }
             return page

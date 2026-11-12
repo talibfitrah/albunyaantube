@@ -3,7 +3,7 @@ import Foundation
 /// Android's `AutofillPaginationHelper` (`content-lists.md:219-237`) -- the safety valve for the
 /// large-screen case where content already fills the viewport and a normal scroll-position
 /// listener never fires. `ContentListView` owns one of these as `@State` per tab (a value type,
-/// not part of `ContentListViewModel`) and resets it (`reset()`) on search/filter
+/// not part of `ContentListViewModel`) and resets it (`reset()`) on filter
 /// change and pull-to-refresh, mirroring Android's explicit external `reset()` call sites.
 nonisolated struct PaginationGuard: Sendable {
     var attempts = 0
@@ -16,8 +16,8 @@ nonisolated struct PaginationGuard: Sendable {
     /// (wave-3 D1) covers same-ViewModel supersession only, and misses both of these:
     ///  - `HomeView` *replaces* its ViewModel on a filter change, and the orphaned old one's
     ///    generation never moves, so its late `loadMore()` still answers `true`;
-    ///  - `ContentListView` resets the guard the instant the query changes, while the ViewModel's
-    ///    generation only bumps 300 ms later, when the debounce fires.
+    ///  - a view that resets the guard the instant a filter/query changes (`PlaylistDetailScreen`) can
+    ///    outrun the ViewModel, whose generation only bumps once the reload actually starts.
     /// Bumped by `reset()` alone, so a copy taken before a reset is refused at commit time.
     private(set) var generation = 0
 

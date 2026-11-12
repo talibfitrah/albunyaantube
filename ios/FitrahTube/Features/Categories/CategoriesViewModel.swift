@@ -17,7 +17,7 @@ nonisolated enum CategorySelection: Equatable {
     private let cache: any CategoriesCache
     private let filter: any FilterStore
     /// Not part of the brief's literal `init(cache:filter:)` -- a defaulted trailing closure, same
-    /// precedent as `HomeViewModel`'s `widthClass` / `ContentListViewModel`'s `sleep`, so tests can
+    /// precedent as `HomeViewModel`'s `widthClass`, so tests can
     /// inject a deterministic locale for the "Parent › Sub" localized-name assertions.
     private let locale: () -> Locale
 

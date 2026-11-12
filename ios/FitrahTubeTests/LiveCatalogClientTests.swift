@@ -69,7 +69,7 @@ struct LiveCatalogClientTests {
         let (sut, transport) = makeClient(responseBody: json)
         var filter = FilterState()
         filter.categoryId = "c1"
-        let page = try await sut.content(type: .videos, cursor: nil, limit: 20, filter: filter, query: nil)
+        let page = try await sut.content(type: .videos, cursor: nil, limit: 20, filter: filter)
         #expect(page.items.isEmpty)
         #expect(!page.hasMore)
         #expect(transport.lastRequest?.path == "/v1/content?type=VIDEOS&limit=20&category=c1")
@@ -81,21 +81,21 @@ struct LiveCatalogClientTests {
             let (sut, transport) = makeClient(responseBody: json)
             var filter = FilterState()
             filter.length = length
-            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter, query: nil)
+            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter)
             #expect(transport.lastRequest?.path?.contains("length=\(length.rawValue)") == true)
         }
         for date in DateFilter.allCases {
             let (sut, transport) = makeClient(responseBody: json)
             var filter = FilterState()
             filter.date = date
-            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter, query: nil)
+            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter)
             #expect(transport.lastRequest?.path?.contains("date=\(date.rawValue)") == true)
         }
         for sort in SortFilter.allCases {
             let (sut, transport) = makeClient(responseBody: json)
             var filter = FilterState()
             filter.sort = sort
-            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter, query: nil)
+            _ = try await sut.content(type: nil, cursor: nil, limit: 20, filter: filter)
             #expect(transport.lastRequest?.path?.contains("sort=\(sort.rawValue)") == true)
         }
     }
@@ -130,7 +130,7 @@ struct LiveCatalogClientTests {
     /// The two calls the retry covers, each answered from `transport` and reduced to the ids.
     private static func call(_ search: Bool, _ sut: LiveCatalogClient) async throws -> [String] {
         search ? try await sut.search(query: "quran", type: nil, limit: 50).items.map(\.id)
-               : try await sut.content(type: .videos, cursor: nil, limit: 20, filter: FilterState(), query: "quran").items.map(\.id)
+               : try await sut.content(type: .videos, cursor: nil, limit: 20, filter: FilterState()).items.map(\.id)
     }
 
     private static func makeRetrying(search: Bool, sleep: @escaping @Sendable (Duration) async throws -> Void)
@@ -244,7 +244,7 @@ struct LiveCatalogClientTests {
         """#.utf8)
         let (sut, _) = makeClient(responseBody: json)
 
-        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(categoryId: "live"), query: nil)
+        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(categoryId: "live"))
 
         #expect(page.items.first?.liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
         #expect(PlayerArgs(item: page.items[0]).liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
@@ -262,7 +262,7 @@ struct LiveCatalogClientTests {
         """#.utf8)
         let (sut, _) = makeClient(responseBody: json)
 
-        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(), query: nil)
+        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState())
 
         #expect(page.items.map(\.durationSeconds) == [nil, nil, 754])
     }
@@ -277,7 +277,7 @@ struct LiveCatalogClientTests {
         """#.utf8)
         let (sut, _) = makeClient(responseBody: json)
 
-        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(categoryId: "live"), query: nil)
+        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(categoryId: "live"))
 
         #expect(page.items.map(\.liveLink) == [true, false])
         #expect(PlayerArgs(item: page.items[0]).liveLink)

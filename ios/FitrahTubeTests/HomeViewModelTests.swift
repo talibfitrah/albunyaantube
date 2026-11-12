@@ -25,7 +25,7 @@ struct HomeViewModelTests {
             lastCategory = category
             return page
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
@@ -46,7 +46,7 @@ struct HomeViewModelTests {
             if callCount == 1 { return firstPage }
             throw Boom()
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
@@ -72,7 +72,7 @@ struct HomeViewModelTests {
             if callCount > 1 { await gate.block() }
             return page
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
@@ -85,7 +85,7 @@ struct HomeViewModelTests {
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
             throw Boom()
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
@@ -252,7 +252,7 @@ struct HomeViewModelTests {
             if failing { throw Boom() }
             return pages[cursor] ?? CursorPage(items: [], nextCursor: nil)
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }

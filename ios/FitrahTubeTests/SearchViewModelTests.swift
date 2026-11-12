@@ -37,7 +37,7 @@ struct SearchViewModelTests {
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {
@@ -60,7 +60,7 @@ struct SearchViewModelTests {
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {
@@ -86,7 +86,7 @@ struct SearchViewModelTests {
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {
@@ -118,7 +118,7 @@ struct SearchViewModelTests {
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {

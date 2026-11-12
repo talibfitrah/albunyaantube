@@ -111,13 +111,7 @@ struct HomeView: View {
                 .font(.system(size: 24, weight: .bold)) // RULING 10: 24 pt on every width class, not the scaling TypeScale.headline
                 .foregroundStyle(Color.textPrimary)
             Spacer(minLength: 0)
-            Button(action: { router.push(.search) }) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.brand)
-                    .frame(width: 48, height: 48)
-            }
-            .accessibilityLabel(String(localized: "search"))
+            SearchButton()
             Menu {
                 Button {
                     router.push(.favorites)

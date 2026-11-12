@@ -33,7 +33,7 @@ import Foundation
     /// content-lists.md §7.4's "retry latch": blocks further auto-retry attempts on a failing
     /// endpoint so a large-screen content-fits autofill can't spin forever. Not part of `State`
     /// itself (the brief's literal `.content(Mode, hasMore: Bool)` has no such field, matching
-    /// `ContentListViewModel`'s `searchTask`/`HomeViewModel`'s `loadTask` precedent of exposing
+    /// `HomeViewModel`'s `loadTask` precedent of exposing
     /// extra properties beyond the given `State` shape) -- the view feeds this into
     /// `PaginationGuard.shouldAutoLoad(paginationError:)`.
     ///
@@ -221,6 +221,6 @@ import Foundation
     /// backend has no `ALL` type, task-10's note / this task's brief).
     private func fetchFlatPage(cursor: String?) async throws -> CursorPage<ContentItem> {
         try await catalog.content(type: nil, cursor: cursor, limit: Self.flatPageSize,
-                                   filter: FilterState(categoryId: categoryId, categoryName: categoryName), query: nil)
+                                   filter: FilterState(categoryId: categoryId, categoryName: categoryName))
     }
 }

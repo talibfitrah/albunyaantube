@@ -39,12 +39,6 @@ struct ContentListView: View {
                     }
                 }
                 .refreshable {
-                    // Trimmed, like every other "is a search active" decision (gate wave-4 V6):
-                    // `viewModel.isSearchActive` is the one predicate, so a field holding only
-                    // spaces -- which shows the ordinary unfiltered list -- keeps pull-to-refresh
-                    // instead of silently disabling it. Suppressed while searching per
-                    // content-lists.md §4.4.
-                    guard viewModel?.isSearchActive != true else { return }
                     paginationGuard.reset()
                     await viewModel?.refresh()
                 }
@@ -56,24 +50,11 @@ struct ContentListView: View {
                     guard signal?.tab == tab else { return }
                     withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
                 }
-                // A new query's results replacing the list open at their top; a page appended below
-                // or a refresh of the same query keeps the place.
-                .onChange(of: viewModel?.itemsQuery) { _, _ in
-                    proxy.scrollTo(Self.topAnchor, anchor: .top)
-                }
             }
         }
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(navTitle)
         .toolbar {
-            // Spec §6.2: the list stays while a search reloads it; this says one is running. In the
-            // bar, not the content, so it never pushes the list down or covers its first row.
-            ToolbarItem(placement: .topBarTrailing) {
-                if showsSearchingIndicator {
-                    ProgressView().controlSize(.small).tint(.brand)
-                        .accessibilityLabel(String(localized: "search_loading"))
-                }
-            }
             if type == .channels {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { router.push(.categories) } label: {
@@ -97,7 +78,7 @@ struct ContentListView: View {
         .onChange(of: viewModel?.errorToken) { _, _ in
             guard let viewModel else { return }
             let retry: () -> Void
-            if case .content(_, _, true, _) = viewModel.state {
+            if case .content(_, _, true) = viewModel.state {
                 retry = { Task { await viewModel.retryPagination() } }
             } else if case .error = viewModel.state, !viewModel.lastItems.isEmpty {
                 retry = { Task { await viewModel.load() } }
@@ -107,12 +88,11 @@ struct ContentListView: View {
             bannerMessage = BannerMessage(text: String(localized: "list_error_title"),
                                           actionTitle: String(localized: "retry"), action: retry)
         }
-        // Every completed load re-arms autofill, so a filter change or a search whose first page
+        // Every completed load re-arms autofill, so a filter change whose first page
         // also fits gets its second round (gate B1-C1 scenarios 2-3). Safe against a retry storm:
         // a pagination failure leaves `paginationError` set, which `PaginationGuard`'s guard 3
         // refuses on.
         .onChange(of: viewModel?.state) { _, _ in triggerAutoFill() }
-        .onChange(of: queryBinding.wrappedValue) { _, _ in paginationGuard.reset() }
         // Fix round 1, finding #4: a category applied on the Categories/Subcategories screen
         // (Task 11) writes straight into `container.filters` and pops back here without ever
         // re-running this view's `.task` -- `ContentListViewModel` already re-reads `filter.state`
@@ -124,10 +104,8 @@ struct ContentListView: View {
             paginationGuard.reset()
             Task { await viewModel?.load() }
         }
-        // A return after an idle spell (`Router.catalogToken`): page 1 refreshed in place, the loaded pages kept. Not
-        // under a search: its results answer the typed query, and clearing the field fetches the full list afresh.
+        // A return after an idle spell (`Router.catalogToken`): page 1 refreshed in place, the loaded pages kept.
         .onChange(of: router.catalogToken) { _, _ in
-            guard viewModel?.isSearchActive != true else { return }
             paginationGuard.reset()
             Task { await viewModel?.refreshInPlace() }
         }
@@ -149,30 +127,14 @@ struct ContentListView: View {
         }
     }
 
-    // MARK: - Search bar (content-lists.md §4.1 -- inline, in-header, single 300 ms debounce, RULING 22)
+    // MARK: - Search button (unified search: Home's magnifier, where the tab's search field used to be)
 
-    private var queryBinding: Binding<String> {
-        Binding(get: { viewModel?.query ?? "" }, set: { viewModel?.query = $0 })
-    }
-
-    /// Shared chrome with `SearchView` (gate wave-2 W9); no auto-focus -- it is one element of a
-    /// header. Typing fetches after the debounce; the keyboard's Search key fetches at once.
     private var searchBar: some View {
-        // The Search key reloads page 1 like pull-to-refresh, a query change and a filter change, so
-        // it resets the guard as they do (1.0.4 I6, Cubic): a reload landing the same count behind a
-        // cancelled auto-load otherwise failed guard 5's progress check for good on iPad.
-        SearchField(text: queryBinding, accessibilityLabel: String(localized: "cd_search_icon"),
-                    onSubmit: {
-                        paginationGuard.reset()
-                        Task { await viewModel?.submit() }
-                    })
-    }
-
-    /// Only over content, like `SearchView`'s: a flag still set for the frame after a failure lands
-    /// is ignored.
-    private var showsSearchingIndicator: Bool {
-        guard let viewModel, viewModel.isSearching, case .content = viewModel.state else { return false }
-        return true
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            SearchButton()
+        }
+        .padding(.horizontal, Spacing.md(widthClass))
     }
 
     // MARK: - Filter chip (content-lists.md §4.9 -- "Category: %1$@" + Clear)
@@ -235,13 +197,9 @@ struct ContentListView: View {
                     }
                     .containerRelativeFrame(.vertical)
                 }
-            case .content(let items, let hasMore, _, let isSearchActive):
+            case .content(let items, let hasMore, _):
                 if items.isEmpty {
-                    if isSearchActive {
-                        searchEmptyState.containerRelativeFrame(.vertical)
-                    } else {
-                        typeEmptyState.containerRelativeFrame(.vertical)
-                    }
+                    typeEmptyState.containerRelativeFrame(.vertical)
                 } else {
                     contentGrid(items: items, hasMore: hasMore)
                 }
@@ -267,11 +225,6 @@ struct ContentListView: View {
                 SkeletonListView()
             }
         }
-    }
-
-    private var searchEmptyState: some View {
-        EmptyStateView(systemImage: "magnifyingglass", title: String(localized: "search_no_results"),
-                        message: String(localized: "search_try_different_hint"))
     }
 
     /// RULINGS #11: an active category filter adds a "Clear filter" action to the per-type empty copy.
@@ -357,7 +310,7 @@ struct ContentListView: View {
     }
 
     private func triggerAutoFill() {
-        guard !isLoadingMore, let viewModel, case .content(let items, let hasMore, let paginationError, _) = viewModel.state else { return }
+        guard !isLoadingMore, let viewModel, case .content(let items, let hasMore, let paginationError) = viewModel.state else { return }
         // The attempt is committed only if the ViewModel actually starts the fetch (gate wave-2
         // W2). `shouldAutoLoad` mutates: during a pull-to-refresh, layout churn triggered an
         // autofill the ViewModel then refused, but the attempt was already spent *and* `lastCount`
@@ -377,10 +330,8 @@ struct ContentListView: View {
         }
         isLoadingMore = true
         // Committed only while the guard it was copied from is still the live one (gate wave-4
-        // V6): the query-change reset above fires immediately, but the ViewModel's own
-        // `loadGeneration` only bumps 300 ms later when the debounce fires -- so an autofill in
-        // flight across that window passed `loadMore()`'s generation check and wrote its
-        // pre-reset attempt back over the reset, latching guard 5 off for the new query's results.
+        // V6): a reset made while the autofill is in flight must not be overwritten by its
+        // pre-reset attempt, which would latch guard 5 off for the reloaded list.
         Task {
             if await runLoadMore(), attempt.generation == paginationGuard.generation {
                 paginationGuard = attempt

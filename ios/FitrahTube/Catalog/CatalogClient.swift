@@ -4,7 +4,7 @@ import Foundation
 nonisolated protocol CatalogClient: Sendable {
     func categories() async throws -> [Category]
     func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection>
-    func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem>
+    func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem>
     func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult
     /// `live`: a live id the phone read on the channel's own page; the backend serves it only if it passes curation.
     func liveChannel(id: String, live: String?) async throws -> LiveChannelLives

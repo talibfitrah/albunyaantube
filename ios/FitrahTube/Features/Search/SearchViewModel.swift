@@ -44,7 +44,7 @@ import Foundation
         didSet {
             guard query != oldValue else { return }
             searchTask?.cancel()
-            // Trimmed, matching `ContentListViewModel.queryParam` (gate wave-3 D5): `"  "` used to
+            // Trimmed (gate wave-3 D5): `"  "` used to
             // clear the ≥2-char bar and go out as a two-space search, and `" ab "` searched for the
             // padded string -- while `SearchHistoryStore.add` trimmed, so history and the request
             // disagreed about what was searched.
@@ -77,8 +77,7 @@ import Foundation
 
     private static let pageSize = 50 // search-categories.md §1.5 -- one request, no paging
 
-    /// Visible (not `private`) only so tests can `await vm.searchTask?.value` -- same rationale as
-    /// `ContentListViewModel.searchTask`. Covers both the pending debounce timer and, once it
+    /// Visible (not `private`) only so tests can `await vm.searchTask?.value`. Covers both the pending debounce timer and, once it
     /// fires (or `submit()`/`retry()` runs immediately), the fetch itself.
     private(set) var searchTask: Task<Void, Never>?
 

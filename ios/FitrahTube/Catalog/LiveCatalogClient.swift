@@ -35,7 +35,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
         return CursorPage(items: sections, nextCursor: output.value1.pageInfo?.nextCursor)
     }
 
-    func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+    func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState) async throws -> CursorPage<ContentItem> {
         let input = Operations.GetPublicContent.Input(query: .init(
             _type: type.flatMap { Operations.GetPublicContent.Input.Query._TypePayload(rawValue: $0.rawValue) },
             cursor: cursor,
@@ -43,8 +43,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
             category: filter.categoryId,
             length: filter.length,
             date: filter.date,
-            sort: filter.sort,
-            q: query
+            sort: filter.sort
         ))
         let output = try await retryOnceWhileIndexBuilds { try await client.getPublicContent(input) } retryAfter: {
             if case .serviceUnavailable(let busy) = $0 { busy.headers.retryAfter } else { nil }

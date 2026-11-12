@@ -771,20 +771,36 @@ struct HomeSectionRow: View {
     }
 }
 
-// MARK: - SearchField (the pill-shaped query field, shared by Search and the list tabs)
+// MARK: - SearchButton (the one search entry: Home's magnifier, also shown on the list tabs)
 
-/// Magnifier + text field + clear button in a `surfaceVariant` pill. One copy (gate wave-2 W9):
-/// `SearchView.searchField` and `ContentListView.searchBar` were near-identical, differing only in
-/// focus/submit behaviour and the field's VoiceOver label -- so the next styling change would have
-/// had to be made twice, correctly, to keep the two screens looking like one app.
+/// Pushes the global search screen. Home's header and the Channels/Playlists/Videos tabs share this one
+/// copy, so the entry looks and reads the same wherever it sits.
+struct SearchButton: View {
+    @Environment(\.router) private var router
+
+    var body: some View {
+        Button(action: { router.push(.search) }) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 20))
+                .foregroundStyle(Color.brand)
+                .frame(width: 48, height: 48)
+        }
+        .accessibilityLabel(String(localized: "search"))
+    }
+}
+
+// MARK: - SearchField (the pill-shaped query field, shared by Search and the detail/suggest screens)
+
+/// Magnifier + text field + clear button in a `surfaceVariant` pill. One copy (gate wave-2 W9): the
+/// screens differ only in focus/submit behaviour and the field's VoiceOver label -- so the next
+/// styling change is made once.
 struct SearchField: View {
     @Binding var text: String
     let accessibilityLabel: String
-    /// Set by `SearchView` (auto-focus on appear); `nil` on the list tabs, whose field is just one
+    /// Set by `SearchView` (auto-focus on appear); `nil` elsewhere, where the field is just one
     /// element of a header.
     var focus: FocusState<Bool>.Binding?
-    /// Set by `SearchView` and the list tabs, which search on the keyboard's Search key (bypassing
-    /// their debounce).
+    /// Set by `SearchView`, which searches on the keyboard's Search key (bypassing its debounce).
     var onSubmit: (() -> Void)?
     /// Overrides the placeholder. `nil` (every Phase 1-3 caller) keeps `search_hint`; Task 27's
     /// Suggest screen searches YouTube through the BACKEND and says so (`suggest_search_hint`).
