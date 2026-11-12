@@ -35,8 +35,9 @@ class ImportExportServiceTest {
     final ChannelRepository channels = mock(ChannelRepository.class);
     final PlaylistRepository playlists = mock(PlaylistRepository.class);
     final VideoRepository videos = mock(VideoRepository.class);
+    final PublicContentCacheService caches = mock(PublicContentCacheService.class);
     final ImportExportService service = new ImportExportService(categories, channels, playlists, videos,
-            mock(AuditLogService.class), mock(VideoValidationService.class), mock(LiveCategoryGuard.class));
+            mock(AuditLogService.class), mock(VideoValidationService.class), mock(LiveCategoryGuard.class), caches);
 
     @Test
     void eachStoredDocIsReadOnce() throws Exception {
@@ -66,6 +67,37 @@ class ImportExportServiceTest {
         verify(playlists).findById("pl-1");
         verify(videos).findById("v-1");
         verify(channels).save(channel);
+    }
+
+    /** The JSON import writes APPROVED docs straight into the tabs, so it announces a content change. */
+    @Test
+    void anImportThatWritesADocAnnouncesAContentChange() throws Exception {
+        Channel channel = new Channel("UCx");
+        channel.setId("ch-1");
+        channel.setStatus("APPROVED");
+        ImportRequest request = new ImportRequest();
+        request.setChannels(List.of(channel));
+        request.setMergeStrategy("OVERWRITE");
+
+        service.importAll(request);
+
+        verify(channels).save(channel);
+        verify(caches).evictPublicContentCaches();
+    }
+
+    @Test
+    void anImportThatWritesNothingAnnouncesNothing() throws Exception {
+        Channel channel = new Channel("UCx");
+        channel.setId("ch-1");
+        when(channels.findById("ch-1")).thenReturn(Optional.of(new Channel("UCx")));
+        ImportRequest request = new ImportRequest();
+        request.setChannels(List.of(channel));
+        request.setMergeStrategy("SKIP");
+
+        service.importAll(request);
+
+        verify(channels, never()).save(channel);
+        verify(caches, never()).evictPublicContentCaches();
     }
 
     /**
@@ -296,7 +328,7 @@ class ImportExportServiceTest {
         LiveCategoryService liveCategories = mock(LiveCategoryService.class);
         ImportExportService importer = new ImportExportService(categories, channels, playlists, videos,
                 mock(AuditLogService.class), mock(VideoValidationService.class),
-                new LiveCategoryGuard(liveCategories, live, videos, channels, playlists, new CategoryMappingService(categories)));
+                new LiveCategoryGuard(liveCategories, live, videos, channels, playlists, new CategoryMappingService(categories)), caches);
         when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
         when(reader.read(uc)).thenReturn(LiveTabResult.error(1, "boom"));
         live.loadStates(List.of());
@@ -355,7 +387,7 @@ class ImportExportServiceTest {
         LiveCategoryService liveCategories = mock(LiveCategoryService.class);
         ImportExportService importer = new ImportExportService(categories, channels, playlists, videos,
                 mock(AuditLogService.class), mock(VideoValidationService.class),
-                new LiveCategoryGuard(liveCategories, live, videos, channels, playlists, new CategoryMappingService(categories)));
+                new LiveCategoryGuard(liveCategories, live, videos, channels, playlists, new CategoryMappingService(categories)), caches);
         when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
         when(reader.read(uc)).thenReturn(LiveTabResult.error(1, "boom"));
         for (String strategy : List.of("OVERWRITE", "MERGE")) {
@@ -442,7 +474,7 @@ class ImportExportServiceTest {
         LiveCategoryService liveCategories = mock(LiveCategoryService.class);
         ImportExportService importer = new ImportExportService(categories, channels, playlists, videos,
                 mock(AuditLogService.class), mock(VideoValidationService.class),
-                new LiveCategoryGuard(liveCategories, live, videos, channels, playlists, new CategoryMappingService(categories)));
+                new LiveCategoryGuard(liveCategories, live, videos, channels, playlists, new CategoryMappingService(categories)), caches);
         when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
         when(reader.read(uc)).thenReturn(LiveTabResult.error(1, "boom"));
         live.loadStates(List.of());

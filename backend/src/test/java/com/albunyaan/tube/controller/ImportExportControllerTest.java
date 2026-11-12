@@ -14,6 +14,7 @@ import com.albunyaan.tube.service.ImportExportService;
 import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.LiveCategoryService;
 import com.albunyaan.tube.service.LiveChannelService;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SimpleExportService;
 import com.albunyaan.tube.service.SimpleImportService;
 import org.junit.jupiter.api.Test;
@@ -55,7 +56,7 @@ class ImportExportControllerTest {
         LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, mock(LiveChannelService.class), videos,
                 channels, playlists, mapping);
         ImportExportController controller = new ImportExportController(mock(ImportExportService.class),
-                new SimpleImportService(orchestrator, mapping, channels, playlists, videos), mock(SimpleExportService.class),
+                new SimpleImportService(orchestrator, mapping, channels, playlists, videos, mock(PublicContentCacheService.class)), mock(SimpleExportService.class),
                 mock(ContentImportService.class), mock(ValidationRunRepository.class), Runnable::run, guard);
 
         controller.importSimpleFormat(new MockMultipartFile("file", "import.json", "application/json",

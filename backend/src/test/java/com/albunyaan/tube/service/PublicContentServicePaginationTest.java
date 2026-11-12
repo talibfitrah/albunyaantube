@@ -68,51 +68,6 @@ class PublicContentServicePaginationTest {
     }
 
     @Test
-    void getContent_channels_returnsNextCursor_whenHasMoreItems() throws Exception {
-        // Arrange
-        List<Channel> channels = createTestChannels(5);
-        String nextCursor = CursorUtils.encodeFromDocumentId("channel-5");
-        ChannelRepository.PaginatedResult<Channel> result =
-                new ChannelRepository.PaginatedResult<>(channels, nextCursor, true);
-
-        when(channelRepository.findApprovedBySubscribersDescWithCursor(eq(5), isNull()))
-                .thenReturn(result);
-
-        // Act
-        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
-                "CHANNELS", null, 5, null, null, null, null
-        );
-
-        // Assert
-        assertNotNull(response);
-        assertEquals(5, response.getData().size());
-        assertNotNull(response.getPageInfo().getNextCursor());
-        assertTrue(response.getPageInfo().isHasNext());
-    }
-
-    @Test
-    void getContent_channels_returnsNullCursor_whenLastPage() throws Exception {
-        // Arrange
-        List<Channel> channels = createTestChannels(3);
-        ChannelRepository.PaginatedResult<Channel> result =
-                new ChannelRepository.PaginatedResult<>(channels, null, false);
-
-        when(channelRepository.findApprovedBySubscribersDescWithCursor(eq(5), isNull()))
-                .thenReturn(result);
-
-        // Act
-        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
-                "CHANNELS", null, 5, null, null, null, null
-        );
-
-        // Assert
-        assertNotNull(response);
-        assertEquals(3, response.getData().size());
-        assertNull(response.getPageInfo().getNextCursor());
-        assertFalse(response.getPageInfo().isHasNext());
-    }
-
-    @Test
     void getContent_channels_withCategory_usesCategoryQuery() throws Exception {
         // Arrange
         List<Channel> channels = createTestChannels(2);
@@ -133,73 +88,6 @@ class PublicContentServicePaginationTest {
         assertEquals(2, response.getData().size());
         verify(channelRepository).findApprovedByCategoryAndSubscribersDescWithCursor(
                 eq("islamic"), eq(5), isNull());
-    }
-
-    @Test
-    void getContent_channels_withCursor_passesCursorToRepository() throws Exception {
-        // Arrange
-        String cursor = CursorUtils.encodeFromDocumentId("prev-channel");
-        List<Channel> channels = createTestChannels(5);
-        ChannelRepository.PaginatedResult<Channel> result =
-                new ChannelRepository.PaginatedResult<>(channels, null, false);
-
-        when(channelRepository.findApprovedBySubscribersDescWithCursor(eq(5), eq(cursor)))
-                .thenReturn(result);
-
-        // Act
-        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
-                "CHANNELS", cursor, 5, null, null, null, null
-        );
-
-        // Assert
-        assertNotNull(response);
-        verify(channelRepository).findApprovedBySubscribersDescWithCursor(eq(5), eq(cursor));
-    }
-
-    @Test
-    void getContent_playlists_returnsNextCursor_whenHasMoreItems() throws Exception {
-        // Arrange
-        List<Playlist> playlists = createTestPlaylists(5);
-        String nextCursor = CursorUtils.encodeFromDocumentId("playlist-5");
-        PlaylistRepository.PaginatedResult<Playlist> result =
-                new PlaylistRepository.PaginatedResult<>(playlists, nextCursor, true);
-
-        when(playlistRepository.findApprovedByItemCountDescWithCursor(eq(5), isNull()))
-                .thenReturn(result);
-
-        // Act
-        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
-                "PLAYLISTS", null, 5, null, null, null, null
-        );
-
-        // Assert
-        assertNotNull(response);
-        assertEquals(5, response.getData().size());
-        assertNotNull(response.getPageInfo().getNextCursor());
-        assertTrue(response.getPageInfo().isHasNext());
-    }
-
-    @Test
-    void getContent_videos_returnsNextCursor_whenHasMoreItems() throws Exception {
-        // Arrange
-        List<Video> videos = createTestVideos(5);
-        String nextCursor = CursorUtils.encodeFromDocumentId("video-5");
-        VideoRepository.PaginatedResult<Video> result =
-                new VideoRepository.PaginatedResult<>(videos, nextCursor, true);
-
-        when(videoRepository.findApprovedByUploadedAtDescWithCursor(eq(5), isNull()))
-                .thenReturn(result);
-
-        // Act
-        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
-                "VIDEOS", null, 5, null, null, null, null
-        );
-
-        // Assert
-        assertNotNull(response);
-        assertEquals(5, response.getData().size());
-        assertNotNull(response.getPageInfo().getNextCursor());
-        assertTrue(response.getPageInfo().isHasNext());
     }
 
     @Test
@@ -533,6 +421,36 @@ class PublicContentServicePaginationTest {
     void normalizeCursor_negativeOrderWithoutId_neverTakesTheFirstPageKey() {
         String cursor = java.util.Base64.getEncoder().encodeToString("-3".getBytes());
         assertNotEquals("0", PublicContentService.normalizeCursor(cursor));
+    }
+
+    @Test
+    void getContent_videos_mostPopular_sortsByViewsDescending() throws Exception {
+        List<Video> videos = createTestVideos(3);
+        videos.get(0).setViewCount(10L);
+        videos.get(1).setViewCount(30L);
+        videos.get(2).setViewCount(20L);
+        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(videos);
+
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "VIDEOS", null, 5, null, null, null, "MOST_POPULAR");
+
+        assertEquals(List.of("yt-video-2", "yt-video-3", "yt-video-1"),
+                response.getData().stream().map(ContentItemDto::getId).toList());
+    }
+
+    @Test
+    void getContent_videos_popular_sortsByViewsDescending() throws Exception {
+        List<Video> videos = createTestVideos(3);
+        videos.get(0).setViewCount(10L);
+        videos.get(1).setViewCount(30L);
+        videos.get(2).setViewCount(20L);
+        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(videos);
+
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "VIDEOS", null, 5, null, null, null, "POPULAR");
+
+        assertEquals(List.of("yt-video-2", "yt-video-3", "yt-video-1"),
+                response.getData().stream().map(ContentItemDto::getId).toList());
     }
 
     private List<Video> createTestVideos(int count) {

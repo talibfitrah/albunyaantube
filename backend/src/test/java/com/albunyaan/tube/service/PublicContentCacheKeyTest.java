@@ -1,5 +1,7 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.ContentItemDto;
+import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
@@ -16,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
@@ -29,8 +32,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,11 +51,8 @@ class PublicContentCacheKeyTest {
         }
 
         @Bean
-        ChannelRepository channelRepository() throws Exception {
-            ChannelRepository channels = mock(ChannelRepository.class);
-            when(channels.findApprovedBySubscribersDescWithCursor(anyInt(), isNull()))
-                    .thenReturn(new ChannelRepository.PaginatedResult<>(List.of(), null, false));
-            return channels;
+        ChannelRepository channelRepository() {
+            return mock(ChannelRepository.class);
         }
 
         @Bean
@@ -71,6 +71,11 @@ class PublicContentCacheKeyTest {
         }
 
         @Bean
+        PublicContentCacheService cacheService(ApplicationEventPublisher events) {
+            return new PublicContentCacheService(events);
+        }
+
+        @Bean
         PublicContentService publicContentService(ChannelRepository channels, PlaylistRepository playlists,
                                                   VideoRepository videos, CategoryRepository categories) {
             return new PublicContentService(channels, playlists, videos,
@@ -85,11 +90,13 @@ class PublicContentCacheKeyTest {
     @Autowired private CategoryRepository categories;
     @Autowired private VideoRepository videos;
     @Autowired private CacheManager cacheManager;
+    @Autowired private PublicContentCacheService cacheService;
 
     @BeforeEach
     void freshCacheAndCounts() {
+        cacheService.evictPublicContentCaches(); // resets the service's kept tab order, shared by every test here
         cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
-        clearInvocations(channels, playlists, categories);
+        reset(channels, playlists, categories, videos); // stubs too, so one test's findByStatus answer never leaks
     }
 
     private static String cursor(String decoded) {
@@ -99,9 +106,10 @@ class PublicContentCacheKeyTest {
     @Test
     void aOneCharacterQueryIsServedFromThePlainListCache() throws Exception {
         // The controller falls through to getContent for q under 2 characters; q no longer reaches the cache key.
+        // The plain tab's cache is the kept tab order (it skips the page cache): the catalog is still read once.
         service.getContent("CHANNELS", null, 20, null, null, null, null);
         service.getContent("CHANNELS", null, 20, null, null, null, null);
-        verify(channels, times(1)).findApprovedBySubscribersDescWithCursor(20, null);
+        verify(channels, times(1)).findByStatus("APPROVED");
     }
 
     @Test
@@ -175,7 +183,7 @@ class PublicContentCacheKeyTest {
 
     @Test
     void contentWithCategoryNullNeverBlanksTheUnfilteredTab() throws Exception {
-        newestVideosPageHoldsOneVideo();
+        tabOrderHoldsOneVideo();
         when(videos.findApprovedByCategoryAndUploadedAtDescWithCursor(eq("null"), anyInt(), isNull()))
                 .thenReturn(new VideoRepository.PaginatedResult<>(List.of(), null, false));
 
@@ -187,19 +195,55 @@ class PublicContentCacheKeyTest {
     @Test
     void contentWithSortNullNeverReplacesTheUnsortedTab() throws Exception {
         // sort=null takes the legacy path (empty here), whose page must not answer the unsorted request.
-        newestVideosPageHoldsOneVideo();
+        tabOrderHoldsOneVideo();
 
         assertTrue(service.getContent("VIDEOS", null, 20, null, null, null, "null").getData().isEmpty(), "precondition");
 
         assertEquals(1, service.getContent("VIDEOS", null, 20, null, null, null, null).getData().size());
     }
 
-    private void newestVideosPageHoldsOneVideo() throws Exception {
+    @Test
+    void aDashboardChangeShowsOnTheNextTabRequestButALiveChangeKeepsTheOrder() throws Exception {
+        Channel one = new Channel("UCone"), two = new Channel("UCtwo");
+        one.setId("ch1"); one.setStatus("APPROVED");
+        two.setId("ch2"); two.setStatus("APPROVED");
+        when(channels.findByCategoryIds(eq(List.of("c1")), anyInt())).thenReturn(List.of(one));
+        when(channels.findByCategoryIds(eq(List.of("c2")), anyInt())).thenReturn(List.of(two));
+        when(categories.findAll()).thenReturn(List.of(category("c1", 0), category("c2", 1)));
+        assertEquals(List.of("UCone", "UCtwo"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+
+        when(categories.findAll()).thenReturn(List.of(category("c1", 1), category("c2", 0))); // the admin moved c2 up
+        cacheService.evictForLiveChange();
+        assertEquals(List.of("UCone", "UCtwo"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+
+        cacheService.evictPublicContentCaches();
+        assertEquals(List.of("UCtwo", "UCone"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+    }
+
+    @Test
+    void aTabPageFromABuildAContentChangeOvertookIsNeverCached() throws Exception {
+        // The change lands mid-build: the overtaken build answers once, then the page cache must not keep it.
+        Channel old = new Channel("UCold"), fresh = new Channel("UCnew");
+        old.setId("ch1"); old.setStatus("APPROVED");
+        fresh.setId("ch2"); fresh.setStatus("APPROVED");
+        when(channels.findByStatus("APPROVED"))
+                .thenAnswer(inv -> { cacheService.evictPublicContentCaches(); return List.of(old); })
+                .thenReturn(List.of(fresh));
+
+        assertEquals(List.of("UCold"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+
+        assertEquals(List.of("UCnew"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+    }
+
+    private static List<String> ids(CursorPageDto<ContentItemDto> page) {
+        return page.getData().stream().map(ContentItemDto::getId).toList();
+    }
+
+    private void tabOrderHoldsOneVideo() throws Exception {
         Video video = new Video("vNewest");
         video.setId("v1");
         video.setStatus("APPROVED");
-        when(videos.findApprovedByUploadedAtDescWithCursor(anyInt(), isNull()))
-                .thenReturn(new VideoRepository.PaginatedResult<>(List.of(video), null, false));
+        when(videos.findByStatus("APPROVED")).thenReturn(List.of(video));
     }
 
     private static Category category(String id, int displayOrder) {

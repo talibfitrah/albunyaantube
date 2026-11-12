@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -123,18 +124,19 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
                 closedBreaker, Clock.systemUTC(), false, 1_000_000);
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Morning")), 1));
         poller.cycle(T0);
-        verify(spyCaches, times(1)).evictPublicContentCaches();
+        verify(spyCaches, times(1)).evictForLiveChange();
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Evening")), 1));
         forgetMemo();                                            // the service's 60 s memo runs on the wall clock here
         poller.cycle(T0 + DAY);                                  // the next sweep
-        verify(spyCaches, times(1)).evictPublicContentCaches();
+        verify(spyCaches, times(1)).evictForLiveChange();
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Evening"),
                 new LiveTabResult.LiveItem("it3live002d", "Second")), 1));
         forgetMemo();
         poller.cycle(T0 + 2 * DAY);
-        verify(spyCaches, times(2)).evictPublicContentCaches();
+        verify(spyCaches, times(2)).evictForLiveChange();
+        verify(spyCaches, never()).evictPublicContentCaches();   // a live change never announces a content change
     }
 
     /** Owner ruling 2026-11-02: an ended link a later read lists live is served again, with no admin action. */

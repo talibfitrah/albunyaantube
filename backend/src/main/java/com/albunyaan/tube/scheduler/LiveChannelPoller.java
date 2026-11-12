@@ -310,7 +310,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         try {
             refreshView(view);
         } finally {
-            if (changed || !servedIds(servedBefore).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
+            if (changed || !servedIds(servedBefore).equals(servedIds(live.served()))) caches.evictForLiveChange();
         }
     }
 
@@ -379,7 +379,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
             if (!viewStale.getAndSet(false)) return;
             Map<String, List<LiveTabResult.LiveItem>> before = live.served();
             refreshView(view());
-            if (!servedIds(before).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
+            if (!servedIds(before).equals(servedIds(live.served()))) caches.evictForLiveChange();
         } catch (Exception e) {
             viewStale.set(true);                                           // the next tick tries again
             log.warn("live poller: moderation refresh failed: {}", e.toString());

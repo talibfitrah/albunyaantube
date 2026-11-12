@@ -400,10 +400,11 @@ public class VideoRepository {
     public List<Video> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         if (categoryIds == null || categoryIds.isEmpty()) return List.of();
 
-        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        // The full limit per category: the result is then exactly the first `limit` of the whole sorted union.
+        // ponytail: reads up to limit × categoryIds.size() docs per call; see ChannelRepository.findByCategoryIds.
         LinkedHashMap<String, Video> deduped = new LinkedHashMap<>();
         for (String catId : categoryIds) {
-            List<Video> batch = findByCategoryOrderByUploadedAtDesc(catId, perCategoryLimit);
+            List<Video> batch = findByCategoryOrderByUploadedAtDesc(catId, limit);
             for (Video v : batch) {
                 deduped.putIfAbsent(v.getId(), v);
             }
