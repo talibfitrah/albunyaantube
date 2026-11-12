@@ -11,11 +11,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Forbidden403RecoveryTest {
-    @Test fun `first 403 refreshes`() = assertEquals(REFRESH, next403Step(0, 2, playingMuxed = false, hasMuxed = true))
-    @Test fun `repeat 403 on adaptive plays muxed`() = assertEquals(PLAY_MUXED, next403Step(1, 2, false, true))
-    @Test fun `repeat 403 at the budget edge still plays muxed before exhausting`() = assertEquals(PLAY_MUXED, next403Step(2, 2, false, true))
-    @Test fun `403 while muxed refreshes then exhausts`() { assertEquals(REFRESH, next403Step(1, 2, true, true)); assertEquals(EXHAUSTED, next403Step(2, 2, true, true)) }
-    @Test fun `no muxed track keeps the refresh ladder`() { assertEquals(REFRESH, next403Step(1, 2, false, false)); assertEquals(EXHAUSTED, next403Step(2, 2, false, false)) }
+    // next403Step(403s on this stream incl. this one, refreshes this episode, max, playingMuxed, hasMuxed)
+    @Test fun `first 403 refreshes`() = assertEquals(REFRESH, next403Step(1, 0, 2, playingMuxed = false, hasMuxed = true))
+    @Test fun `repeat 403 on adaptive plays muxed`() = assertEquals(PLAY_MUXED, next403Step(2, 1, 2, false, true))
+    @Test fun `repeat 403 at the budget edge still plays muxed before exhausting`() = assertEquals(PLAY_MUXED, next403Step(2, 2, 2, false, true))
+    @Test fun `403 while muxed refreshes then exhausts`() { assertEquals(REFRESH, next403Step(2, 1, 2, true, true)); assertEquals(EXHAUSTED, next403Step(3, 2, 2, true, true)) }
+    @Test fun `no muxed track keeps the refresh ladder`() { assertEquals(REFRESH, next403Step(2, 1, 2, false, false)); assertEquals(EXHAUSTED, next403Step(3, 2, 2, false, false)) }
+
+    // The field pattern: play ~40 s, 403, refresh, play again (resume resets the episode
+    // budget to 0), 403 again. The per-stream count says this is the second 403.
+    @Test fun `second 403 on the same stream after a resume plays muxed`() = assertEquals(PLAY_MUXED, next403Step(2, 0, 2, false, true))
+    @Test fun `no muxed after a resume keeps the ladder`() = assertEquals(REFRESH, next403Step(2, 0, 2, false, false))
+    @Test fun `live never plays muxed after a resume`() = assertEquals(REFRESH, next403Step(2, 0, 2, false, hasMuxedFallback(streams(true, track(false)))))
+    @Test fun `first 403 after another path spent a refresh still refreshes`() = assertEquals(REFRESH, next403Step(1, 1, 2, false, true))
 
     private fun track(videoOnly: Boolean) = VideoTrack(
         url = "https://example.com/v", mimeType = "video/mp4", width = 640, height = 360,

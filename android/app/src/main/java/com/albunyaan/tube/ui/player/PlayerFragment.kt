@@ -253,6 +253,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var adaptiveFailedForCurrentStream: String? = null
 
     /**
+     * HTTP 403s seen on [forbidden403StreamId]. Unlike the listener's streamRefreshCount it
+     * survives a resume, so a stream that plays ~40 s and 403s again is seen as a repeat
+     * ([next403Step] plays muxed). Resets on a new stream and on the two manual retry buttons.
+     */
+    private var forbidden403StreamId: String? = null
+    private var forbidden403Count = 0
+
+    /**
      * Minimal buffering-stall watchdog (replaces the old multi-step recovery
      * stall ladder). When the player sits in STATE_BUFFERING past a threshold and the
      * current stream is unchanged, route through the battle-tested re-resolve path
@@ -609,6 +617,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.playerRefreshStreamButton.setOnClickListener {
             // Reset adaptive fallback flag - manual refresh should retry adaptive
             adaptiveFailedForCurrentStream = null
+            forbidden403Count = 0
             // Manual refresh: ALWAYS invalidate MPD first, regardless of rate limit.
             // This is intentional - user-initiated refresh should clear stale URLs even if
             // rate-limited, so the next allowed refresh uses fresh URLs.
@@ -628,6 +637,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             viewModel.clearRecoveringState()
             // Reset adaptive fallback flag - manual retry should retry adaptive
             adaptiveFailedForCurrentStream = null
+            forbidden403Count = 0
             // Manual retry: ALWAYS invalidate MPD first, regardless of rate limit.
             // Same reasoning as refresh button - user action clears stale URLs.
             viewModel.state.value.currentItem?.streamId?.let { videoId ->
@@ -2186,6 +2196,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // progressing — otherwise it would cover working video (the "let playback continue"
             // case cubic flagged). A toast is enough when playback continues.
             if (player?.isPlaying != true) {
+                // No extraction allowed, but an adaptive VOD source still has its muxed track
+                // in hand: play that (no extraction, no limiter) before giving up.
+                if (preparedIsAdaptive &&
+                    hasMuxedFallback((viewModel.state.value.streamState as? StreamState.Ready)?.selection?.resolved)
+                ) {
+                    playMuxedFromCurrentStreams("refresh rate-limited: $reason")
+                    return
+                }
                 surfaceRecoveryExhausted()
             }
             context?.let { ctx ->
@@ -2383,10 +2401,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Telemetry: count this 403 in the active session
             streamTelemetry.record403()
 
+            if (forbidden403StreamId != videoId) {
+                forbidden403StreamId = videoId
+                forbidden403Count = 0
+            }
+            val forbidden403s = ++forbidden403Count
+
             android.util.Log.w(
                 "PlayerFragment",
                 "HTTP 403 detected: type=$failureType, videoId=$videoId, " +
-                    "streamRefreshCount=$currentStreamRefreshCount"
+                    "streamRefreshCount=$currentStreamRefreshCount, 403sThisStream=$forbidden403s"
             )
 
             // Phase 0 metrics: track 403 error with classification
@@ -2472,7 +2496,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         Toast.makeText(ctx, R.string.player_stream_expired, Toast.LENGTH_SHORT).show()
                     }
 
-                    when (next403Step(currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
+                    when (next403Step(forbidden403s, currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
                         Forbidden403Step.REFRESH -> {
                             onStreamRefresh()
                             requestStreamRefreshAndResume("URL expired (403)")
@@ -2497,7 +2521,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         // The user may have switched video during the backoff: the state captured
                         // above belongs to the 403'd video, so act only if it is still current.
                         if (viewModel.state.value.currentItem?.streamId != videoId) return@launch
-                        when (next403Step(currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
+                        when (next403Step(forbidden403s, currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
                             Forbidden403Step.REFRESH -> {
                                 onStreamRefresh()
                                 requestStreamRefreshAndResume("HTTP $httpResponseCode (${failureType.name})")
