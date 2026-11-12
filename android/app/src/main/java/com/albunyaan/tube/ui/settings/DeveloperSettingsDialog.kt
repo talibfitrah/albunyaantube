@@ -122,7 +122,7 @@ class DeveloperSettingsDialog : DialogFragment() {
             featureFlags.setGenerousCropBudgetEnabled(if (enabled == cropBudgetDeviceDefault) null else enabled)
         }
 
-        // Add clear cache button (useful when toggling IOS_FETCH to force new extractions)
+        // Add clear cache button (useful after changing extraction settings)
         val clearCacheButton = TextView(context).apply {
             text = getString(R.string.dev_settings_clear_cache)
             setTextColor(context.getColor(R.color.primary_variant))

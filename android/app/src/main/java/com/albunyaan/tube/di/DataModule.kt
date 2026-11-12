@@ -280,14 +280,12 @@ object DataModule {
         downloader: com.albunyaan.tube.data.extractor.RateLimitedDownloader,
         cache: MetadataCache,
         metrics: ExtractorMetricsReporter,
-        featureFlags: PlaybackFeatureFlags,
         poTokenProvider: com.albunyaan.tube.data.extractor.potoken.WebViewPoTokenProvider,
     ): NewPipeExtractorClient {
         return NewPipeExtractorClient(
             downloader,
             cache,
             metrics,
-            featureFlags,
             poTokenProvider,
         )
     }

@@ -4,7 +4,6 @@ import android.os.SystemClock
 import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
-import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.model.ContentType
 import java.io.IOException
@@ -37,7 +36,6 @@ class NewPipeExtractorClient(
     private val downloader: org.schabi.newpipe.extractor.downloader.Downloader,
     private val cache: MetadataCache,
     private val metrics: ExtractorMetricsReporter,
-    private val featureFlags: PlaybackFeatureFlags,
     /**
      * Supplies WebView-minted poTokens to the YouTube web client. Null in tests / contexts without
      * a WebView, in which case extraction proceeds without a token (the pre-poToken behavior).
