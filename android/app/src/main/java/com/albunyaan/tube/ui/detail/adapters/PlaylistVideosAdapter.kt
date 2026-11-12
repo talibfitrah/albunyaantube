@@ -13,7 +13,7 @@ import com.albunyaan.tube.databinding.ItemPlaylistVideoBinding
 import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
-import java.util.Locale
+import com.albunyaan.tube.util.DurationFormat
 
 /**
  * UI model for playlist video item with download state.
@@ -61,8 +61,9 @@ class PlaylistVideosAdapter(
             binding.videoTitle.text = item.title
 
             // Format duration
-            binding.videoDuration.text = item.durationSeconds?.let { formatDuration(it) } ?: ""
-            binding.videoDuration.isVisible = item.durationSeconds != null && item.durationSeconds > 0
+            val badge = DurationFormat.badge(item.durationSeconds)
+            binding.videoDuration.text = badge ?: ""
+            binding.videoDuration.isVisible = badge != null
 
             // Format metadata (channel + views or just channel), views compacted per locale
             val channelName = item.channelName ?: ""
@@ -97,12 +98,11 @@ class PlaylistVideosAdapter(
             }
 
             // Accessibility content description
-            val durationText = item.durationSeconds?.let { formatDuration(it) } ?: ""
             binding.root.contentDescription = context.getString(
                 R.string.a11y_playlist_video,
                 item.position,
                 item.title,
-                durationText,
+                badge ?: "",
                 binding.videoMeta.text
             )
         }
@@ -157,17 +157,6 @@ class PlaylistVideosAdapter(
                     binding.downloadIndicatorContainer.isVisible = false
                     binding.downloadStatusBadge.isVisible = false
                 }
-            }
-        }
-
-        private fun formatDuration(totalSeconds: Int): String {
-            val hours = totalSeconds / 3600
-            val mins = (totalSeconds % 3600) / 60
-            val secs = totalSeconds % 60
-            return if (hours > 0) {
-                String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
-            } else {
-                String.format(Locale.US, "%d:%02d", mins, secs)
             }
         }
     }

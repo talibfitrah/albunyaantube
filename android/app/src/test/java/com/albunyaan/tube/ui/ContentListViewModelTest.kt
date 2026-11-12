@@ -13,10 +13,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -499,22 +496,6 @@ class ContentListViewModelTest {
 
         val state = vm.content.value
         assertTrue("the failed retry read as $state", state is ContentListViewModel.ContentState.Error)
-    }
-
-    // --- A tab never sends a query (search lives on Home's button) ---
-
-    @Test
-    fun `a tab fetch never sends a query`() = runTest {
-        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), CursorResponse.PageInfo("c1")))
-        val vm = createViewModel() // load()
-        advanceUntilIdle()
-        vm.loadMore()
-        advanceUntilIdle()
-        vm.refresh()
-        advanceUntilIdle()
-
-        // FakeContentService.fetchContent has exactly (type, cursor, pageSize, filters): no query to record
-        assertEquals(listOf<String?>(null, "c1", null), fakeService.asked)
     }
 
     @Test

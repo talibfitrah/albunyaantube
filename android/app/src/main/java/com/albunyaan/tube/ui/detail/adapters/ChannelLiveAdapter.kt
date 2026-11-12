@@ -13,6 +13,7 @@ import com.albunyaan.tube.data.channel.ChannelLiveStream
 import com.albunyaan.tube.databinding.ItemChannelLiveBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
+import com.albunyaan.tube.util.DurationFormat
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import java.text.DateFormat
 import java.util.Date
@@ -68,13 +69,9 @@ class ChannelLiveAdapter(
                     // Past/recorded stream - show duration overlay if available
                     binding.liveBadge.isVisible = false
                     binding.upcomingBadge.isVisible = false
-                    val duration = stream.durationSeconds
-                    if (duration != null && duration > 0) {
-                        binding.streamDuration.isVisible = true
-                        binding.streamDuration.text = formatDuration(duration)
-                    } else {
-                        binding.streamDuration.isVisible = false
-                    }
+                    val badge = DurationFormat.badge(stream.durationSeconds)
+                    binding.streamDuration.isVisible = badge != null
+                    binding.streamDuration.text = badge
                 }
             }
 
@@ -200,27 +197,6 @@ class ChannelLiveAdapter(
                 locale
             )
             return dateFormat.format(date)
-        }
-
-        /**
-         * Formats duration in seconds to "H:MM:SS" or "M:SS" format.
-         * Uses US locale for consistent numeric formatting (no locale-specific separators).
-         *
-         * @param seconds Duration in seconds
-         * @return Formatted duration string
-         */
-        @JvmStatic
-        internal fun formatDuration(seconds: Int): String {
-            // Normalize negative values to 0
-            val normalizedSeconds = if (seconds < 0) 0 else seconds
-            val hours = normalizedSeconds / 3600
-            val minutes = (normalizedSeconds % 3600) / 60
-            val secs = normalizedSeconds % 60
-            return if (hours > 0) {
-                String.format(Locale.US, "%d:%02d:%02d", hours, minutes, secs)
-            } else {
-                String.format(Locale.US, "%d:%02d", minutes, secs)
-            }
         }
     }
 }

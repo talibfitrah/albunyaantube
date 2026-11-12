@@ -51,37 +51,6 @@ class ChannelLiveAdapterTest {
         assertEquals(Int.MAX_VALUE, ChannelLiveAdapter.safeQuantityForPlural(justAbove))
     }
 
-    // ========== formatDuration tests ==========
-
-    @Test
-    fun `formatDuration formats seconds only`() {
-        assertEquals("0:00", ChannelLiveAdapter.formatDuration(0))
-        assertEquals("0:30", ChannelLiveAdapter.formatDuration(30))
-        assertEquals("0:59", ChannelLiveAdapter.formatDuration(59))
-    }
-
-    @Test
-    fun `formatDuration formats minutes and seconds`() {
-        assertEquals("1:00", ChannelLiveAdapter.formatDuration(60))
-        assertEquals("1:30", ChannelLiveAdapter.formatDuration(90))
-        assertEquals("5:05", ChannelLiveAdapter.formatDuration(305))
-        assertEquals("59:59", ChannelLiveAdapter.formatDuration(3599))
-    }
-
-    @Test
-    fun `formatDuration formats hours minutes and seconds`() {
-        assertEquals("1:00:00", ChannelLiveAdapter.formatDuration(3600))
-        assertEquals("1:30:00", ChannelLiveAdapter.formatDuration(5400))
-        assertEquals("2:05:30", ChannelLiveAdapter.formatDuration(7530))
-        assertEquals("10:00:00", ChannelLiveAdapter.formatDuration(36000))
-    }
-
-    @Test
-    fun `formatDuration handles very long durations`() {
-        // 100 hours
-        assertEquals("100:00:00", ChannelLiveAdapter.formatDuration(360000))
-    }
-
     // ========== formatScheduledTime tests ==========
 
     @Test
