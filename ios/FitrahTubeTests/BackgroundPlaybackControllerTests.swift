@@ -9,8 +9,8 @@ import UIKit
 @testable import FitrahTube
 
 /// T2-1 (Task 2 review): `AudioSessionPolicyTests` covers the pure decision table; this covers the
-/// other half -- that a real lifecycle NOTIFICATION reaches `handle()`, and that the action it
-/// produces actually moves a real `AVPlayer` through `PlayerHostView`'s wiring (fix round 1, C2).
+/// other half -- that a real lifecycle NOTIFICATION reaches the controller, and what the production
+/// policy handler does with the action it produces (a `.pause` drops a failure's resume intent).
 ///
 /// `.serialized`: every test here posts a PROCESS-WIDE notification, so two running at once would
 /// each drive the other's controller.
@@ -66,12 +66,14 @@ import UIKit
         var actions: [PlaybackPolicyAction] = []
         let production = PlayerHostView.policyHandler(coordinator: coordinator)
         controller.onPolicyAction = { actions.append($0); production($0) }
+        var reResolves = 0
+        controller.onWillEnterForeground = { reResolves += 1 }   // proof the notifications were delivered
         controller.attach(player: player)
         defer { controller.detach() }
 
         NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
-        try await Task.sleep(for: .milliseconds(200))   // the observers are a main-queue hop away
+        try await wait { reResolves == 1 }
 
         #expect(Self.assetURL(player) == fixture.video)
         #expect(player.currentItem === videoItem)

@@ -676,10 +676,13 @@ extension StreamState {
     /// where a `.loading` hop would dismantle the host and its audio session. Index-addressed (Cubic P2): a duplicate
     /// id in the playlist must play the tapped occurrence, not the first one.
     func play(at index: Int, showLoading: Bool = true) async {
+        let playing = args.videoId
         guard let item = queue.select(at: index) else { return }
         swapArgs(to: item)
         consecutiveSkips = 0
-        await resolve(forceRefresh: false, kind: .player, showLoading: showLoading)
+        let landed = await resolve(forceRefresh: false, kind: .player, showLoading: showLoading)
+        // The same lecture again further down the list: the host keeps its item and position, so the pick starts over.
+        if landed, item.id == playing { await currentPlayer?.seek(to: .zero) }
         await prefetchUpcoming()
         await pageIfNeeded()
     }

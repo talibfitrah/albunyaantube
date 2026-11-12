@@ -152,12 +152,15 @@ import UIKit
     }
 
     func detach() {
+        // A covered tab's teardown leaves the playing one's lock screen and audio session alone: deactivating a session
+        // with running audio stops it (`AVAudioSession.setActive(false)`).
+        let owned = Self.lockScreenOwner.map { $0 === self } ?? true
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         player = nil
         // Same one-owner rule as the audio session: a dismantled player must not keep owning the
         // lock-screen transport. `removeRemoteCommands` also clears `nowPlayingInfo`.
-        removeRemoteCommands()
+        if owned { removeRemoteCommands() }
         artworkTask?.cancel()
         artworkTask = nil
         artwork = nil
@@ -166,7 +169,7 @@ import UIKit
         state = .idle
         // `.notifyOthersOnDeactivation` hands the session back politely so a paused music app
         // resumes instead of staying silent.
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if owned { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
 
     private func applyBackgroundPolicy() {
@@ -362,7 +365,6 @@ import UIKit
     }
 
     private func removeRemoteCommands() {
-        guard Self.lockScreenOwner.map({ $0 === self }) ?? true else { return }   // a covered one owns nothing
         Self.lockScreenOwner = nil
         Self.transportCommands.forEach {
             $0.removeTarget(nil)

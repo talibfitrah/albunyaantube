@@ -192,6 +192,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
         coordinator.stopMonitoring()
         coordinator.model?.currentItem = nil
         coordinator.model?.currentPlayer = nil
+        // A PiP window can keep the controller (and the lock screen) past this: its next/previous would change lecture
+        // under a window still playing the old one, with no host left to swap it in.
+        coordinator.background.onNextTrack = nil
+        coordinator.background.onPreviousTrack = nil
         // Task 5: the audio-session detach and the player release are the two things a live PiP
         // window still needs, so they go through the policy instead of running unconditionally.
         coordinator.finishTeardown(of: controller, hostDismantled: true)
@@ -245,9 +249,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// follows the live state. Headphones out, the remote pause, and an interruption iOS ends without `.shouldResume`
     /// (fix r5 N4-1); an interruption's begin reports no `.pause`, and its end resumes the replacement when iOS says so
     /// (fix r4 N-2).
+    ///
+    /// A pause while the next lecture still resolves (a lock-screen skip, an auto-advance) is that lecture's too: the
+    /// hold keeps the builder from starting it (`heldByOpen`), and the user's Play releases it.
     static func policyHandler(coordinator: Coordinator?) -> (PlaybackPolicyAction) -> Void {
         { [weak coordinator] action in
-            if action == .pause { coordinator?.dropResumeIntent() }
+            guard action == .pause, let coordinator else { return }
+            coordinator.dropResumeIntent()
+            if let model = coordinator.model, model.hostVideoId != model.args.videoId { model.heldByOpen = true }
         }
     }
 
@@ -1003,7 +1012,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         switch stream {
         case .hls(let url, _, let audioOnlyURL, _, _):
             // The `?? url` fallback is belt-and-braces: `PlayerViewModel.audioOnlyAvailable` hides
-            // the toggle (and gates the automatic swap) when there is no itag 140 URL, so a true
+            // the toggle when there is no itag 140 URL, so a true
             // `audioOnly` with a nil rendition should be unreachable -- and if it ever is reached,
             // video is the right thing to keep playing.
             return audioOnly ? (audioOnlyURL ?? url) : url

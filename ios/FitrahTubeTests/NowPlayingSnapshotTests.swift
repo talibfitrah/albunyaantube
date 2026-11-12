@@ -129,8 +129,11 @@ import Testing
         playlist.onNextTrack = {}
         single.onNextTrack = nil
         #expect(MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled)
+        single.detach()                                    // the covered tab closes first
+        #expect(MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled)
+        #expect(MPRemoteCommandCenter.shared().playCommand.isEnabled)
         playlist.detach()
-        single.detach()
+        #expect(MPRemoteCommandCenter.shared().playCommand.isEnabled == false)
     }
 
     /// Cold review P1: the lock screen is the PLAYING lecture's. A covered pass must not retitle it, and a covered player
@@ -184,7 +187,7 @@ import Testing
         #expect(MPNowPlayingInfoCenter.default().nowPlayingInfo == nil)
     }
 
-    /// The item-replacement refresh (audio-only swap, a recovery `replaceCurrentItem`, a quality
+    /// The item-replacement refresh (audio-only toggle, a recovery `replaceCurrentItem`, a quality
     /// change): a non-playable state must retract the lock-screen surface, not leave the old
     /// video's metadata standing.
     @Test func aNonPlayableStateRetractsTheLockScreenSurface() {
