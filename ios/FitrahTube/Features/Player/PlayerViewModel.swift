@@ -371,7 +371,6 @@ extension StreamState {
     /// only resolves what it has not resolved before. Success-only: a refusal leaves the id
     /// eligible for the next window (CF-B2-2 rule (a) says skip silently, not give up).
     private var prefetchedIds: Set<String> = []
-    private var consecutiveSkips = 0
     /// The in-flight page fetch (Cubic P3). A single-flight boolean made a concurrent caller
     /// return EARLY: an end-of-item `advance()` landing while `open()`'s page was still inside
     /// `queueSource.page(...)` saw an empty `upcoming` and showed `.queueEnded` with a whole page
@@ -632,7 +631,7 @@ extension StreamState {
         let myGeneration = generation
         await pageIfNeeded()
         guard myGeneration == generation else { return }
-        guard let next = queue.advance() else {
+        guard queueNeighbour(1) != nil else {
             // `PlayerViewModel.kt:1920-1923`: no next item and no more pages -- playback stops.
             // NOT `.idle` (reconciliation note 9): that is the pre-open value and renders as a
             // Retry-less "Loading..." spinner forever. A finished playlist is a real terminal
@@ -640,33 +639,10 @@ extension StreamState {
             state = .queueEnded
             return
         }
-        swapArgs(to: next)
-        // `showLoading: false` is LOAD-BEARING (reconciliation note 2): a `.loading` hop
-        // dismantles PlayerHostView, detaches the audio session and kills background
-        // auto-advance. NOT `silent:` -- a failed advance MUST surface, because that is what
-        // drives auto-skip and, past the cap, the terminal state the user sees.
-        // `forceRefresh: false` is CF-B2-2 rule (b): land on the warmed ManifestCache entry.
-        let stillCurrent = await resolve(forceRefresh: false, kind: .player, showLoading: false)
-        // Review F1: the same supersession check as after `pageIfNeeded()` above, for the OTHER
-        // suspension. A `play(at:)` landing during THIS resolve owns the queue now -- it cancelled
-        // this resolve and set `.loading`; without this guard the resumed advance read that
-        // `.loading` as a failed advance, burned a skip walking `queue.advance()` off the user's
-        // pick, and its recursive resolve superseded the tap's.
-        guard stillCurrent else { return }
-        if state.isPlayable {
-            consecutiveSkips = 0             // `PlayerViewModel.kt:1916`
-            // Round 5 (re-review N1): landed, so the lecture is the user's from here. Kept through the
-            // prefetch, the flag resumed a lecture the user paused after an interruption, and
-            // swallowed the end of a short next lecture.
-            isAdvancing = false
-            await prefetchUpcoming()
-            await pageIfNeeded()
-        } else if queue.hasNext, AutoSkipPolicy.decide(consecutive: consecutiveSkips, limit: 3) {
-            consecutiveSkips += 1
-            await advance()                  // bounded by the policy above; max depth 3
-        }
-        // else: leave the non-playable state on screen. Ruling 14's one terminal surface, with
-        // PlayerStateView's Retry -- exactly what Android shows past MAX_CONSECUTIVE_SKIPS.
+        // Ruling 2026-11-12: the lock screen's next, as the owner's locked phone needs it -- the next lecture without the
+        // loading card, one that is not available passed over (at most 3) while the ended one stays on screen, and an
+        // error or cooldown shown on the next one. Past the cap, ruling 14's one terminal surface with its Retry.
+        await skip(by: 1)
     }
 
     /// The Up Next tap (`PlayerViewModel.kt:355-387`). A deliberate user action, so this one DOES
@@ -680,9 +656,12 @@ extension StreamState {
         let playing = hostVideoId   // the stream on screen, not a skip still resolving (Cubic r3)
         guard let item = queue.select(at: index) else { return false }
         swapArgs(to: item)
-        consecutiveSkips = 0
         let landed = await resolve(forceRefresh: false, kind: .player, showLoading: showLoading, holdFailure: holdFailure)
         if landed, heldGeneration == generation { return true }
+        // Round 5 (re-review N1): landed, so the lecture is the user's from here, an advance's included. Kept through the
+        // prefetch, the flag resumed a lecture the user paused after an interruption, and swallowed the end of a short
+        // next lecture.
+        if landed, state.isPlayable { isAdvancing = false }
         // The same lecture again further down the list: the host keeps its item and position, so the pick starts over.
         if landed, item.id == playing { await currentPlayer?.seek(to: .zero) }
         await prefetchUpcoming()
@@ -699,10 +678,13 @@ extension StreamState {
     /// the audio session and the lock screen's controls. Only a lecture that is not available is passed over; the last
     /// try applies what it gets, so with nothing playable past it its card shows. A cooldown or an error (offline, a
     /// blip) is no answer about the lecture: it shows on the one pressed to, whose Retry plays it.
-    /// ponytail: the loaded queue only -- a failing last loaded lecture shows its card while a next page is out.
+    /// Also the auto-advance (`advance()`), so each hop pages first, as the advance always did; a pick meanwhile wins.
     func skip(by offset: Int) async {
         var skipped = 0
-        while let index = queueNeighbour(offset) {
+        while true {
+            let current = generation
+            await pageIfNeeded()
+            guard current == generation, let index = queueNeighbour(offset) else { return }
             let passOver = AutoSkipPolicy.decide(consecutive: skipped, limit: 3)
                 && queue.items.indices.contains(index + offset)
             guard await play(at: index, showLoading: false, holdFailure: passOver) else { return }

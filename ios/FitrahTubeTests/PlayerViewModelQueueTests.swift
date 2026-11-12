@@ -600,6 +600,36 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state == .contentUnavailable)   // ruling 14's one terminal surface
     }
 
+    /// Ruling 2026-11-12, the owner's case: a playlist playing on a locked phone, a lecture ends and the next one is not
+    /// available. The advance passes over it while the ended lecture stays on screen: a state with nothing playable
+    /// dismantles the host, and with it the audio session and the lock screen's controls.
+    @Test(.timeLimit(.minutes(1))) func anAutoAdvancePassesOverALectureThatDoesNotPlayWithoutLeavingThePlayer() async throws {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"], unplayable: ["b"])
+        await vm.open()
+        resolver.hold("c")
+        let advancing = Task { await vm.playToEnd() }
+        while !resolver.calls.contains(where: { $0.videoId == "c" && $0.kind == .player }) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(vm.state.isPlayable, "the advance showed \(vm.state) and stopped the locked phone")
+        resolver.release(id: "c")
+        await advancing.value
+        #expect(vm.hostVideoId == "c")
+        #expect(vm.state.isPlayable)
+    }
+
+    /// The same rule as the lock screen's skip: an error (offline, a blip) says nothing about the lecture, so it shows
+    /// on the next one, whose Retry plays it, instead of walking the list.
+    @Test(.timeLimit(.minutes(1))) func anAutoAdvanceStopsOnATransientFailure() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        resolver.outcomes = ["b": .failure(.transport("offline"))]
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "b")
+        #expect(vm.state == .error(messageKey: "player_error_message"))
+        #expect(!resolver.calls.contains { $0.videoId == "c" && $0.kind == .player })
+    }
+
     @Test func aSuccessfulAdvanceResetsTheSkipCounter() async {
         // `PlayerViewModel.kt:1916`: consecutive, not cumulative. Three dead items after `b` are
         // three skips -- one short of the cap -- so the walk lands on `c`, playing.
