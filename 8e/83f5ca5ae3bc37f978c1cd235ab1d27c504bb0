@@ -1,0 +1,19 @@
+ios/FitrahTube/Features/Detail/ChannelTabPagination.swift
+  s_8a936fc306f37b::t_731c2e38e6fd0b 107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8e83f5ca5ae3bc37f978c1cd235ab1d27c504bb0",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
