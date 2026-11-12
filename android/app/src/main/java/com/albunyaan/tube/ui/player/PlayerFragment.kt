@@ -257,7 +257,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * Counted HTTP 403s ([counts403]) on [forbidden403StreamId]. Unlike the listener's
      * streamRefreshCount it survives a resume, so a stream that plays ~40 s and 403s again on
      * fresh URLs is seen as a repeat ([next403Step] plays muxed). Resets when a different
-     * stream is prepared, on the two manual retry buttons and in onDestroyView.
+     * stream is prepared, on the three manual retry buttons and in onDestroyView.
      */
     private var forbidden403StreamId: String? = null
     private var forbidden403Count = 0
@@ -265,7 +265,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     /**
      * Stream pinned to its muxed track by [playMuxedFromCurrentStreams]. Kept apart from
      * [adaptiveFailedForCurrentStream] (cleared on every refresh so adaptive is retried) because
-     * this pin must survive the next refresh. Cleared on a different stream, the two manual
+     * this pin must survive the next refresh. Cleared on a different stream, the three manual
      * retry buttons and onDestroyView.
      */
     private var muxedPinnedStreamId: String? = null
@@ -622,6 +622,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Setup error retry buttons
         binding.playerRetryButton.setOnClickListener {
+            muxedPinnedStreamId = null
+            forbidden403Count = 0
             viewModel.retryCurrentStream()
         }
         binding.playerRefreshStreamButton.setOnClickListener {
@@ -2457,8 +2459,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // lets it change.
             val playingMuxed = !preparedIsAdaptive
             val hasMuxed = currentHasMuxedFallback()
-            fun recover403(reason: String) =
-                when (next403Step(forbidden403s, currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
+            fun recover403(reason: String, count403s: Int = forbidden403s) =
+                when (next403Step(count403s, currentStreamRefreshCount, maxStreamRefreshes, playingMuxed, hasMuxed)) {
                     Forbidden403Step.REFRESH -> {
                         onStreamRefresh()
                         requestStreamRefreshAndResume(reason)
@@ -2519,7 +2521,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         Toast.makeText(ctx, R.string.player_stream_expired, Toast.LENGTH_SHORT).show()
                     }
 
-                    recover403("URL expired (403)")
+                    // A refresh is the cure for a real expiry, so never read it as a repeat.
+                    recover403("URL expired (403)", count403s = 1)
                     return
                 }
 

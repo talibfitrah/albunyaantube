@@ -45,4 +45,6 @@ class Forbidden403RecoveryTest {
     @Test fun `fresh-URL 403 is counted`() = assertTrue(counts403(FailureType.UNKNOWN_403, inSeekWindow = false))
     @Test fun `seek-window 403 is not counted`() = assertFalse(counts403(FailureType.UNKNOWN_403, inSeekWindow = true))
     @Test fun `URL expiry is not counted`() = assertFalse(counts403(FailureType.URL_EXPIRED, inSeekWindow = false))
+    @Test fun `rate-limited 403 is not counted`() = assertFalse(counts403(FailureType.RATE_LIMITED, inSeekWindow = false))
+    @Test fun `geo-restricted 403 is not counted`() = assertFalse(counts403(FailureType.GEO_RESTRICTED, inSeekWindow = false))
 }

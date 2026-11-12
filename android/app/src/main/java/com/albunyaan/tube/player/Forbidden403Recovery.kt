@@ -42,10 +42,12 @@ internal fun hasMuxedFallback(resolved: ResolvedStreams?): Boolean =
     resolved != null && !resolved.isLive && resolved.videoTracks.any { !it.isVideoOnly }
 
 /**
- * Whether a 403 counts toward [next403Step]'s per-stream repeat: only one that fresh URLs
- * should have fixed. A URL expiry is fixed by a refresh, and a 403 inside the seek-transient
- * window is a range-rejected seek on a healthy stream; counting either would pin 360p on a
- * long lecture or after two seeks. An uncounted 403 still passes at least 1 to [next403Step].
+ * Whether a 403 counts toward [next403Step]'s per-stream repeat: only an unclassified 403 that
+ * fresh URLs should have fixed. A URL expiry is fixed by a refresh, a rate limit or geo-block
+ * says nothing about the stream's quality, and a 403 inside the seek-transient window is a
+ * range-rejected seek on a healthy stream; counting any of them would pin 360p on a long
+ * lecture, after two seeks, or after a throttle. An uncounted 403 still passes at least 1 to
+ * [next403Step].
  */
 internal fun counts403(failureType: StreamRequestTelemetry.FailureType, inSeekWindow: Boolean): Boolean =
-    failureType != StreamRequestTelemetry.FailureType.URL_EXPIRED && !inSeekWindow
+    failureType == StreamRequestTelemetry.FailureType.UNKNOWN_403 && !inSeekWindow
