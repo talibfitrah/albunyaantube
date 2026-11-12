@@ -2,6 +2,7 @@ package com.albunyaan.tube.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.google.cloud.Timestamp;
 
 import java.util.List;
 
@@ -48,6 +49,12 @@ public class ContentItemDto {
     // Search-only: not serialized to API response
     @JsonIgnore
     private List<String> keywords;
+
+    // Not serialized: what the kept tab order filters and sorts by (PublicContentService.keptPage).
+    @JsonIgnore
+    private List<String> categoryIds;
+    @JsonIgnore
+    private Timestamp uploadedAt;
 
     public ContentItemDto() {
     }
@@ -256,5 +263,20 @@ public class ContentItemDto {
     public void setKeywords(List<String> keywords) {
         this.keywords = keywords;
     }
-}
 
+    public List<String> getCategoryIds() {
+        return categoryIds;
+    }
+
+    public void setCategoryIds(List<String> categoryIds) {
+        this.categoryIds = categoryIds;
+    }
+
+    public Timestamp getUploadedAt() {
+        return uploadedAt;
+    }
+
+    public void setUploadedAt(Timestamp uploadedAt) {
+        this.uploadedAt = uploadedAt;
+    }
+}

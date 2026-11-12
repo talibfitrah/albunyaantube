@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -65,49 +66,6 @@ class PublicContentServicePaginationTest {
                 searchIndex,
                 mock(LiveCategoryService.class)
         );
-    }
-
-    @Test
-    void getContent_channels_withCategory_usesCategoryQuery() throws Exception {
-        // Arrange
-        List<Channel> channels = createTestChannels(2);
-        ChannelRepository.PaginatedResult<Channel> result =
-                new ChannelRepository.PaginatedResult<>(channels, null, false);
-
-        when(channelRepository.findApprovedByCategoryAndSubscribersDescWithCursor(
-                eq("islamic"), eq(5), isNull()))
-                .thenReturn(result);
-
-        // Act
-        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
-                "CHANNELS", null, 5, "islamic", null, null, null
-        );
-
-        // Assert
-        assertNotNull(response);
-        assertEquals(2, response.getData().size());
-        verify(channelRepository).findApprovedByCategoryAndSubscribersDescWithCursor(
-                eq("islamic"), eq(5), isNull());
-    }
-
-    @Test
-    void getContent_videos_withFilters_fallsBackToLegacyPagination() throws Exception {
-        // Arrange - when filters are applied, legacy pagination is used
-        List<Video> videos = createTestVideos(3);
-
-        // Legacy method uses the non-cursor repository method
-        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt()))
-                .thenReturn(videos);
-
-        // Act - apply length filter
-        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
-                "VIDEOS", null, 5, null, "SHORT", null, null
-        );
-
-        // Assert
-        assertNotNull(response);
-        // Legacy pagination generates fake cursor
-        verify(videoRepository, never()).findApprovedByUploadedAtDescWithCursor(anyInt(), any());
     }
 
     @Test
@@ -290,69 +248,18 @@ class PublicContentServicePaginationTest {
     void cacheCursorKey_homeCursor_normalizesToNumericOffset() {
         // HOME type uses numeric offset cursors encoded as Base64
         String cursor = java.util.Base64.getEncoder().encodeToString("20".getBytes());
-        String key = PublicContentService.cacheCursorKey("HOME", cursor);
+        String key = PublicContentService.cacheCursorKey(cursor);
         assertEquals("20", key);
     }
 
     @Test
-    void cacheCursorKey_nullType_normalizesAsHome() {
-        String cursor = java.util.Base64.getEncoder().encodeToString("10".getBytes());
-        String key = PublicContentService.cacheCursorKey(null, cursor);
-        assertEquals("10", key);
-    }
-
-    @Test
-    void cacheCursorKey_blankType_normalizesAsHome() {
-        String cursor = java.util.Base64.getEncoder().encodeToString("10".getBytes());
-        String key = PublicContentService.cacheCursorKey("", cursor);
-        assertEquals("10", key);
-    }
-
-    @Test
-    void cacheCursorKey_channelsCursor_preservedAsIs() {
-        // CHANNELS uses opaque Firestore cursors — must NOT be normalized
-        String opaqueCursor = CursorUtils.encodeFromDocumentId("channel-42");
-        String key = PublicContentService.cacheCursorKey("CHANNELS", opaqueCursor);
-        assertEquals(opaqueCursor, key, "Opaque CHANNELS cursor must be preserved as-is");
-    }
-
-    @Test
-    void cacheCursorKey_playlistsCursor_preservedAsIs() {
-        String opaqueCursor = CursorUtils.encodeFromDocumentId("playlist-99");
-        String key = PublicContentService.cacheCursorKey("PLAYLISTS", opaqueCursor);
-        assertEquals(opaqueCursor, key, "Opaque PLAYLISTS cursor must be preserved as-is");
-    }
-
-    @Test
-    void cacheCursorKey_videosCursor_preservedAsIs() {
-        String opaqueCursor = CursorUtils.encodeFromDocumentId("video-17");
-        String key = PublicContentService.cacheCursorKey("VIDEOS", opaqueCursor);
-        assertEquals(opaqueCursor, key, "Opaque VIDEOS cursor must be preserved as-is");
-    }
-
-    @Test
-    void cacheCursorKey_differentOpaqueCursors_produceDifferentKeys() {
-        // This is the bug: before the fix, both would normalize to "0"
-        String cursor1 = CursorUtils.encodeFromDocumentId("channel-1");
-        String cursor2 = CursorUtils.encodeFromDocumentId("channel-2");
-
-        String key1 = PublicContentService.cacheCursorKey("CHANNELS", cursor1);
-        String key2 = PublicContentService.cacheCursorKey("CHANNELS", cursor2);
-
-        assertNotEquals(key1, key2,
-                "Different opaque cursors must produce different cache keys to avoid serving stale pages");
-    }
-
-    @Test
     void cacheCursorKey_nullCursor_returnsZero() {
-        assertEquals("0", PublicContentService.cacheCursorKey("CHANNELS", null));
-        assertEquals("0", PublicContentService.cacheCursorKey("HOME", null));
+        assertEquals("0", PublicContentService.cacheCursorKey(null));
     }
 
     @Test
     void cacheCursorKey_emptyCursor_returnsZero() {
-        assertEquals("0", PublicContentService.cacheCursorKey("VIDEOS", ""));
-        assertEquals("0", PublicContentService.cacheCursorKey("HOME", ""));
+        assertEquals("0", PublicContentService.cacheCursorKey(""));
     }
 
     // ============ normalizeCursor tests ============
@@ -429,7 +336,7 @@ class PublicContentServicePaginationTest {
         videos.get(0).setViewCount(10L);
         videos.get(1).setViewCount(30L);
         videos.get(2).setViewCount(20L);
-        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(videos);
+        when(videoRepository.findByStatus("APPROVED")).thenReturn(videos);
 
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "VIDEOS", null, 5, null, null, null, "MOST_POPULAR");
@@ -444,13 +351,147 @@ class PublicContentServicePaginationTest {
         videos.get(0).setViewCount(10L);
         videos.get(1).setViewCount(30L);
         videos.get(2).setViewCount(20L);
-        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(videos);
+        when(videoRepository.findByStatus("APPROVED")).thenReturn(videos);
 
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "VIDEOS", null, 5, null, null, null, "POPULAR");
 
         assertEquals(List.of("yt-video-2", "yt-video-3", "yt-video-1"),
                 response.getData().stream().map(ContentItemDto::getId).toList());
+    }
+
+    // ============ every list reaches the whole catalog, from the kept order ============
+
+    /** 260 approved videos (more than any old window): views, upload hour, length and category all differ per video. */
+    private List<Video> catalog;
+
+    private void keptCatalog() throws Exception {
+        catalog = new ArrayList<>();
+        long now = System.currentTimeMillis() / 1000;
+        for (int i = 0; i < 260; i++) {
+            Video v = new Video();
+            v.setId("video-" + i);
+            v.setYoutubeId(String.format("yt-%03d", i));
+            v.setTitle(String.format("Title %03d", (i * 101) % 260));
+            v.setStatus("APPROVED");
+            v.setViewCount((long) (i * 37) % 260);
+            v.setUploadedAt(Timestamp.ofTimeSecondsAndNanos(now - i * 3600L * 5, 0)); // 5 h apart: ~54 days
+            v.setDurationSeconds(i % 2 == 0 ? 60 : 1800);
+            v.setCategoryIds(List.of(i % 3 == 0 ? "child" : i % 3 == 1 ? "parent" : "other"));
+            catalog.add(v);
+        }
+        Category parent = new Category();
+        parent.setId("parent");
+        Category child = new Category();
+        child.setId("child");
+        child.setParentCategoryId("parent");
+        lenient().when(categoryRepository.findAll()).thenReturn(List.of(parent, child));
+        lenient().when(categoryRepository.findByParentId("parent")).thenReturn(List.of(child));
+        lenient().when(videoRepository.findByStatus("APPROVED")).thenReturn(catalog);
+        // The old per-page paths, answered as Firestore would (newest first, up to the limit asked).
+        lenient().when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt()))
+                .thenAnswer(inv -> catalog.subList(0, Math.min(inv.<Integer>getArgument(0), catalog.size())));
+        lenient().when(videoRepository.findByCategoryIds(anyList(), anyInt())).thenAnswer(inv -> {
+            List<String> ids = inv.getArgument(0);
+            return catalog.stream().filter(v -> ids.contains(v.getCategoryIds().get(0)))
+                    .limit(inv.<Integer>getArgument(1)).toList();
+        });
+    }
+
+    private List<String> expected(java.util.function.Predicate<Video> keep, java.util.Comparator<Video> order) {
+        return catalog.stream().filter(keep).sorted(order).map(Video::getYoutubeId).toList();
+    }
+
+    @Test
+    void getContent_videos_everySortAndFilterPagesTheWholeCatalog() throws Exception {
+        keptCatalog();
+        java.util.Comparator<Video> newest = java.util.Comparator.comparing(Video::getUploadedAt).reversed();
+
+        assertEquals(expected(v -> true, java.util.Comparator.comparing(Video::getViewCount).reversed()),
+                allPages(null, null, null, "MOST_POPULAR"));
+        assertEquals(expected(v -> true, newest), allPages(null, null, null, "NEWEST"));
+        assertEquals(expected(v -> true, java.util.Comparator.comparing(Video::getUploadedAt)), allPages(null, null, null, "OLDEST"));
+        assertEquals(expected(v -> true, java.util.Comparator.comparing(Video::getTitle)), allPages(null, null, null, "ALPHABETICAL"));
+        assertEquals(expected(v -> v.getDurationSeconds() < 240, newest), allPages(null, "SHORT", null, null));
+        assertEquals(expected(v -> v.getUploadedAt().getSeconds() > System.currentTimeMillis() / 1000 - 31 * 86400L, newest),
+                allPages(null, null, "LAST_30_DAYS", null));
+        assertEquals(expected(v -> !v.getCategoryIds().contains("other"), newest), allPages("parent", null, null, null));
+        assertEquals(expected(v -> v.getCategoryIds().contains("child") && v.getDurationSeconds() < 240,
+                        java.util.Comparator.comparing(Video::getViewCount).reversed()),
+                allPages("child", "SHORT", null, "MOST_POPULAR"));
+    }
+
+    @Test
+    void getContent_videos_sortedAndFilteredPagesReadNothingOnceTheOrderIsKept() throws Exception {
+        keptCatalog();
+        publicContentService.getContent("VIDEOS", null, 20, null, null, null, null); // builds the kept order
+        int reads = readsSoFar();
+
+        allPages(null, "LONG", null, "MOST_POPULAR");
+        allPages("parent", null, null, "NEWEST");
+
+        assertEquals(reads, readsSoFar(), "a page read Firestore");
+    }
+
+    @Test
+    void getContent_parentCategory_pagesEveryChannelAndPlaylist() throws Exception {
+        List<Channel> channels = createTestChannels(45);
+        List<Playlist> playlists = createTestPlaylists(45);
+        for (int i = 0; i < 45; i++) {
+            channels.get(i).setCategoryIds(List.of(i % 2 == 0 ? "parent" : "child"));
+            playlists.get(i).setCategoryIds(List.of(i % 2 == 0 ? "parent" : "child"));
+        }
+        Category child = new Category();
+        child.setId("child");
+        child.setParentCategoryId("parent");
+        lenient().when(categoryRepository.findByParentId("parent")).thenReturn(List.of(child));
+        lenient().when(categoryRepository.findAll()).thenReturn(List.of(child));
+        lenient().when(channelRepository.findByStatus("APPROVED")).thenReturn(channels);
+        lenient().when(playlistRepository.findByStatus("APPROVED")).thenReturn(playlists);
+        lenient().when(channelRepository.findByCategoryIds(anyList(), anyInt()))
+                .thenAnswer(inv -> channels.subList(0, Math.min(inv.<Integer>getArgument(1), channels.size())));
+        lenient().when(playlistRepository.findByCategoryIds(anyList(), anyInt()))
+                .thenAnswer(inv -> playlists.subList(0, Math.min(inv.<Integer>getArgument(1), playlists.size())));
+
+        // createTest* rank by subscribers / item count descending in list order
+        assertEquals(channels.stream().map(Channel::getYoutubeId).toList(), pages("CHANNELS", "parent", null, null, null));
+        assertEquals(playlists.stream().map(Playlist::getYoutubeId).toList(), pages("PLAYLISTS", "parent", null, null, null));
+    }
+
+    @Test
+    void getContent_aCursorThatIsNotAnOffsetEndsEveryFilteredList() throws Exception {
+        keptCatalog();
+        for (String bad : List.of("0", "%%%", CursorUtils.encodeFromDocumentId("video-1"))) {
+            CursorPageDto<ContentItemDto> page = publicContentService.getContent("VIDEOS", bad, 20, "parent", "SHORT", null, "MOST_POPULAR");
+            assertTrue(page.getData().isEmpty(), bad);
+            assertNull(page.getPageInfo().getNextCursor(), bad);
+        }
+    }
+
+    private int readsSoFar() {
+        return Stream.of(channelRepository, playlistRepository, videoRepository, categoryRepository, orderRepository)
+                .mapToInt(m -> mockingDetails(m).getInvocations().size()).sum();
+    }
+
+    private List<String> allPages(String category, String length, String date, String sort) throws Exception {
+        return pages("VIDEOS", category, length, date, sort);
+    }
+
+    /** Every page at limit 20, following nextCursor; fails on a page that repeats an id. */
+    private List<String> pages(String type, String category, String length, String date, String sort) throws Exception {
+        List<String> ids = new ArrayList<>();
+        String cursor = null;
+        for (int page = 0; page < 30; page++) {
+            CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                    type, cursor, 20, category, length, date, sort);
+            for (ContentItemDto item : response.getData()) {
+                assertFalse(ids.contains(item.getId()), "page " + (page + 1) + " repeats " + item.getId());
+                ids.add(item.getId());
+            }
+            cursor = response.getPageInfo().getNextCursor();
+            if (cursor == null) return ids;
+        }
+        return fail("no last page after 30 pages: " + ids.size() + " ids");
     }
 
     private List<Video> createTestVideos(int count) {
