@@ -1,0 +1,21 @@
+ios/FitrahTube/Features/Player/ShortsOverlay.swift
+  s_8a936fc306f37b::t_28b06bfdd95f6e 185-187,193,195-197
+ios/FitrahTubeUITests/ScreenshotTests.swift
+  s_8a936fc306f37b::t_ba3dfb8d1ac5cc 102-104,591-593,595-598
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "543adc31c670727c3e190ab9e76c240c1494b1e0",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
