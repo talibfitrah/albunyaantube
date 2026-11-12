@@ -128,9 +128,10 @@ internal object SplashRouter {
         !signedIn && currentDestination == R.id.mainShellFragment
 
     /**
-     * A process-death restore rebuilds the back stack and never runs the splash, so it never
-     * met the minimum-version floor. [belowMinimum] is the cached gate (no network); a cold
-     * start ([restoring] false) leaves the floor to the splash.
+     * An activity recreation ([restoring] = a saved instance state exists: process death,
+     * locale, uiMode or font change) rebuilds the back stack and never runs the splash, so it
+     * never met the minimum-version floor. [belowMinimum] is the cached gate (no network); a
+     * cold start ([restoring] false) leaves the floor to the splash.
      */
     fun restoreBlockedByMinVersion(restoring: Boolean, belowMinimum: () -> Boolean): Boolean =
         restoring && belowMinimum()

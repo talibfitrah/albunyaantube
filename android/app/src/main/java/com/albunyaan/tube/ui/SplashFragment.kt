@@ -5,6 +5,7 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
@@ -260,7 +261,9 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             //
             // The floor goes first: below it, neither the "update available" prompt nor
             // the normal route applies. Same bounded grace; on timeout the last good
-            // cached floor decides (null = no value ever seen = not required).
+            // cached floor decides (null = no value ever seen = not required). Both waits share
+            // ONE deadline, so the worst case stays UPDATE_AWAIT_GRACE_MS, not twice that.
+            val deadline = SystemClock.elapsedRealtime() + UPDATE_AWAIT_GRACE_MS
             val updateRequired = withTimeoutOrNull(UPDATE_AWAIT_GRACE_MS) { updateRequiredDeferred.await() }
                 ?: minVersionGate.decideFromCache(BuildConfig.VERSION_NAME)
             if (updateRequired) {
@@ -269,7 +272,11 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
                 return@launch
             }
             awaitUpdatePromptIfAvailable(
-                withTimeoutOrNull(UPDATE_AWAIT_GRACE_MS) { updateInfoDeferred.await() }
+                // withTimeoutOrNull(0) returns null even for a finished deferred; don't drop it.
+                if (updateInfoDeferred.isCompleted) updateInfoDeferred.await()
+                else withTimeoutOrNull((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)) {
+                    updateInfoDeferred.await()
+                }
             )
             val onboardingCompleted = onboardingDeferred.await()
             val accountStatus = accountStatusDeferred.await()
