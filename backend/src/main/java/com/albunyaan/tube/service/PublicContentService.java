@@ -478,12 +478,12 @@ public class PublicContentService {
         }
 
         // Filters and sorts run in memory, with no Firestore cursor to resume from: every page filters and sorts the
-        // same window and cuts it by offset, so page 2 starts where page 1 ended. A cursor that is not an offset, or
-        // one past the window, ends the list without a read.
+        // same window and cuts it by offset, so page 2 starts where page 1 ended. A cursor past the window ends the
+        // list without a read. A malformed one reads as the first page (decodeCursorOffset), never as an empty page:
+        // its raw cache key can be the first page's ("0", cacheCursorKey).
         // ponytail: the window is the newest FILTERED_VIDEOS_WINDOW × 3 approved videos (getVideos' buffer), read
         // per page; sort the whole catalog (an indexed viewCount query or the kept tab order) if that cap shows.
-        long offset = parseCursorOffset(cursor);
-        if (offset < 0 || offset >= FILTERED_VIDEOS_WINDOW) {
+        if (parseCursorOffset(cursor) >= FILTERED_VIDEOS_WINDOW) {
             return new CursorPageDto<>(new ArrayList<>(), null);
         }
         return pageOf(getVideos(FILTERED_VIDEOS_WINDOW, category, allCategoryIds, length, date, sort), cursor, limit);

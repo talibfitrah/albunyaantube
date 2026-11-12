@@ -488,6 +488,17 @@ class PublicContentServicePaginationTest {
         verifyNoInteractions(videoRepository);
     }
 
+    @Test
+    void getContent_videos_sortedMalformedCursor_servesTheFirstPageItsCacheKeyMayShare() throws Exception {
+        // cacheCursorKey("VIDEOS", "0") is the first page's key "0": an empty answer here would be cached for it.
+        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(createTestVideos(3));
+
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "VIDEOS", "0", 20, null, null, null, "MOST_POPULAR");
+
+        assertEquals(3, response.getData().size());
+    }
+
     /** Every VIDEOS page, limit 3, following nextCursor; fails on a page that repeats an id. */
     private List<String> allPages(String category, String length, String sort) throws Exception {
         List<String> ids = new ArrayList<>();
