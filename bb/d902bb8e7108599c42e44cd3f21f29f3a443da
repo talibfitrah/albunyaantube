@@ -1,0 +1,27 @@
+frontend/src/composables/useFocusTrap.ts
+  s_8a936fc306f37b::t_34ccb56d413cfd 171-188,208-209
+frontend/src/locales/messages.ts
+  s_8a936fc306f37b::t_bdc78809c66b3d 421,2087,3533
+frontend/src/views/ContentSortingView.vue
+  s_8a936fc306f37b::t_28352fafd262a2 278,283-294,296-303,338-353,378-379,509-511,515-548,963,1428-1429,1565-1594
+frontend/tests/ContentSortingLive.spec.ts
+  s_8a936fc306f37b::t_11559f55c21ee3 45-53,153,191,322,338-392
+frontend/tests/liveErrorsInViews.spec.ts
+  s_8a936fc306f37b::t_b7cc12250eb95c 51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bbd902bb8e7108599c42e44cd3f21f29f3a443da",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
