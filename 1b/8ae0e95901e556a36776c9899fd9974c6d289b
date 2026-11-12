@@ -1,0 +1,23 @@
+android/app/src/test/java/com/albunyaan/tube/update/MinVersionGateTest.kt
+  s_8a936fc306f37b::t_d959817295e939 94-98,100-101,139-146
+  s_8a936fc306f37b::t_355dead5bb0cec 99
+  s_8a936fc306f37b::t_44899539a7eb94 147
+android/app/src/main/java/com/albunyaan/tube/update/MinVersionGate.kt
+  s_8a936fc306f37b::t_355dead5bb0cec 104-109,111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b8ae0e95901e556a36776c9899fd9974c6d289b",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
