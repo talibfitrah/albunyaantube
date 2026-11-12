@@ -2,7 +2,7 @@
  * [ADMIN-IMPORT-01] PendingApprovalsView — user-import badge + the optional category on approve
  *
  * Tests:
- * 1. A USER_IMPORT item renders the "User import" badge.
+ * 1. A USER_IMPORT item in the queue renders the "Phone import · <name>" badge.
  * 2. A non-USER_IMPORT item does not render the badge.
  * 3. Approve is available whether or not the item has a category.
  * 4. An uncategorised item approved with no category sends no override.
