@@ -854,8 +854,11 @@ function sortContentLocally() {
   }
 }
 
-// Track what sort was used for last server fetch
-let lastServerSort = 'date-desc';
+/**
+ * The request of the newest listing, set when it goes out: its later pages resume its cursor with
+ * these params, and a sort change compares against the order it asked for, not one still landing.
+ */
+let listingParams: Record<string, any> = { sort: 'newest' };
 
 async function handleSortChange() {
   // The client-side sorts order the whole list, so first load whatever Load More has not yet.
@@ -884,9 +887,8 @@ async function handleSortChange() {
 
   // Date sorts: only refetch if the server sort direction changed
   const newServerSort = sortBy.value === 'date-asc' ? 'oldest' : 'newest';
-  const oldServerSort = lastServerSort === 'date-asc' ? 'oldest' : 'newest';
 
-  if (newServerSort !== oldServerSort || content.value.length === 0) {
+  if (newServerSort !== listingParams.sort || content.value.length === 0) {
     loadContent();
   } else {
     // Already have data with correct server sort, just re-sort locally
@@ -1287,17 +1289,13 @@ function updateLoadedItems(items: BulkActionItem[], patch?: (item: ContentItem) 
   }
 }
 
-function buildContentParams(cursor: string | null): Record<string, any> {
+function buildContentParams(): Record<string, any> {
   const pageSize = paginationDisabled.value ? CLIENT_SORT_PAGE_SIZE : PAGE_SIZE;
 
   const params: Record<string, any> = {
     status: filters.value.status,
     size: pageSize
   };
-
-  if (cursor) {
-    params.cursor = cursor;
-  }
 
   if (filters.value.types.length > 0) {
     params.types = filters.value.types.join(',');
@@ -1333,7 +1331,8 @@ async function loadContent() {
   try {
     // One listing: its later pages keep the order and filters its cursor was cut in, even if the
     // sort changes meanwhile (a cursor resumed in the other direction serves the wrong rows).
-    const params = buildContentParams(null);
+    const params = buildContentParams();
+    listingParams = params;
     let response = await apiClient.get('/api/admin/content', { params });
     const rows: ContentItem[] = response.data.content.map(mapContentItem);
     // The client-side sorts have no Load More, and their order is only right over every row, so
@@ -1355,9 +1354,6 @@ async function loadContent() {
     }
 
     content.value = rows;
-
-    // Track what sort we used for this fetch
-    lastServerSort = params.sort === 'oldest' ? 'date-asc' : 'date-desc';
 
     nextCursor = response.data.nextCursor ?? null;
     hasMoreContent.value = nextCursor !== null;
@@ -1387,7 +1383,7 @@ async function loadMoreContent() {
   loadMoreError.value = null;
 
   try {
-    const response = await apiClient.get('/api/admin/content', { params: buildContentParams(nextCursor) });
+    const response = await apiClient.get('/api/admin/content', { params: { ...listingParams, cursor: nextCursor } });
 
     // Discard stale response if a new loadContent() was triggered while this was in flight
     if (myVersion !== requestVersion) return;

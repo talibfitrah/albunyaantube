@@ -265,6 +265,27 @@ describe('ContentLibraryView keeps the loaded window across mutations', () => {
     expect(new Set(sorts)).toEqual(new Set(['oldest']));
   });
 
+  it('a sort switched away and back before the first page lands lists, and pages, the sort on screen', async () => {
+    renderView();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+    const select = document.querySelector('.sort-select') as HTMLSelectElement;
+    const before = listingCalls();
+
+    deferListing = true;
+    await fireEvent.update(select, 'date-asc'); // refetches oldest first, held open
+    await fireEvent.update(select, 'date-desc'); // back to newest before it lands
+    releaseListing!();
+    await settle();
+    await fireEvent.click(screen.getByRole('button', { name: /Load More/i }));
+    await settle();
+
+    // The newest-first listing on screen is fetched again, and its Load More asks for that order:
+    // never an oldest-first page under a "Newest" label, nor its cursor resumed newest-first.
+    const sorts = getMock.mock.calls.filter(call => call[0] === '/api/admin/content').slice(before)
+      .map(call => (call[1] as { params: Record<string, unknown> }).params.sort);
+    expect(sorts).toEqual(['oldest', 'newest', 'newest']);
+  });
+
   it('keeps the second page when a row is deleted', async () => {
     await loadTwoPages();
 
