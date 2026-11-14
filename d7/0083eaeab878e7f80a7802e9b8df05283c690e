@@ -1,0 +1,47 @@
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_3d9fbda6f3dd89::t_36d5d5b1cdd879 704,706-708,906,1331,1336
+  s_3d9fbda6f3dd89::t_89a55e6ab2762c 705,711,714,723-725,755,883,903,911,914-915,940-941,946,1152
+  s_3d9fbda6f3dd89::t_bcf7012046c8ba 650,655-658,665-669,671-673,687-688,700-701,709-710,712-713,752,904,917-918,921-924,927-928,936-939,943-945,1151,1153,1159,1183,1185,1190
+  s_3d9fbda6f3dd89::t_8935732b82a38b 653-654,662-664,681-682,702-703,887,900-902,905,925-926,929-935
+  s_3d9fbda6f3dd89::t_4acc6b78f913e7 679-680
+  s_3d9fbda6f3dd89::t_9371801a956af6 670,749,920,942,947
+  s_3d9fbda6f3dd89::t_622cbb0c7547d5 613-615,916
+backend/src/test/java/com/albunyaan/tube/search/SearchTextTest.java
+  s_3d9fbda6f3dd89::t_7db6ed630d3b1f 186-190,199-201
+  s_3d9fbda6f3dd89::t_6ef7071d6846fa 177-185,202-203
+  s_3d9fbda6f3dd89::t_d5c931e8ef025a 176,191-198,286-288,291
+  s_3d9fbda6f3dd89::t_6aaccbce4a6491 289-290,292-295
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_3d9fbda6f3dd89::t_520f612caccfcd 1026-1038,1040-1045,1058-1068,1157-1158,1229-1230,1234,1236
+  s_3d9fbda6f3dd89::t_7db6ed630d3b1f 1039,1046-1057
+  s_3d9fbda6f3dd89::t_ebf0f3b3cf10af 1654-1656,1675-1677,1680,2249-2250,2259,2264,2268
+  s_3d9fbda6f3dd89::t_d5c931e8ef025a 1069-1156,1227,1233
+  s_3d9fbda6f3dd89::t_04e9114e9d33b1 987-1025
+  s_3d9fbda6f3dd89::t_cb13785a876898 1228,1231-1232,1235,1237
+backend/src/main/java/com/albunyaan/tube/search/SearchText.java
+  s_3d9fbda6f3dd89::t_a77b1fccda90e1 182-183
+  s_3d9fbda6f3dd89::t_6de5b60a8a7a66 297,304
+  s_3d9fbda6f3dd89::t_859da90b3fd768 303
+  s_3d9fbda6f3dd89::t_9371801a956af6 307-314,318-319,321-323,325,327-329,331,333,335-336
+  s_3d9fbda6f3dd89::t_ef1b701e822c9d 6,12,43,75-78,84-86,141-142,155,160-162,166-167,170-179,186-192,212-217,291-296,299-302,305-306,320,324,326,332,334
+  s_3d9fbda6f3dd89::t_e1a1a2ba96454f 79-83
+  s_3d9fbda6f3dd89::t_df3d5f37f7c8ce 54-55,163-165,168-169,180-181,184-185,298,351-355,357,365
+  s_3d9fbda6f3dd89::t_65e8fa9fca271b 315-317,330
+  s_3d9fbda6f3dd89::t_189d795b48042d 337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d70083eaeab878e7f80a7802e9b8df05283c690e",
+  "prompts": {},
+  "sessions": {
+    "s_3d9fbda6f3dd89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d06bd180-3c75-47f1-bb90-6bd50a9377e7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
