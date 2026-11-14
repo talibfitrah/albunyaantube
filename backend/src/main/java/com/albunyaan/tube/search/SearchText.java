@@ -161,12 +161,13 @@ final class SearchText {
      * Lucene's own Arabic prefix rule (ال وال بال كال فال لل, each only on a word with 2+ letters left), minus its bare و:
      * that is often the root's first letter (وضوء is not و + ضوء), and stripping it would part الوضوء (→ وضوء) from وضوء.
      * The forms of Allah are one word each, الله or اللهم, never the stopword له (review 2026-11-14). Review 2026-11-14
-     * (Cubic): a strip that would leave a stopword keeps the whole word (إلهي, not هي; الكل, not كل); لل before two
-     * letters is ل + ال + a word whose own first letter is ل, so it loses one ل (للغة → لغه, لليل → ليل); and the
-     * forms of والد (parent) keep their وال (والدين, والديه, like الوالدين → والدين).
+     * (Cubic): a strip that would leave a stopword keeps the whole word (إلهي, not هي; الكل, not كل); and the forms of
+     * والد (parent) keep their وال (والدين, والديه, like الوالدين → والدين).
      * ponytail: any other word whose own first letters are ال or وال loses them too (إلهام → الهام → هام, "important");
-     * a longer word of its own ل after لل loses it (للسان → سان); and والدين is always "parents", never و + الدين
-     * ("and the religion", which still meets الدين through the stem). List such words next to ALLAH if a query needs one.
+     * لل + a word whose own first letter is ل (ل + ال + لغة) loses that ل too (للغة → غه, لليل → يل, للسان → سان): its
+     * spelling is that of ل + ال + a 2-letter noun (للحج → حج), the commoner here, so those meet لغة and ليل through the
+     * stem only; and والدين is always "parents", never و + الدين ("and the religion", which still meets الدين through
+     * the stem). List such words next to ALLAH if a query needs one.
      */
     private static final class ProcliticFilter extends TokenFilter {
         /** الله بالله والله تالله فالله كالله لله ولله فلله, and each + م (اللهم); never له, لهم, وله, كله. */
@@ -191,8 +192,7 @@ final class SearchText {
             if (WALID.matcher(term).matches()) return true;
             int length = term.length();
             int cut = length - stemmer.stemPrefix(Arrays.copyOf(term.buffer(), length), length); // stemPrefix shifts a copy
-            if (cut == 2 && length == 4 && term.charAt(0) == 'ل') cut = 1; // لل + 2 letters: ل + ال + لـ…
-            else if (cut < 2) return true; // never the bare و
+            if (cut < 2) return true; // never the bare و
             String rest = term.subSequence(cut, length).toString();
             if (!isStopword(rest)) term.setEmpty().append(rest);
             return true;

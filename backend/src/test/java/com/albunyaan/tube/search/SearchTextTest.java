@@ -204,9 +204,11 @@ class SearchTextTest {
 
     @Test
     void aDoubleLamOrWawAlifLamStripsOnlyTheProclitic() {
-        // Review 2026-11-14 (Cubic): والدين → دين though الوالدين → والدين; للغة → غه; لليل → يل.
-        assertEquals(List.of("والدين", "والدين", "والدين", "لغه", "ليل", "ليل", "مسلمين", "صلاه"),
-                tokens(SearchText.WORD, "والدين الوالدين بالوالدين للغة الليل لليل للمسلمين والصلاة"));
+        // Review 2026-11-14 (Cubic): والدين → دين though الوالدين → والدين; لل + 2 letters is ل + ال + a 2-letter noun.
+        assertEquals(List.of("والدين", "والدين", "والدين", "حج", "حق", "رب", "ليل", "مسلمين", "صلاه"),
+                tokens(SearchText.WORD, "والدين الوالدين بالوالدين للحج للحق للرب الليل للمسلمين والصلاة"));
+        // ponytail ceiling: a noun whose own first letter is ل loses it after لل (meets لغة and ليل through the stem only)
+        assertEquals(List.of("غه", "يل"), tokens(SearchText.WORD, "للغة لليل"));
     }
 
     @Test

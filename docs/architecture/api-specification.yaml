@@ -147,8 +147,8 @@ paths:
                 first item matches — exact (every query word is a whole word of its
                 title, keywords or channel, the last one maybe typed in part),
                 approximate (a shared stem, the description or a fuzzy match), related
-                (a related concept) or none. Otherwise the plain list is returned without this header. Clients
-                read a missing or unknown value as exact.
+                (a related concept) or none. Otherwise the plain list is returned
+                without this header. Clients read a missing or unknown value as exact.
               schema:
                 type: string
           content:

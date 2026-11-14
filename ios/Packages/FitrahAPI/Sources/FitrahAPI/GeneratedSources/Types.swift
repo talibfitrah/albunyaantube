@@ -1011,10 +1011,12 @@ public enum Operations {
                 /// - Remark: Generated from `#/paths/v1/content/GET/responses/200/headers`.
                 public struct Headers: Sendable, Hashable {
                     /// Set only when `q` has 2 or more characters and `type` is CHANNELS,
-                    /// PLAYLISTS or VIDEOS (the request is then a relevance search): the
-                    /// match tier of the first item — exact, approximate, related or none.
-                    /// Otherwise the plain list is returned without this header. Clients
-                    /// read a missing or unknown value as exact.
+                    /// PLAYLISTS or VIDEOS (the request is then a relevance search): how the
+                    /// first item matches — exact (every query word is a whole word of its
+                    /// title, keywords or channel, the last one maybe typed in part),
+                    /// approximate (a shared stem, the description or a fuzzy match), related
+                    /// (a related concept) or none. Otherwise the plain list is returned
+                    /// without this header. Clients read a missing or unknown value as exact.
                     ///
                     ///
                     /// - Remark: Generated from `#/paths/v1/content/GET/responses/200/headers/X-Search-Match`.
@@ -2582,8 +2584,10 @@ public enum Operations {
             public struct Ok: Sendable, Hashable {
                 /// - Remark: Generated from `#/paths/v1/search/GET/responses/200/headers`.
                 public struct Headers: Sendable, Hashable {
-                    /// The match tier of the first item — exact, approximate, related
-                    /// or none. Clients read a missing or unknown value as exact.
+                    /// How the first item matches — exact (every query word is a whole word
+                    /// of its title, keywords or channel, the last one maybe typed in part),
+                    /// approximate (a shared stem, the description or a fuzzy match), related
+                    /// (a related concept) or none. Clients read a missing or unknown value as exact.
                     ///
                     ///
                     /// - Remark: Generated from `#/paths/v1/search/GET/responses/200/headers/X-Search-Match`.
@@ -2591,7 +2595,7 @@ public enum Operations {
                     /// Creates a new `Headers`.
                     ///
                     /// - Parameters:
-                    ///   - xSearchMatch: The match tier of the first item — exact, approximate, related
+                    ///   - xSearchMatch: How the first item matches — exact (every query word is a whole word
                     public init(xSearchMatch: Swift.String? = nil) {
                         self.xSearchMatch = xSearchMatch
                     }
