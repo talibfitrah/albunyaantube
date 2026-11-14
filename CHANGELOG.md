@@ -5,6 +5,11 @@ stable release.
 
 ## [Unreleased]
 
+- Search (backend): whole-word matches rank first, so خفين finds المسح على الخفين before خفي (ال, بال, لل… prefixes ignored; Arabic word endings kept; English singular and plural count as one word; the forms of الله are one word, never له). Titles with the query as a phrase rank higher. With no whole-word match, the apps show their "closest results" note.
+- Channel Up next (Android, iOS): a video opened from a channel lists that channel's later videos (newest first) under Up next, loads more on scroll and plays on. Tapping a row continues from that row.
+- Channel Shorts (Android, iOS): a Short opened from a channel's Shorts tab swipes up to that channel's next older Short and down to the previous one. Android no longer skips Shorts past the 10th of each page. iOS reports the Short on screen and keeps 3 extraction slots for Retry.
+- Android players: the 3-skip limit for unplayable videos now holds, and the video you tapped shows its error instead of being skipped.
+
 - Android 1.0.7 playback: some videos stopped after about 50 s; the app now uses streams that keep playing, and recovers to a compatible stream if one fails mid-play.
 - Android 1.0.7: a minimum-version check. The server-side floor sends Play users to the store and sideload users to the in-app updater, and it fails open when the config can't be read.
 - Search (backend, Android 1.0.7, iOS 1.0.9): one search bar, Home's, everywhere; results include videos inside approved channels and playlists (excluded ones never); unknown lengths show blank, not 0:00.
