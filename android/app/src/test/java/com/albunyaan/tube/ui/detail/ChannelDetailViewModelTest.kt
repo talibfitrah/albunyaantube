@@ -8,6 +8,7 @@ import com.albunyaan.tube.data.channel.ChannelPlaylist
 import com.albunyaan.tube.data.channel.ChannelShort
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.data.channel.ChannelVideo
+import com.albunyaan.tube.data.channel.ChannelVideosHandover
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.local.ChannelOldest
 import com.albunyaan.tube.data.local.ChannelVideoCache
@@ -65,6 +66,7 @@ class ChannelDetailViewModelTest {
     private lateinit var fakeCacheDao: FakeChannelVideoCacheDao
     private lateinit var fakeTelemetry: StreamRequestTelemetry
     private lateinit var fakeContentService: FakeContentService
+    private lateinit var handover: ChannelVideosHandover
 
     /**
      * Fake clock for deterministic rate limiting tests.
@@ -81,6 +83,7 @@ class ChannelDetailViewModelTest {
         fakeCacheDao = FakeChannelVideoCacheDao()
         fakeTelemetry = StreamRequestTelemetry()
         fakeContentService = FakeContentService()
+        handover = ChannelVideosHandover()
         fakeCurrentTimeMs = 2000L
     }
 
@@ -105,7 +108,7 @@ class ChannelDetailViewModelTest {
                 .thenReturn(Response.success(RegistryEntry(excludedVideoIds = excludedVideoIds)))
         }
         val exclusions = Exclusions(api, { 0L }, CoroutineScope(testDispatcher))
-        return ChannelDetailViewModel(fakeRepository, fakeTelemetry, fakeCacheDao, contentService, exclusions, channelId).apply {
+        return ChannelDetailViewModel(fakeRepository, fakeTelemetry, fakeCacheDao, contentService, exclusions, handover, channelId).apply {
             timeProvider = { fakeCurrentTimeMs }
         }
     }
@@ -406,6 +409,45 @@ class ChannelDetailViewModelTest {
         assertEquals(2, fakeRepository.channelTabCallCount)
         // ...and the broken UU path (getVideos) is never called when channel-tab works.
         assertEquals(0, fakeRepository.videosCallCount)
+    }
+
+    @Test
+    fun `the videos tab hands its rows and cursor to the player, replacing a stale snapshot`() = runTest {
+        handover.put("UCtest123", ChannelVideosHandover.Snapshot(listOf(createTestVideo("old", "Old")), null, viaTab = false))
+        val tabNextPage = Page("http://channel-tab-next", null, null, null)
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.channelTabPagedResponses = listOf(
+            ChannelPage(listOf(createTestVideo("v1", "Video 1")), tabNextPage),
+            ChannelPage(listOf(createTestVideo("v2", "Video 2")), null),
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        var snapshot = handover.get("UCtest123")!!
+        assertEquals(listOf("v1"), snapshot.items.map { it.id })
+        assertTrue(snapshot.nextPage === tabNextPage)
+        assertTrue(snapshot.viaTab)
+
+        advanceTimeBy(1100L)
+        viewModel.loadNextPage(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        snapshot = handover.get("UCtest123")!!
+        assertEquals(listOf("v1", "v2"), snapshot.items.map { it.id })
+        assertNull(snapshot.nextPage)
+    }
+
+    @Test
+    fun `an uploads-playlist fallback hands over as the uploads source`() = runTest {
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.channelTabError = RuntimeException("channel-tab unavailable")
+        fakeRepository.videosResponse = ChannelPage(listOf(createTestVideo("v1", "Video 1")), null)
+
+        createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        assertFalse(handover.get("UCtest123")!!.viaTab)
     }
 
     @Test

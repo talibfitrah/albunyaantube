@@ -268,16 +268,51 @@ class PlayerViewModelChannelQueueTest {
         val channel = FakeChannelVideosRepository(listOf(page("v1", "v2"), page("v3")))
         channel.failingCalls += 2
         fakePlayerRepository.resolvedStreams = streams("v1")
+        var now = 1_000_000L
         val vm = playerViewModel(repository = fakePlayerRepository, channelDetailRepository = channel)
+            .also { it.setClockForTesting { now } }
 
         open(vm, "v1")
         advanceUntilIdle()
         vm.loadMoreUpNext()       // fails
         advanceUntilIdle()
-        vm.loadMoreUpNext()       // automatic: respects the failure
+        now += PlayerViewModel.USER_RETRY_COOLDOWN_MS
+        vm.loadMoreUpNext()       // automatic: respects the failure, however long ago
         advanceUntilIdle()
         assertEquals(2, channel.calls)
 
+        vm.loadMoreUpNext(userScroll = true)
+        advanceUntilIdle()
+
+        assertEquals(listOf("v2", "v3"), vm.state.value.upNext.map { it.id })
+    }
+
+    @Test
+    fun `a user scroll within the cooldown of a failed page is refused, one after it retries`() = runTest {
+        val channel = FakeChannelVideosRepository(listOf(page("v1", "v2"), page("v3")))
+        channel.failingCalls += listOf(2, 3)
+        fakePlayerRepository.resolvedStreams = streams("v1")
+        var now = 1_000_000L
+        val vm = playerViewModel(repository = fakePlayerRepository, channelDetailRepository = channel)
+            .also { it.setClockForTesting { now } }
+
+        open(vm, "v1")
+        advanceUntilIdle()
+        vm.loadMoreUpNext()                    // call 2 fails
+        advanceUntilIdle()
+        now += PlayerViewModel.USER_RETRY_COOLDOWN_MS - 1
+        vm.loadMoreUpNext(userScroll = true)   // inside the cooldown: refused
+        advanceUntilIdle()
+        assertEquals(2, channel.calls)
+
+        now += 1
+        vm.loadMoreUpNext(userScroll = true)   // the cooldown has passed: call 3, which fails too
+        advanceUntilIdle()
+        vm.loadMoreUpNext(userScroll = true)   // that failure restarts the cooldown
+        advanceUntilIdle()
+        assertEquals(3, channel.calls)
+
+        now += PlayerViewModel.USER_RETRY_COOLDOWN_MS
         vm.loadMoreUpNext(userScroll = true)
         advanceUntilIdle()
 
@@ -348,5 +383,64 @@ class PlayerViewModelChannelQueueTest {
 
         assertEquals("v2", vm.state.value.currentItem?.id)
         assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+    }
+    @Test
+    fun `a video the Videos tab loaded continues the tab's own list from its cursor, with no rescan`() = runTest {
+        // The tab has loaded 700 rows (past the scan's 600) and holds the cursor of its next page, the fake's page 1.
+        val loaded = (0 until 700).map { video("v$it") }
+        val channel = FakeChannelVideosRepository(listOf(page("unused"), page("v700", "v701")))
+        val handover = com.albunyaan.tube.data.channel.ChannelVideosHandover().apply {
+            put("UC_lectures", com.albunyaan.tube.data.channel.ChannelVideosHandover.Snapshot(
+                loaded, com.albunyaan.tube.data.channel.Page("1", null, null, null), viaTab = true,
+            ))
+        }
+        fakePlayerRepository.resolvedStreams = streams("v650")
+        val vm = playerViewModel(repository = fakePlayerRepository, channelDetailRepository = channel, channelVideosHandover = handover)
+
+        open(vm, "v650")
+        advanceUntilIdle()
+        assertEquals((651 until 700).map { "v$it" }, vm.state.value.upNext.map { it.id })
+        assertEquals(0, channel.calls)
+
+        vm.loadMoreUpNext()
+        advanceUntilIdle()
+
+        assertEquals(listOf("v698", "v699", "v700", "v701"), vm.state.value.upNext.map { it.id }.takeLast(4))
+        assertEquals(1, channel.calls)
+    }
+
+    @Test
+    fun `a tab that loaded from the uploads playlist continues on the uploads playlist`() = runTest {
+        val channel = FakeChannelVideosRepository(listOf(page("tab1"), page("tab2")))
+        val handover = com.albunyaan.tube.data.channel.ChannelVideosHandover().apply {
+            put("UC_lectures", com.albunyaan.tube.data.channel.ChannelVideosHandover.Snapshot(
+                page("v1", "v2", "v3"), com.albunyaan.tube.data.channel.Page("1", null, null, null), viaTab = false,
+            ))
+        }
+        fakePlayerRepository.resolvedStreams = streams("v1")
+        val vm = playerViewModel(repository = fakePlayerRepository, channelDetailRepository = channel, channelVideosHandover = handover)
+
+        open(vm, "v1")
+        advanceUntilIdle()
+        vm.loadMoreUpNext()
+        advanceUntilIdle()
+
+        assertEquals(listOf("v2", "v3"), vm.state.value.upNext.map { it.id })
+        assertEquals("the channel tab's token is never fed the uploads cursor", 0, channel.calls)
+    }
+
+    @Test
+    fun `a tab snapshot without the tapped video falls back to the scan`() = runTest {
+        val channel = FakeChannelVideosRepository(listOf(page("v1", "v2", "v3")))
+        val handover = com.albunyaan.tube.data.channel.ChannelVideosHandover().apply {
+            put("UC_lectures", com.albunyaan.tube.data.channel.ChannelVideosHandover.Snapshot(page("x1", "x2"), null, viaTab = true))
+        }
+        fakePlayerRepository.resolvedStreams = streams("v2")
+        val vm = playerViewModel(repository = fakePlayerRepository, channelDetailRepository = channel, channelVideosHandover = handover)
+
+        open(vm, "v2")
+        advanceUntilIdle()
+
+        assertEquals(listOf("v3"), vm.state.value.upNext.map { it.id })
     }
 }

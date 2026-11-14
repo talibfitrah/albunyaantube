@@ -235,6 +235,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                     // Me/history open one channel Short with swipe off: nothing follows it, so a failed one shows its
                     // error instead of skipping to another of the channel's Shorts.
                     if (channelId != null && initialShortId != null && !channelQueue) {
+                        playAlone(header)
                         exhausted = true
                         return@runCatching
                     }
@@ -255,6 +256,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                             at = page.items.indexOfFirst { it.id == initialShortId }
                         }
                         if (at < 0) {
+                            playAlone(header)
                             exhausted = true
                             return@runCatching
                         }
@@ -288,6 +290,12 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                     // user-initiated cancellation (fragment destroyed, VM cleared)
                     // doesn't surface a misleading "Job was cancelled" toast.
                     if (it is CancellationException) throw it
+                    // A channel Short not found yet: play it alone (by id), not an empty pager and a "No shorts" toast.
+                    // Not exhausted, so the next page selection searches again.
+                    if (channelQueue && !anchorFound && _items.value.isEmpty()) {
+                        playAlone(cachedChannelHeader)
+                        if (_items.value.isNotEmpty()) return@onFailure
+                    }
                     _events.tryEmit(LoadEvent.LoadError(it.message ?: "load failed"))
                 }
             } finally {
@@ -326,9 +334,17 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         return header
     }
 
-    private fun seedInitialShortIfAvailable() {
+    /** Nothing follows the tapped Short and nothing fetched it: seed it even without a title, never an empty pager. */
+    private fun playAlone(header: ChannelHeader?) {
+        if (_items.value.isNotEmpty()) return
+        seedInitialShortIfAvailable(allowBlankTitle = true)
+        if (header != null) _items.value = _items.value.map { it.withChannelHeader(header) }
+    }
+
+    /** A blank title is only allowed where no page brings the Short: [appendDistinct] keeps the seed over the page's row. */
+    private fun seedInitialShortIfAvailable(allowBlankTitle: Boolean = false) {
         val id = initialShortId?.takeIf { it.isNotBlank() } ?: return
-        val title = initialShortTitle?.takeIf { it.isNotBlank() } ?: return
+        val title = initialShortTitle?.takeIf { it.isNotBlank() } ?: if (allowBlankTitle) "" else return
         _items.value = listOf(
             ShortsItem(
                 id = id,

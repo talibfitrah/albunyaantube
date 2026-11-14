@@ -15,7 +15,9 @@ interface ChannelDetailRepository {
     suspend fun getChannelHeader(channelId: String, forceRefresh: Boolean = false): ChannelHeader
 
     /**
-     * Fetch videos from the channel's Videos tab.
+     * Fetch videos from the channel's uploads playlist (UU). The Videos tab's paged source is [getVideosViaChannelTab]
+     * (09675e2a); it loads this only when the channel tab's first page gives nothing, then pages on here with this
+     * playlist's own tokens.
      *
      * @param channelId YouTube channel ID
      * @param page Pagination cursor, null for first page
@@ -24,14 +26,8 @@ interface ChannelDetailRepository {
     suspend fun getVideos(channelId: String, page: Page?): ChannelPage<ChannelVideo>
 
     /**
-     * Fetch the channel-tab Videos response (~30 items, smaller payload than the
-     * UU uploads playlist). With [page] null this is the fast first-paint path;
-     * with a non-null [page] it continues channel-tab pagination — used by the
-     * Videos append loop when the UU uploads-playlist path was unavailable on the
-     * initial load, so the stored continuation is a channel-tab token (feeding it
-     * back into [getVideos]'s UU path would be a token mismatch). Channel-tab
-     * continuation tokens are unreliable past 1-2 batches in NewPipe, so the UU
-     * path remains preferred whenever it is available.
+     * Fetch the channel's Videos tab (~30 items a page). The Videos tab's own path: page 1 with [page] null, then
+     * its continuation, which pages to the end (09675e2a). Its tokens are valid only here, never in [getVideos].
      */
     suspend fun getVideosViaChannelTab(channelId: String, page: Page? = null): ChannelPage<ChannelVideo>
 

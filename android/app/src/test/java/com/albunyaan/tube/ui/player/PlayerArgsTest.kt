@@ -53,4 +53,26 @@ class PlayerArgsTest {
         assertEquals(true, PlayerFragment.argsFor(video).getBoolean("liveLink"))
         assertEquals(false, PlayerFragment.argsFor(video.copy(liveLink = false)).getBoolean("liveLink"))
     }
+
+    /** Cubic 4: the wrap_content Up next list shows a growing window of the queue; the whole queue stays for advance. */
+    @Test fun `up next grows a window at a time and pages the queue only once every row shows`() {
+        val w = PlayerFragment.UP_NEXT_WINDOW
+        assertEquals(2 * w, PlayerFragment.grownUpNextWindow(shown = w, bound = w, total = 100))
+        assertEquals("still binding the last growth", 2 * w, PlayerFragment.grownUpNextWindow(2 * w, bound = w, total = 100))
+        assertEquals(null, PlayerFragment.grownUpNextWindow(shown = 4 * w, bound = 100, total = 100))
+        assertEquals(null, PlayerFragment.grownUpNextWindow(shown = w, bound = 5, total = 5))
+    }
+
+    /** Cold review: an advance, Previous or a row tap shifts the queue and keeps the grown window; a new queue resets it. */
+    @Test fun `the up next window survives a shift of the queue and resets on a new one`() {
+        fun q(vararg ids: String) = ids.map { UpNextItem(it, it, "", 0, it) }
+        val grown = 3 * PlayerFragment.UP_NEXT_WINDOW
+        val before = q("a", "b", "c", "d")
+        assertEquals("advance", grown, PlayerFragment.upNextWindowFor(grown, before, q("b", "c", "d")))
+        assertEquals("previous", grown, PlayerFragment.upNextWindowFor(grown, before, q("z", "a", "b", "c", "d")))
+        assertEquals("row tap", grown, PlayerFragment.upNextWindowFor(grown, before, q("d")))
+        assertEquals("a page appended", grown, PlayerFragment.upNextWindowFor(grown, before, q("a", "b", "c", "d", "e")))
+        assertEquals("another video's queue", PlayerFragment.UP_NEXT_WINDOW, PlayerFragment.upNextWindowFor(grown, before, q("x", "y")))
+        assertEquals("first queue", PlayerFragment.UP_NEXT_WINDOW, PlayerFragment.upNextWindowFor(grown, emptyList(), q("x")))
+    }
 }

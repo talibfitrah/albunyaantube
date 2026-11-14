@@ -118,6 +118,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var trackSelector: QualityTrackSelector? = null
     private val viewModel: PlayerViewModel by viewModels()
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
+    /** Up next shows the queue's first rows only: its wrap_content list in the scroll view binds every row it holds. */
+    private var upNextShown = UP_NEXT_WINDOW
+    private var upNextAll: List<UpNextItem> = emptyList()
     private var preparedStreamKey: Pair<String, Boolean>? = null
     private var ttlWatcher: com.albunyaan.tube.player.MpdTtlWatcher? = null
     /**
@@ -968,7 +971,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private fun maybeLoadMoreUpNext(userScroll: Boolean = false) {
         val scroll = binding?.playerScrollView?.takeIf { it.isShown } ?: return
         val content = scroll.getChildAt(0) ?: return
-        if (content.bottom - (scroll.scrollY + scroll.height) <= scroll.height) viewModel.loadMoreUpNext(userScroll)
+        if (content.bottom - (scroll.scrollY + scroll.height) > scroll.height) return
+        val grown = grownUpNextWindow(upNextShown, upNextAdapter.itemCount, upNextAll.size)
+        when {
+            grown == null -> viewModel.loadMoreUpNext(userScroll) // every queued row shows: page the queue
+            grown > upNextShown -> {
+                upNextShown = grown
+                upNextAdapter.submitList(upNextAll.take(upNextShown)) { scroll.post { maybeLoadMoreUpNext() } }
+            }
+        }
     }
 
     // Replaces MultiQualityMediaSourceFactory.createMediaSourceWithType. Maps the lean
@@ -1600,7 +1611,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.favoriteButton.isVisible = state.canFavorite
             // Audio does nothing on a local file with no video track, or with no file at all.
             binding.audioButton.isVisible = !state.playingDownload || ready?.selection?.video != null
-            upNextAdapter.submitList(state.upNext) { binding.playerScrollView.post { maybeLoadMoreUpNext() } }
+            upNextShown = upNextWindowFor(upNextShown, upNextAll, state.upNext)
+            upNextAll = state.upNext
+            upNextAdapter.submitList(state.upNext.take(upNextShown)) { binding.playerScrollView.post { maybeLoadMoreUpNext() } }
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
             // Update ExoPlayer prev/next buttons based on playlist position
             // Always keep buttons visible but visually indicate disabled state
@@ -4376,6 +4389,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     companion object {
+        /** Up next rows shown at first, and added each time the scroll nears their end. */
+        internal const val UP_NEXT_WINDOW = 30
+
+        /**
+         * The Up next rows to show once the scroll nears the end of [bound] shown rows: null when all [total] queued
+         * rows show (page the queue instead), [shown] while the last growth is still binding.
+         */
+        /**
+         * The window for [next] after [previous] showed [shown] rows: kept when the queue only shifted (an advance,
+         * Previous, a row tap, a page appended), so the scroll stays put; the first window for a new queue.
+         */
+        internal fun upNextWindowFor(shown: Int, previous: List<UpNextItem>, next: List<UpNextItem>): Int {
+            val first = next.firstOrNull()?.id
+            val shifted = previous.any { it.id == first } || previous.firstOrNull()?.id.let { p -> next.any { it.id == p } }
+            return if (shifted) shown else UP_NEXT_WINDOW
+        }
+
+        internal fun grownUpNextWindow(shown: Int, bound: Int, total: Int): Int? = when {
+            shown >= total -> null
+            bound < shown -> shown
+            else -> shown + UP_NEXT_WINDOW
+        }
+
         /** Nav arg: id of a completed download to play from its local file (see [PlayerViewModel.loadDownload]). */
         const val ARG_DOWNLOAD_ID = "downloadId"
 

@@ -186,13 +186,10 @@ class NewPipeChannelDetailRepository @Inject constructor(
     }
 
     override suspend fun getVideos(channelId: String, page: Page?): ChannelPage<ChannelVideo> {
-        // Page the uploads playlist (UU<channelId>) instead of the channel
-        // videos tab. NewPipe v0.26's YoutubeChannelTabExtractor terminates
-        // pagination prematurely on some channels (returns nextPage=null after
-        // 1-2 batches), capping user scroll at ~20-30 items. The uploads
-        // playlist exposes the same long-form content via YoutubePlaylistExtractor
-        // with reliable pagination (~100 items per page). Same workaround as
-        // ChannelDeepPaginator.RealPageProvider for the Me-tab feed.
+        // The uploads playlist (UU<channelId>), ~100 items per page. The Videos tab's
+        // paged source is [getVideosViaChannelTab] (09675e2a); it loads this only when the
+        // channel tab's first page gives nothing, then pages on here with this playlist's
+        // own tokens.
         //
         // Side effect: the uploads playlist intermixes Shorts and long-form,
         // and YouTube's UU API does not reliably set isShortFormContent on
@@ -370,14 +367,9 @@ class NewPipeChannelDetailRepository @Inject constructor(
     }
 
     override suspend fun getVideosViaChannelTab(channelId: String, page: Page?): ChannelPage<ChannelVideo> {
-        // Channel-tab path. With page == null it serves the fast first-paint phase of
-        // [ChannelDetailViewModel.loadVideosInitial] (smaller than the UU uploads
-        // playlist, ~3-5x fewer bytes, so the user sees something before the slower UU
-        // fetch completes). With a non-null page it continues channel-tab pagination —
-        // the Videos append loop routes here instead of [getVideos] when the initial
-        // load fell back to the channel tab, so the channel-tab continuation token is
-        // not mis-fed into the UU playlist's getMoreItems. The ViewModel prefers UU for
-        // deep pagination whenever it is available.
+        // The Videos tab's own path, first page and every later one, to the channel's first upload (09675e2a).
+        // Its continuation tokens are valid only here, never in [getVideos] (the uploads playlist, loaded only
+        // when this first page gives nothing).
         val fetch: suspend (Page?) -> ChannelPage<ChannelVideo> = { p ->
             withContext(Dispatchers.IO) {
                 fetchTabContent(channelId, ChannelTabs.VIDEOS, p) { item ->

@@ -507,6 +507,35 @@ class ShortsPlayerViewModelTest {
     }
 
     @Test
+    fun meHistoryShort_withABlankTitleStillPlaysThatShort() = runTest(dispatcher) {
+        val vm = channelVm("s3", initialShortTitle = "", channelQueue = false)
+        advanceUntilIdle()
+
+        assertEquals(listOf("s3"), vm.items.value.map { it.id })
+        assertEquals("the channel header still names it", "Channel One", vm.items.value.single().channelName)
+    }
+
+    @Test
+    fun channelMode_aTappedShortNotFoundWithABlankTitleStillPlaysAlone() = runTest(dispatcher) {
+        whenever(feed.loadChannelShortsPage(eq("UC1"), anyOrNull())).thenReturn(ShortsPage(listOf(sample("n0")), null))
+
+        val vm = channelVm("s3", initialShortTitle = null)
+        advanceUntilIdle()
+
+        assertEquals(listOf("s3"), vm.items.value.map { it.id })
+    }
+
+    @Test
+    fun channelMode_aNetworkFailureFindingABlankTitledShortStillPlaysIt() = runTest(dispatcher) {
+        whenever(feed.loadChannelShortsPage(eq("UC1"), anyOrNull())).thenThrow(RuntimeException("network"))
+
+        val vm = channelVm("s3", initialShortTitle = null)
+        advanceUntilIdle()
+
+        assertEquals(listOf("s3"), vm.items.value.map { it.id })
+    }
+
+    @Test
     fun initialShortId_reorderAppliedOnlyOnFirstPage() = runTest(dispatcher) {
         // Page 1: v1, v2, v3 (v3 is requested as the initial short).
         // Page 2: v4, v5. The second load must NOT re-run the reorder —

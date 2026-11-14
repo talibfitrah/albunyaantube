@@ -11,6 +11,7 @@ import com.albunyaan.tube.data.channel.ChannelPlaylist
 import com.albunyaan.tube.data.channel.ChannelShort
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.data.channel.ChannelVideo
+import com.albunyaan.tube.data.channel.ChannelVideosHandover
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
@@ -47,6 +48,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
     private val channelVideoCacheDao: ChannelVideoCacheDao,
     @Named("real") private val contentService: ContentService,
     private val exclusions: Exclusions,
+    private val channelVideosHandover: ChannelVideosHandover,
     @Assisted private val channelId: String
 ) : ViewModel() {
 
@@ -106,8 +108,8 @@ class ChannelDetailViewModel @AssistedInject constructor(
         // Fire header and the currently-selected tab's first page in
         // parallel. Sequencing them serialised the videos fetch behind
         // ~300-600 ms of channel-info HTTP latency on cold first-open.
-        // The repository's getVideos has a UC->UU fast path that skips
-        // getChannelInfo, so the videos fetch can complete independently.
+        // The Videos tab's channel-tab fetch needs the same channel info,
+        // which the repository fetches once for both (single-flight).
         // ensureTabLoaded() in loadHeader's success path is still safe —
         // it gates on Idle state and becomes a no-op once we've already
         // transitioned to LoadingInitial here.
@@ -379,8 +381,15 @@ class ChannelDetailViewModel @AssistedInject constructor(
 
     // Private loading methods for each tab type
 
+    /** What this tab loaded, for a tapped video's Up next to continue from (ChannelVideosHandover). */
+    private fun handOverVideos(items: List<ChannelVideo>, controller: TabPaginationController) = channelVideosHandover.put(
+        channelId,
+        ChannelVideosHandover.Snapshot(items, controller.nextPage, controller.videosUseChannelTab),
+    )
+
     private suspend fun loadVideosInitial(controller: TabPaginationController) {
         val startMs = System.currentTimeMillis()
+        channelVideosHandover.remove(channelId) // a reload: the player scans until the fresh rows arrive
         var pageFetches = 0
         var accumulatedItems = emptyList<ChannelVideo>()
         var cachedEmittedCount = 0
@@ -402,14 +411,10 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 Log.d(TAG, "Videos initial: emitted ${cached.size} cached items pre-NewPipe")
             }
 
-            // Channel-tab is the reliable deep-pagination path for the Videos tab. NewPipe
-            // v0.26.2 (#1492) fixed channel tabs, and a JVM probe confirmed the Videos tab
-            // pages a 5000+ upload channel to the end with no early cap. The UU uploads-
-            // playlist is now the broken one: getInfo returns page 1 but getMoreItems NPEs
-            // (browseMetadataResponse null) after page 1 in v0.26.3, so it only ever surfaces
-            // the latest ~100 uploads and never reaches older ones (the reported "only a first
-            // set, scrolling loads nothing"). Prefer the channel tab; fall back to UU page 1
-            // only when the tab is genuinely unavailable (content beats a blank screen).
+            // The channel tab is the Videos tab's paged source (09675e2a: a JVM probe paged a
+            // 5000+ upload channel to the end with no early cap). The UU uploads playlist is
+            // loaded only when the tab's first page gives nothing (content beats a blank
+            // screen); its tokens then stay on getVideos.
             pageFetches = 1
             val tabResult = runCatching { repository.getVideosViaChannelTab(channelId) }
             val tab = tabResult.getOrNull()
@@ -423,11 +428,11 @@ class ChannelDetailViewModel @AssistedInject constructor(
                     tab.nextPage,
                     showLoadMoreFooter = false,
                 )
+                handOverVideos(tab.items, controller)
                 Log.d(TAG, "Videos initial: ${tab.items.size} items via channel-tab, hasMore=${tab.nextPage != null}")
             } else {
-                // Channel-tab unavailable: fall back to the UU uploads-playlist page 1. Its
-                // getMoreItems NPEs so deep pagination won't work in this rare case, but the
-                // latest uploads still show instead of a blank screen.
+                // Channel-tab unavailable: fall back to the UU uploads playlist, so the latest
+                // uploads show instead of a blank screen. The append loop continues on getVideos.
                 val uuResult = runCatching { repository.getVideos(channelId, null) }
                 val uu = uuResult.getOrNull()
                 when {
@@ -441,6 +446,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                             uu.nextPage,
                             showLoadMoreFooter = false,
                         )
+                        handOverVideos(uu.items, controller)
                         Log.d(TAG, "Videos initial: ${uu.items.size} items via UU fallback (channel-tab unavailable), hasMore=${uu.nextPage != null}")
                     }
                     // Both paths failed: surface it so loadInitial's catch routes to
@@ -548,6 +554,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                     controller.nextPage,
                     showLoadMoreFooter = currentShowLoadMore || (accumulatedNewItems.isEmpty() && controller.nextPage != null),
                 )
+                handOverVideos(newItems, controller)
             }
             Log.d(TAG, "Videos append: +${accumulatedNewItems.size} items after $pageFetches fetches, total=${newItems.size}")
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -1113,11 +1120,10 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var hasReachedEnd: Boolean = false,
         var lastAppendRequestMs: Long = 0L,
         /**
-         * Videos tab only: true when the initial load fell back to the channel-tab
-         * path (the UU uploads-playlist path was unavailable), so [nextPage] holds a
-         * channel-tab continuation token. The append loop must then continue via
-         * [ChannelDetailRepository.getVideosViaChannelTab], not [getVideos]'s UU path,
-         * which would mis-feed the channel-tab token into the playlist getMoreItems.
+         * Videos tab only: true when the initial load came from the channel tab (the usual path), so [nextPage]
+         * holds a channel-tab continuation token and the append loop continues via
+         * [ChannelDetailRepository.getVideosViaChannelTab]. False after the uploads-playlist fallback, whose
+         * token is valid only in [ChannelDetailRepository.getVideos].
          */
         var videosUseChannelTab: Boolean = false
     )

@@ -40,6 +40,8 @@ internal fun playerViewModel(
     downloadRepository: DownloadRepository = FakeDownloadRepository(),
     playlistDetailRepository: PlaylistDetailRepository = FakePlaylistDetailRepository(),
     channelDetailRepository: com.albunyaan.tube.data.channel.ChannelDetailRepository = FakeChannelVideosRepository(),
+    // Nothing handed over by default: a channel queue scans, as after process death.
+    channelVideosHandover: com.albunyaan.tube.data.channel.ChannelVideosHandover = com.albunyaan.tube.data.channel.ChannelVideosHandover(),
     favoritesRepository: FavoritesRepository = FakeFavoritesRepository(),
     extractorClient: ExtractorClient = FakeExtractorClient(),
     contentService: com.albunyaan.tube.data.source.ContentService = com.albunyaan.tube.data.source.FakeContentService(),
@@ -65,6 +67,7 @@ internal fun playerViewModel(
     downloadRepository = downloadRepository,
     playlistDetailRepository = playlistDetailRepository,
     channelDetailRepository = channelDetailRepository,
+    channelVideosHandover = channelVideosHandover,
     rateLimiter = rateLimiter,
     prefetchService = prefetchService,
     favoritesRepository = favoritesRepository,
