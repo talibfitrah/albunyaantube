@@ -610,10 +610,9 @@ public class SearchIndex {
     }
 
     /**
-     * Owner rule 2026-11-11 (replaces spec §7.1's "every curated tier ≤ 2 hit stays ahead of every inner hit"): inner
-     * tier-1–2 hits interleave by tier, exact > approximate > related, C's hits before inner ones within a tier. Never for
-     * CHANNEL/PLAYLIST searches, while serveInner is off, or before the inner index is built. Then, on every search while
-     * serving, broad ones too, Q17 on the answer. Any failure of the inner work (an inner index closing under it, at a
+     * Inner tier-1–2 hits interleave with C's by class ({@link #CLASSES}). Never for CHANNEL/PLAYLIST searches, while
+     * serveInner is off, or before the inner index is built. Then, on every search while serving, broad ones too, Q17 on
+     * the answer. Any failure of the inner work (an inner index closing under it, at a
      * rebuild swap or shutdown) answers C: it never fails a search. A failure of the Q17 swap alone keeps the merge; the
      * titles not yet swapped stay stored.
      */
@@ -648,37 +647,47 @@ public class SearchIndex {
         }
     }
 
-    /** C₁ ++ I₁ ++ C₂ ++ I₂ ++ C₃ cut to `want` (Cₙ, Iₙ: C's and the inner tier-n hits); the header, the first item's tier. */
+    /** C's and the inner hits merged class by class ({@link #CLASSES}), cut to `want`; the header is the first item's class. */
     private Hits merged(IndexSearcher shared, Ladder today, Set<String> todays, int want, Trace trace) throws IOException {
         Hits plain = new Hits(today.items(), today.match());
-        if (want <= today.upToTier1()) return plain; // C's exact hits fill the page
-        List<Tiered> found = innerLadder(shared, today, want, new HashSet<>(todays), trace); // dedupe: C's copy keeps its place
+        int[] ends = today.ends();
+        if (want <= ends[0]) return plain; // C's word-level exact hits fill the page
+        QueryTimeout timeout = newTimeout.apply(innerTimeoutMs);
+        IndexSearcher searcher = new IndexSearcher(shared.getIndexReader()); // per query: its own timeout
+        searcher.setTimeout(timeout);
+        List<Tiered> found = innerLadder(searcher, timeout, today, want, new HashSet<>(todays), trace); // dedupe: C's copy keeps its place
         if (found.isEmpty()) return plain;
-        int[] ends = {0, today.upToTier1(), today.upToTier2(), today.items().size()};
         List<ContentItemDto> out = new ArrayList<>();
         String match = "none";
-        for (int tier = 1; tier <= 3; tier++) {
-            out.addAll(today.items().subList(ends[tier - 1], ends[tier]));
-            for (Tiered t : found) if (t.tier() == tier) out.add(t.item());
-            if (match.equals("none") && !out.isEmpty()) match = TIER_NAMES[tier];
+        for (int k = 0; k < CLASSES; k++) {
+            int from = k == 0 ? 0 : ends[k - 1];
+            out.addAll(today.items().subList(from, ends[k]));
+            Tiered firstInner = null;
+            for (Tiered t : found) {
+                if (t.cls() != k) continue;
+                if (firstInner == null) firstInner = t;
+                out.add(t.item());
+            }
+            if (match.equals("none") && !out.isEmpty()) { // C's first item has today's header; an inner one is judged here
+                match = ends[k] > from ? today.match() : classMatch(k, searcher, firstInner.doc(), today.tokens(), timeout);
+            }
         }
         return new Hits(List.copyOf(out.subList(0, Math.min(want, out.size()))), match);
     }
 
     /**
-     * Tiers 1–2 on the inner index (R17), score order, longer videos before Shorts in each tier (R35), within 40 ms (R30).
-     * Iₙ gets only the page left after C₁ ++ I₁ ++ C₂ up to tier n: none left, tier n never runs.
+     * Tiers 1–2 on the inner index (R17), score order, longer videos before Shorts in each tier's class (R35; tier 1 has two,
+     * SearchText.ranked), within 40 ms (R30).
+     * An inner class gets only the page left by what the merge puts before it (C's hits up to that class, the inner hits
+     * of the classes before it): none left, its query never runs.
      * ponytail: the budget is checked per page, per document and per tier, and Lucene checks it between scoring ranges;
      * weight-time work (fuzzy and prefix rewrites, term seeks) is not bounded, so one such step can overrun 40 ms.
      * ExitableDirectoryReader would bound it, if Task 30's max inner ms ever says so.
      */
-    private List<Tiered> innerLadder(IndexSearcher shared, Ladder today, int want, Set<String> seen, Trace trace)
-            throws IOException {
+    private List<Tiered> innerLadder(IndexSearcher searcher, QueryTimeout timeout, Ladder today, int want, Set<String> seen,
+                                     Trace trace) throws IOException {
         long started = System.nanoTime();
         List<Tiered> out = new ArrayList<>();
-        QueryTimeout timeout = newTimeout.apply(innerTimeoutMs);
-        IndexSearcher searcher = new IndexSearcher(shared.getIndexReader()); // per query: its own timeout
-        searcher.setTimeout(timeout);
         Map<Query, Query> rewritten = new HashMap<>();
         UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
             try {
@@ -688,17 +697,22 @@ public class SearchIndex {
             }
         });
         for (int tier = 1; tier <= 2; tier++) {
-            int room = want - (tier == 1 ? today.upToTier1() : today.upToTier2()) - out.size(); // out holds I₁ at tier 2
-            if (room <= 0) break;
-            if (trace.innerTimedOut || timeout.shouldExit()) { // before the tier's rewrites
-                trace.innerTimedOut = true;
-                break;
+            List<Query> classes = null; // built after the first class's checks: tier 2's fuzzy rewrites run in it
+            for (int i = 0; classes == null || i < classes.size(); i++) {
+                int k = slot(tier, i);
+                int room = want - today.ends()[k] - out.size(); // out holds the inner hits of the classes before k
+                if (room <= 0) break;
+                if (trace.innerTimedOut || timeout.shouldExit()) { // before the class's rewrites
+                    trace.innerTimedOut = true;
+                    break;
+                }
+                if (classes == null) classes = SearchText.ranked(tier, today.tokens(), once); // tier 1: its word-level class first
+                List<Tiered> longer = new ArrayList<>(), shorts = new ArrayList<>();
+                collectInner(searcher, classes.get(i), k, room, seen, longer, shorts, timeout, trace);
+                out.addAll(longer);
+                out.addAll(shorts.subList(0, Math.min(shorts.size(), room - longer.size())));
+                if (searcher.timedOut()) trace.innerTimedOut = true; // Lucene stopped scoring mid-class: no next class
             }
-            List<ContentItemDto> longer = new ArrayList<>(), shorts = new ArrayList<>();
-            collectInner(searcher, SearchText.tier(tier, today.tokens(), once), room, seen, longer, shorts, timeout, trace);
-            for (ContentItemDto item : longer) out.add(new Tiered(item, tier));
-            for (int i = 0; i < shorts.size() && longer.size() + i < room; i++) out.add(new Tiered(shorts.get(i), tier));
-            if (searcher.timedOut()) trace.innerTimedOut = true; // Lucene stopped scoring mid-tier: no next tier
         }
         if (trace.innerTimedOut) inner.timedOut();
         trace.innerMs = (System.nanoTime() - started) / 1_000_000;
@@ -706,9 +720,9 @@ public class SearchIndex {
         return out;
     }
 
-    /** Pages one inner tier in score order until `want` longer videos are found, the hits run out, or the budget ends. */
-    private void collectInner(IndexSearcher searcher, Query query, int want, Set<String> seen, List<ContentItemDto> longer,
-                              List<ContentItemDto> shorts, QueryTimeout timeout, Trace trace) throws IOException {
+    /** Pages one inner class in score order until `want` longer videos are found, the hits run out, or the budget ends. */
+    private void collectInner(IndexSearcher searcher, Query query, int cls, int want, Set<String> seen, List<Tiered> longer,
+                              List<Tiered> shorts, QueryTimeout timeout, Trace trace) throws IOException {
         ScoreDoc after = null;
         long n = Math.max(10, 2L * want);
         while (longer.size() < want) {
@@ -732,12 +746,13 @@ public class SearchIndex {
                     continue;
                 }
                 if (!seen.add(doc.get("id"))) continue;
+                ContentItemDto dto = innerDto(doc, keeper);
                 IndexableField d = doc.getField("d");
                 int seconds = d == null ? 0 : d.numericValue().intValue();
-                (seconds > 0 && seconds <= SHORT_MAX_SECONDS ? shorts : longer).add(innerDto(doc, keeper));
+                (seconds > 0 && seconds <= SHORT_MAX_SECONDS ? shorts : longer).add(new Tiered(dto, cls, hit.doc));
                 if (longer.size() == want) return;
             }
-            if (top.scoreDocs.length < n) return; // the tier has no more hits (or the search timed out)
+            if (top.scoreDocs.length < n) return; // the class has no more hits (or the search timed out)
             after = top.scoreDocs[top.scoreDocs.length - 1];
             n = Math.min(2 * n, Integer.MAX_VALUE);
         }
@@ -865,11 +880,11 @@ public class SearchIndex {
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
         if (tokens.size() > SearchText.MAX_TOKENS) tokens = tokens.subList(0, SearchText.MAX_TOKENS);
         trace.tokens = tokens.size();
-        if (tokens.isEmpty()) return new Ladder(List.of(), "none", List.of(), 0, 0);
+        if (tokens.isEmpty()) return new Ladder(List.of(), "none", List.of(), new int[CLASSES]);
         List<ContentItemDto> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String match = "none";
-        int upToTier1 = 0, upToTier2 = 0;
+        int[] ends = new int[CLASSES];
         // Each fuzzy clause is rewritten (its automaton built) once per search, then shared by tiers 2 and 3 (F1).
         Map<Query, Query> rewritten = new HashMap<>();
         UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
@@ -880,24 +895,56 @@ public class SearchIndex {
             }
         });
         for (int tier = 1; tier <= 3 && out.size() < Math.min(want, tier < 3 ? want : MIN_CONFIDENT_HITS); tier++) {
-            boolean wasEmpty = out.isEmpty();
             int before = out.size();
             long t0 = System.nanoTime();
-            collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, now, out, seen, trace);
+            List<Query> classes = SearchText.ranked(tier, tokens, once); // tier 1: its word-level class first
+            for (int i = 0; i < classes.size(); i++) {
+                boolean wasEmpty = out.isEmpty();
+                int first = collect(searcher, filtered(classes.get(i), type, catalogOnly), want, allowedIds, now, out, seen, trace);
+                if (wasEmpty && !out.isEmpty()) match = classMatch(slot(tier, i), searcher, first, tokens, NO_BUDGET);
+                Arrays.fill(ends, slot(tier, i), CLASSES, out.size());
+            }
             trace.tierRan[tier] = true;
             trace.tierMs[tier] = (System.nanoTime() - t0) / 1_000_000;
             trace.tierHits[tier] = out.size() - before;
-            if (wasEmpty && !out.isEmpty()) match = TIER_NAMES[tier];
-            if (tier == 1) upToTier1 = out.size();
-            if (tier <= 2) upToTier2 = out.size();
         }
-        return new Ladder(out, match, tokens, upToTier1, upToTier2);
+        return new Ladder(out, match, tokens, ends);
     }
 
-    /** One run of the ladder: the items, the header tier, the query's tokens, and how many items tier 1 and tiers 1–2 found. */
-    private record Ladder(List<ContentItemDto> items, String match, List<String> tokens, int upToTier1, int upToTier2) {}
+    /** One run of the ladder: the items, the header, the query's tokens, and how many items the classes up to each one found. */
+    private record Ladder(List<ContentItemDto> items, String match, List<String> tokens, int[] ends) {}
 
-    private record Tiered(ContentItemDto item, int tier) {}
+    /** An inner hit, its class and its document in the inner searcher. */
+    private record Tiered(ContentItemDto item, int cls, int doc) {}
+
+    /**
+     * Ruling 2026-11-14 ("exact match to closest match"; it replaces the owner rule of 2026-11-11's interleave by tier):
+     * hits go class by class, C₁word ++ I₁word ++ C₁rest ++ I₁rest ++ C₂ ++ I₂ ++ C₃, C's (curated) before the inner ones
+     * within each class, as 2026-11-11 put them within a tier. The classes: 0 tier 1's word-level class, 1 the rest of
+     * tier 1 (SearchText.ranked), 2 tier 2, 3 tier 3.
+     */
+    private static final int CLASSES = 4;
+    /** The curated ladder has no time budget. */
+    private static final QueryTimeout NO_BUDGET = () -> false;
+
+    /** The class of tier `tier`'s `index`-th query. */
+    private static int slot(int tier, int index) {
+        return tier == 1 ? index : tier;
+    }
+
+    /**
+     * The header for `doc`, a first item of class `k` on `searcher`. Ruling 2026-11-14 (honest header): one from the rest
+     * of tier 1 is "exact" only when that document (never another copy of its id: review 2026-11-14) has every query word
+     * as a word of its title, keywords or channel, the last word maybe typed in part (SearchText.everyWord; class 1 exists
+     * only when the query has a non-stopword, so it is never null); a stem alone (خفي for خفين) or the description is
+     * "approximate", so the apps show "closest results". Within the budget: once it is spent, unchecked, "exact" (tier 1's
+     * header before 2026-11-14), so load never shows "closest results".
+     */
+    private static String classMatch(int k, IndexSearcher searcher, int doc, List<String> tokens, QueryTimeout budget)
+            throws IOException {
+        if (k != 1) return TIER_NAMES[Math.max(1, k)];
+        return budget.shouldExit() || searcher.explain(SearchText.everyWord(tokens, true), doc).isMatch() ? TIER_NAMES[1] : TIER_NAMES[2];
+    }
 
     /** Exact YouTube-id lookup for pasted URLs and ids (spec §4.4); on a miss, the inner index (inner-search R27). No Firestore read. */
     public Hits byId(String youtubeId, String type) throws IOException {
@@ -1101,14 +1148,15 @@ public class SearchIndex {
      * Over-fetches 2x and pages with searchAfter until `want` visible, unseen, allowed items are found. The page
      * doubles each round, so many hidden hits cost a few query runs, not one per page (M7).
      */
-    private void collect(IndexSearcher searcher, Query query, int want, Set<String> allowedIds, IndexSearcher now,
-                         List<ContentItemDto> out, Set<String> seen, Trace trace) throws IOException {
+    private int collect(IndexSearcher searcher, Query query, int want, Set<String> allowedIds, IndexSearcher now,
+                        List<ContentItemDto> out, Set<String> seen, Trace trace) throws IOException {
+        int first = -1; // the document of the first item this call adds
         ScoreDoc after = null;
         long n = Math.max(10, 2L * (want - out.size()));
         for (; out.size() < want; n = Math.min(2 * n, Integer.MAX_VALUE)) {
             TopDocs top = after == null ? searcher.search(query, (int) n, RELEVANCE)
                     : searcher.searchAfter(after, query, (int) n, RELEVANCE);
-            if (top.scoreDocs.length == 0) return;
+            if (top.scoreDocs.length == 0) return first;
             StoredFields fields = searcher.storedFields();
             for (ScoreDoc hit : top.scoreDocs) {
                 Document doc = fields.document(hit.doc);
@@ -1132,12 +1180,14 @@ public class SearchIndex {
                 if (seen.add(id)) {
                     ContentItemDto dto = dto(doc);
                     if (keeper != null) provenance(dto, keeper);
+                    if (first < 0) first = hit.doc;
                     out.add(dto);
-                    if (out.size() == want) return;
+                    if (out.size() == want) return first;
                 }
             }
             after = top.scoreDocs[top.scoreDocs.length - 1];
         }
+        return first;
     }
 
     /**
@@ -1278,11 +1328,12 @@ public class SearchIndex {
         return doc;
     }
 
-    /** A base field and its `_stem` twin; the per-field index analyzer picks the chain (spec §4.3). Shared by InnerIndex (inner-search R16). */
+    /** A base field and its `_stem` and `_word` twins; the per-field index analyzer picks the chain (spec §4.3). Shared by InnerIndex (inner-search R16). */
     static void addText(Document doc, String field, String value) {
         if (value == null || value.isBlank()) return;
         doc.add(new TextField(field, value, Field.Store.NO));
         doc.add(new TextField(field + "_stem", value, Field.Store.NO));
+        doc.add(new TextField(field + "_word", value, Field.Store.NO));
     }
 
     /** A stream shown as a stream has no Video document, so no upload date. */

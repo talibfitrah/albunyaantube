@@ -174,6 +174,34 @@ class SearchTextTest {
     }
 
     @Test
+    void theWordFieldDropsTheArticleAndProcliticsButKeepsSuffixes() {
+        // Owner report 2026-11-14: خفين listed خفي titles first; the stem merges them all into خف.
+        List<String> khuffain = tokens(SearchText.WORD, "خفين");
+        assertEquals(khuffain, tokens(SearchText.WORD, "الخفين"));
+        assertEquals(khuffain, tokens(SearchText.WORD, "بالخفين"));
+        assertEquals(khuffain, tokens(SearchText.WORD, "للخفين"));
+        assertFalse(khuffain.equals(tokens(SearchText.WORD, "خفي")), "خفي is another word");
+        // A bare و is not stripped: in وضوء it is the root's first letter, and الوضوء must stay وضوء.
+        assertEquals(tokens(SearchText.WORD, "وضوء"), tokens(SearchText.WORD, "الوضوء"));
+        // Ruling 2026-11-14: English singular and plural are one word (kid/kids, lecture/lectures).
+        assertEquals(List.of("lecture", "lecture", "kid", "kid"), tokens(SearchText.WORD, "Lecture lectures kid Kids"));
+    }
+
+    @Test
+    void theFormsOfAllahAreOneWordAndNeverTheStopwordLahu() {
+        // Review 2026-11-14: stripping ال made الله the stopword له, an exact match for any title with له.
+        assertEquals(java.util.Collections.nCopies(8, "الله"), tokens(SearchText.WORD, "الله بالله والله تالله لله فالله ولله فلله"));
+        assertEquals(List.of("اللهم", "اللهم"), tokens(SearchText.WORD, "اللهم واللهم"));
+        assertEquals(List.of("له", "لهم", "وله", "كله", "فله"), tokens(SearchText.WORD, "له لهم وله كله فله"));
+    }
+
+    @Test
+    void theWordFieldsEnglishStemmerLeavesArabicWordsAlone() {
+        // EnglishMinimalStemFilter only strips Latin endings: خفين keeps its ين, خفية its ة (folded to ه by BASE).
+        assertEquals(List.of("خفين", "خفي", "خفيه", "مسلمون", "مسلمين"), tokens(SearchText.WORD, "الخفين خفي الخفية المسلمون بالمسلمين"));
+    }
+
+    @Test
     void conceptMapFindsAGroupThroughAnyVariant() {
         assertTrue(SearchText.concepts("gebed").contains(List.of("prayer")));
         assertTrue(SearchText.concepts("الصلاة").contains(List.of("salah")));
@@ -253,6 +281,16 @@ class SearchTextTest {
     @Test
     void relatedTierAnswersTenLongTokensThatAllHaveConceptGroups() throws IOException {
         searchTenLongTokens(3, CONCEPT_TOKENS);
+    }
+
+    @Test
+    void tierOneSplitsIntoTwoClassesOf134LeavesForTenTokens() {
+        // 10 x (3 fields x term+stem+word + description) + 3 last-token prefixes + 10 x 3 word terms + 1 phrase.
+        List<Query> classes = SearchText.ranked(1, ZZ_TOKENS, q -> q);
+        assertEquals(2, classes.size());
+        for (Query q : classes) assertEquals(134, leaves(q).size());
+        assertEquals(1, SearchText.ranked(1, List.of("of", "the"), q -> q).size(), "only stopwords: one class");
+        assertEquals(1, SearchText.ranked(2, ZZ_TOKENS, q -> q).size(), "only tier 1 splits");
     }
 
     @Test

@@ -3,11 +3,13 @@ package com.albunyaan.tube.search;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.CharArraySet;
 import org.apache.lucene.analysis.LowerCaseFilter;
+import org.apache.lucene.analysis.TokenFilter;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.ar.ArabicAnalyzer;
 import org.apache.lucene.analysis.ar.ArabicNormalizationFilter;
 import org.apache.lucene.analysis.ar.ArabicStemFilter;
+import org.apache.lucene.analysis.ar.ArabicStemmer;
 import org.apache.lucene.analysis.charfilter.MappingCharFilter;
 import org.apache.lucene.analysis.charfilter.NormalizeCharMap;
 import org.apache.lucene.analysis.core.DecimalDigitFilter;
@@ -38,6 +40,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -48,6 +51,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.UnaryOperator;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -67,11 +72,18 @@ final class SearchText {
     }
 
     private static final NormalizeCharMap CHARS = charMap();
-    static final Analyzer BASE = analyzer(false);
-    static final Analyzer STEM = analyzer(true);
-    /** Index-time analyzer: `*_stem` fields get the stemming chain, every other field the base one. */
-    static final Analyzer INDEX = new PerFieldAnalyzerWrapper(BASE,
-            Map.of("title_stem", STEM, "keywords_stem", STEM, "channel_stem", STEM));
+    static final Analyzer BASE = analyzer(ts -> ts);
+    // ponytail: no Dutch stemmer; on one mixed-language field its false merges (god/good, rap/rape) outweigh
+    // the Dutch gain (2 of 110 audit queries, 2026-10-17). Add one only together with per-language analysis.
+    static final Analyzer STEM = analyzer(ts -> new EnglishMinimalStemFilter(new ArabicStemFilter(ts)));
+    /**
+     * BASE without the Arabic article or a proclitic, Arabic suffixes kept: الخفين, بالخفين = خفين, never خفي (owner report
+     * 2026-11-14). English plurals fold to the singular (kids = kid, ruling 2026-11-14); that filter only strips Latin endings.
+     */
+    static final Analyzer WORD = analyzer(ts -> new EnglishMinimalStemFilter(new ProcliticFilter(ts)));
+    /** Index-time analyzer: `*_stem` fields get the stemming chain, `*_word` the word chain, every other field the base one. */
+    static final Analyzer INDEX = new PerFieldAnalyzerWrapper(BASE, Map.of("title_stem", STEM, "keywords_stem", STEM,
+            "channel_stem", STEM, "title_word", WORD, "keywords_word", WORD, "channel_word", WORD));
 
     private static final Set<String> STOPWORDS = stopwords();
     private static final Map<String, Set<List<String>>> CONCEPTS = loadConcepts();
@@ -126,7 +138,8 @@ final class SearchText {
         return b.build();
     }
 
-    private static Analyzer analyzer(boolean stem) {
+    /** The shared chain, then `tail` (stemming, proclitic stripping, or nothing). */
+    private static Analyzer analyzer(UnaryOperator<TokenStream> tail) {
         return new Analyzer() {
             @Override
             protected Reader initReader(String fieldName, Reader reader) {
@@ -139,12 +152,42 @@ final class SearchText {
                 // Digits fold to 0-9 (Arabic keyboards type ٠-٩); Persian/Urdu ی ک fold to ي ك.
                 TokenStream ts = new ASCIIFoldingFilter(new PersianNormalizationFilter(new ArabicNormalizationFilter(
                         new DecimalDigitFilter(new LowerCaseFilter(source)))));
-                // ponytail: no Dutch stemmer; on one mixed-language field its false merges (god/good, rap/rape) outweigh
-                // the Dutch gain (2 of 110 audit queries, 2026-10-17). Add one only together with per-language analysis.
-                if (stem) ts = new EnglishMinimalStemFilter(new ArabicStemFilter(ts));
-                return new TokenStreamComponents(source, ts);
+                return new TokenStreamComponents(source, tail.apply(ts));
             }
         };
+    }
+
+    /**
+     * Lucene's own Arabic prefix rule (ال وال بال كال فال لل, each only on a word with 2+ letters left), minus its bare و:
+     * that is often the root's first letter (وضوء is not و + ضوء), and stripping it would part الوضوء (→ وضوء) from وضوء.
+     * The forms of Allah are one word each, الله or اللهم, never the stopword له (review 2026-11-14).
+     * ponytail: any other word whose own first letters are ال loses them too (إلهام → الهام → هام, "important"); list
+     * such words next to ALLAH if a query ever needs one.
+     */
+    private static final class ProcliticFilter extends TokenFilter {
+        /** الله بالله والله تالله فالله كالله لله ولله فلله, and each + م (اللهم); never له, لهم, وله, كله. */
+        private static final Pattern ALLAH = Pattern.compile("[وفبتك]?(?:ال|ل)له(م?)");
+        private final ArabicStemmer stemmer = new ArabicStemmer();
+        private final CharTermAttribute term = addAttribute(CharTermAttribute.class);
+
+        ProcliticFilter(TokenStream input) {
+            super(input);
+        }
+
+        @Override
+        public boolean incrementToken() throws IOException {
+            if (!input.incrementToken()) return false;
+            Matcher allah = ALLAH.matcher(term);
+            if (allah.matches()) {
+                String mim = allah.group(1); // before setEmpty: the matcher reads the term
+                term.setEmpty().append("الله").append(mim);
+                return true;
+            }
+            char[] word = Arrays.copyOf(term.buffer(), term.length()); // stemPrefix shifts in place
+            int kept = stemmer.stemPrefix(word, word.length);
+            if (kept < word.length - 1) term.copyBuffer(word, 0, kept); // 2+ letters gone: never the bare و
+            return true;
+        }
     }
 
     /** The analyzed tokens of `text`, in order. */
@@ -164,6 +207,12 @@ final class SearchText {
     static String stem(String token) {
         List<String> stemmed = tokens(STEM, token);
         return stemmed.isEmpty() ? token : stemmed.get(0);
+    }
+
+    /** A BASE token as the `*_word` fields index it. */
+    private static String word(String token) {
+        List<String> words = tokens(WORD, token);
+        return words.isEmpty() ? token : words.get(0);
     }
 
     /** A BASE token in the stop sets: tier 1 makes it optional unless the query is all stopwords (B5). */
@@ -239,6 +288,53 @@ final class SearchText {
         return query.build();
     }
 
+    /**
+     * The tier's queries, to be paged in this order (owner report 2026-11-14). Tier 1 is two: first the hits where every
+     * non-stopword token is a word of the title, keywords or channel (`*_word`), then the rest, which match a token only
+     * through its stem, a prefix or the description. Each stays BM25 + the tie-break inside, and both are "exact". A
+     * sub-tier, not a score boost: no constant provably tops a BM25 sum whose idf grows with the index, and the inner
+     * pass's longer-before-Shorts split must apply within each class. A query of 2+ tokens adds a SHOULD title phrase
+     * (slop 1: in order, one word between at most, as in "Kitab At-Tawheed") under a MUST of the tier's own query, so it reorders hits and never adds or drops one. Leaves: tier 1's
+     * (at most 103 for 10 tokens) + 30 word terms + 1 phrase, far under the 4,096 limit.
+     */
+    static List<Query> ranked(int tier, List<String> tokens, UnaryOperator<Query> fuzzy) {
+        Query query = tier(tier, tokens, fuzzy);
+        if (tier != 1) return List.of(query);
+        if (tokens.size() > 1) {
+            PhraseQuery phrase = new PhraseQuery(1, "title_word", tokens.stream().map(SearchText::word).toArray(String[]::new));
+            query = new BooleanQuery.Builder().add(query, Occur.MUST).add(new BoostQuery(phrase, BOOSTS[0]), Occur.SHOULD).build();
+        }
+        Query everyWord = everyWord(tokens, false);
+        if (everyWord == null) return List.of(query); // only stopwords: one class, as before
+        return List.of(new BooleanQuery.Builder().add(query, Occur.MUST).add(everyWord, Occur.FILTER).build(),
+                new BooleanQuery.Builder().add(query, Occur.MUST).add(everyWord, Occur.MUST_NOT).build());
+    }
+
+    /**
+     * Every non-stopword token is a word of the title, keywords or channel (`*_word`); with `typing`, the last one may be
+     * a typed prefix of one ("lectu"), on the `*_word` field or, as tier 1's own prefix, the base one: a typed "الف" is too
+     * short to lose its ال, so only the base field's الفكر starts with it. Null when the query is all stopwords. Without
+     * `typing` it is tier 1's first class; with it, what an "exact" header needs (ruling 2026-11-14).
+     */
+    static Query everyWord(List<String> tokens, boolean typing) {
+        BooleanQuery.Builder words = new BooleanQuery.Builder();
+        boolean any = false;
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            if (STOPWORDS.contains(token)) continue;
+            boolean prefix = typing && i == tokens.size() - 1 && length(token) >= 2;
+            BooleanQuery.Builder anyField = new BooleanQuery.Builder();
+            for (String field : FIELDS) {
+                Term term = new Term(field + "_word", word(token));
+                anyField.add(prefix ? new PrefixQuery(term) : new TermQuery(term), Occur.SHOULD);
+                if (prefix) anyField.add(new PrefixQuery(new Term(field, token)), Occur.SHOULD);
+            }
+            words.add(anyField.build(), Occur.MUST);
+            any = true;
+        }
+        return any ? words.build() : null;
+    }
+
     /** Positions of the tokens that get fuzzy clauses: 4 to 20 code points, the 4 longest (the earlier one on a tie). */
     private static Set<Integer> fuzzyTokens(List<String> tokens) {
         return IntStream.range(0, tokens.size()).boxed()
@@ -252,9 +348,13 @@ final class SearchText {
         return token.codePointCount(0, token.length());
     }
 
-    /** One token over every field: terms, stems, a prefix if it is the last token, fuzzy unless `fuzzy` is null. */
+    /**
+     * One token over every field: terms, stems, whole words, a prefix if it is the last token, fuzzy unless `fuzzy` is
+     * null. The whole word puts every word-level match in tier 1, so in its word class: stem(وضوء) = ضوء but
+     * stem(الوضوء) = وضوء, so the stem alone left أحكام الوضوء out of every tier for وضوء (review 2026-11-14).
+     */
     private static Query tokenClause(String token, boolean last, UnaryOperator<Query> fuzzy) {
-        String stem = stem(token);
+        String stem = stem(token), word = word(token);
         int length = length(token);
         int edits = length >= 8 ? 2 : length >= 4 ? 1 : 0;
         BooleanQuery.Builder b = new BooleanQuery.Builder();
@@ -262,6 +362,7 @@ final class SearchText {
             float half = BOOSTS[f] / 2;
             b.add(new BoostQuery(new TermQuery(new Term(FIELDS[f], token)), BOOSTS[f]), Occur.SHOULD);
             b.add(new BoostQuery(new TermQuery(new Term(FIELDS[f] + "_stem", stem)), half), Occur.SHOULD);
+            b.add(new BoostQuery(new TermQuery(new Term(FIELDS[f] + "_word", word)), half), Occur.SHOULD);
             if (last && length >= 2) {
                 b.add(new BoostQuery(new PrefixQuery(new Term(FIELDS[f], token)), half), Occur.SHOULD);
             }

@@ -984,6 +984,178 @@ class SearchIndexTest {
         return m.group(1);
     }
 
+    // ---- word-level class and phrase boost (owner report 2026-11-14: خفين listed خفي titles first) ----------------
+
+    @Test
+    void aWordLevelTitleOutranksAShorterStemOnlyTitle() throws Exception {
+        SearchIndex idx = started(newIndex(List.of(), List.of(), List.of(video("vKhuffain", "المسح على الخفين", null),
+                video("vKhafi", "عمل خفي", null)), List.of(), 5_000));
+        for (String q : List.of("خفين", "الخفين", "بالخفين")) {
+            SearchIndex.Hits hits = idx.search(q, null, 50);
+            assertEquals(List.of("vKhuffain", "vKhafi"), ids(hits), q);
+            assertEquals("exact", hits.match(), q + ": both classes are tier 1");
+        }
+    }
+
+    @Test
+    void anInnerWordLevelShortOutranksAStemOnlyLongerVideo() throws Exception {
+        // Longer videos still go before Shorts, but only within one class: the class decides first.
+        SearchIndex idx = alafasy(inner(Map.of(ALAFASY, List.of(item("lesson00001", "عمل خفي", 600),
+                item("lesson00002", "المسح على الخفين", 45), item("lesson00003", "شرح المسح على الخفين", 900))),
+                Map.of(ALAFASY, "Alafasy")));
+        SearchIndex.Hits hits = idx.search("خفين", null, 50);
+        assertEquals(List.of("lesson00003", "lesson00002", "lesson00001"), ids(hits));
+        assertEquals("exact", hits.match());
+    }
+
+    @Test
+    void aTitleWithTheQueryAsAPhraseOutranksAShorterScatteredTitle() throws Exception {
+        SearchIndex idx = started(newIndex(List.of(), List.of(), List.of(video("vScattered", "Tawheed and the Kitab", null),
+                video("vPhrase", "Sharh Kitab At-Tawheed - Lesson 1", null)), List.of(), 5_000));
+        assertEquals(List.of("vPhrase", "vScattered"), ids(idx.search("kitab tawheed", null, 50)));
+    }
+
+    @Test
+    void anExactEnglishWordOutranksItsPluralAndThePluralStillMatches() throws Exception {
+        SearchIndex idx = started(newIndex(List.of(), List.of(), List.of(video("vLectures", "Tafsir Lectures", null),
+                video("vLecture", "Friday lecture on patience in times of hardship", null)), List.of(), 5_000));
+        assertEquals(List.of("vLecture", "vLectures"), ids(idx.search("lecture", null, 50)));
+        assertEquals(List.of("vLectures", "vLecture"), ids(idx.search("lectures", null, 50)));
+    }
+
+    // ---- honest header (ruling 2026-11-14): a stem-only first hit is "approximate" -------------------------------
+
+    @Test
+    void aStemOnlyFirstHitIsApproximate() throws Exception {
+        SearchIndex idx = started(newIndex(List.of(), List.of(), List.of(video("vKhafi", "عمل خفي", null),
+                video("vHaris", "الإسلام: الحارس الخفي للإنسان", null)), List.of(), 5_000));
+        SearchIndex.Hits hits = idx.search("خفين", null, 50);
+        assertEquals(Set.of("vKhafi", "vHaris"), Set.copyOf(ids(hits)), "still listed");
+        assertEquals("approximate", hits.match());
+        assertEquals("approximate", idx.searchPage("خفين", "VIDEO", 50, null, -1).match(), "in-tab too");
+    }
+
+    @Test
+    void aTypedPrefixOfATitleWordAndAPluralOfOneAreExact() throws Exception {
+        SearchIndex idx = started(newIndex(List.of(), List.of(), List.of(
+                video("vLecture", "Friday lecture on patience", null)), List.of(), 5_000));
+        assertEquals("exact", idx.search("lectu", null, 50).match());
+        assertEquals("exact", idx.search("friday lectu", null, 50).match());
+        SearchIndex.Hits plural = idx.search("lectures", null, 50);
+        assertEquals(List.of("vLecture"), ids(plural), "the stem still finds it");
+        assertEquals("exact", plural.match(), "ruling 2026-11-14: English plurals are the same word");
+    }
+
+    @Test
+    void anInnerWordLevelHitGoesAheadOfACuratedStemOnlyHit() throws Exception {
+        // Ruling 2026-11-14: tier 1 interleaves by class, C₁word ++ I₁word ++ C₁rest ++ I₁rest; the header is the first item's.
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
+                List.of(video("vKhafi", "عمل خفي", "Alafasy")), List.of(), 5_000,
+                inner(Map.of(ALAFASY, List.of(item("lesson00001", "المسح على الخفين", 600))), Map.of(ALAFASY, "Alafasy"))));
+        SearchIndex.Hits hits = idx.search("خفين", null, 50);
+        assertEquals(List.of("lesson00001", "vKhafi"), ids(hits));
+        assertEquals("exact", hits.match());
+    }
+
+    @Test
+    void anInnerStemOnlyFirstHitIsApproximate() throws Exception {
+        SearchIndex idx = alafasy(inner(Map.of(ALAFASY, List.of(item("lesson00001", "عمل خفي", 600))),
+                Map.of(ALAFASY, "Alafasy")));
+        SearchIndex.Hits hits = idx.search("خفين", null, 50);
+        assertEquals(List.of("lesson00001"), ids(hits));
+        assertEquals("approximate", hits.match());
+    }
+
+    // ---- review 2026-11-14 ----------------------------------------------------------------------------------------
+
+    @Test
+    void aWholeWordIsAnExactMatchEvenWhenItsStemDiffers() throws Exception {
+        // stem(وضوء) = ضوء but stem(الوضوء) = وضوء: no tier held أحكام الوضوء for وضوء, while ضوء القمر was "exact".
+        SearchIndex idx = started(newIndex(List.of(), List.of(), List.of(video("vBare", "صفة وضوء النبي", null),
+                video("vArticle", "أحكام الوضوء", null), video("vBi", "الصلاة بالوضوء", null),
+                video("vMoon", "ضوء القمر", null)), List.of(), 5_000));
+        for (String q : List.of("وضوء", "الوضوء")) {
+            SearchIndex.Hits hits = idx.search(q, null, 50);
+            assertEquals(Set.of("vBare", "vArticle", "vBi"), Set.copyOf(ids(hits).subList(0, Math.min(3, ids(hits).size()))), q + " -> " + ids(hits));
+            assertEquals("exact", hits.match(), q);
+        }
+    }
+
+    @Test
+    void allahIsNeverAnExactMatchForTheWordLahu() throws Exception {
+        SearchIndex only = started(newIndex(List.of(), List.of(), List.of(video("vLahu", "ما له وما عليه", null)), List.of(), 5_000));
+        assertEquals("approximate", only.search("الله", null, 50).match());
+        SearchIndex both = started(newIndex(List.of(), List.of(), List.of(video("vLahu", "ما له وما عليه", null),
+                video("vBillah", "بالله نستعين", null)), List.of(), 5_000));
+        SearchIndex.Hits hits = both.search("الله", null, 50);
+        assertEquals("vBillah", ids(hits).get(0), ids(hits).toString());
+        assertEquals("exact", hits.match());
+    }
+
+    @Test
+    void theHeaderJudgesTheReturnedDocumentNotAHiddenCopyOfItsId() throws Exception {
+        // Review 2026-11-14 (Codex): the catalog video shadows a stored stream of the same id; only the video is shown.
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
+                List.of(video("vShadow", "عمل خفي", "Alafasy")), List.of(stream("vShadow", "المسح على الخفين", ALAFASY)), 5_000));
+        SearchIndex.Hits hits = idx.search("خفين", null, 50);
+        assertEquals(List.of("vShadow"), ids(hits));
+        assertEquals("approximate", hits.match());
+    }
+
+    @Test
+    void aSpentInnerBudgetRewritesNoFuzzyClause() throws Exception {
+        // Review 2026-11-14: tier 2's fuzzy rewrites (term-dictionary reads) ran before the budget check.
+        InnerIndex real = zubdahnoor();
+        java.util.concurrent.atomic.AtomicInteger termReads = new java.util.concurrent.atomic.AtomicInteger();
+        InnerIndex counting = new InnerIndex(innerTmp.resolve("base").toString(), innerStore, java.time.Clock.systemUTC()) {
+            @Override
+            boolean serving() {
+                return true;
+            }
+
+            @Override
+            IndexSearcher acquire() throws IOException {
+                return new IndexSearcher(new org.apache.lucene.index.FilterDirectoryReader(
+                        (DirectoryReader) real.acquire().getIndexReader(), new org.apache.lucene.index.FilterDirectoryReader.SubReaderWrapper() {
+                    @Override
+                    public org.apache.lucene.index.LeafReader wrap(org.apache.lucene.index.LeafReader leaf) {
+                        return new org.apache.lucene.index.FilterLeafReader(leaf) {
+                            @Override
+                            public org.apache.lucene.index.Terms terms(String field) throws IOException {
+                                termReads.incrementAndGet();
+                                return super.terms(field);
+                            }
+
+                            @Override
+                            public CacheHelper getCoreCacheHelper() {
+                                return null;
+                            }
+
+                            @Override
+                            public CacheHelper getReaderCacheHelper() {
+                                return null;
+                            }
+                        };
+                    }
+                }) {
+                    @Override
+                    protected DirectoryReader doWrapDirectoryReader(DirectoryReader in) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public CacheHelper getReaderCacheHelper() {
+                        return null;
+                    }
+                });
+            }
+        };
+        SearchIndex idx = alafasy(counting);
+        idx.newTimeout = ms -> () -> true; // spent before the inner pass starts
+        idx.search("zubdahmoor", null, 50); // 10 letters: tier 2 would rewrite a 2-edit fuzzy clause per field
+        assertEquals(0, termReads.get(), "a spent budget read the inner term dictionary");
+    }
+
     @Test
     void withoutInnerTheCuratedOrderIsUnchanged() throws Exception {
         Video[] catalog = {video("vZubdahnur", "Zubdahnur lesson", "Alafasy"), video("vZubdahnoor", "Zubdahnoor lesson", "Alafasy")};
@@ -1050,6 +1222,17 @@ class SearchIndexTest {
         InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("short000001", "Zubdahnoor #shorts #islam", 45),
                 item("long0000001", "Zubdahnoor full lecture explained in detail", 3600))), Map.of(ALAFASY, "Alafasy"));
         assertEquals(List.of("long0000001", "short000001"), ids(alafasy(inner).search("zubdahnoor", null, 50)));
+    }
+
+    @Test
+    void aHeaderCheckPastTheBudgetSaysExactSoLoadNeverShowsClosestResults() throws Exception {
+        SearchIndex idx = alafasy(inner(Map.of(ALAFASY, List.of(item("lesson00001", "عمل خفي", 600))),
+                Map.of(ALAFASY, "Alafasy")));
+        idx.newTimeout = ms -> () -> StackWalker.getInstance().walk(frames -> // spent only once the header is checked
+                frames.anyMatch(f -> f.getMethodName().equals("classMatch")));
+        SearchIndex.Hits hits = idx.search("خفين", null, 50);
+        assertEquals(List.of("lesson00001"), ids(hits));
+        assertEquals("exact", hits.match(), "unchecked: tier 1's header before 2026-11-14");
     }
 
     @Test
@@ -1468,7 +1651,9 @@ class SearchIndexTest {
     /**
      * Acceptance #1 under the owner rule of 2026-11-11 (tiers interleave, curated first within a tier; it replaces spec
      * §7.1's "no inner hit above #4"), with an adversarial inner corpus: today's items keep their order; the header never
-     * drops below the row's tier; today's exact first hit stays first; the inner hits sit in at most two runs (I₁, I₂);
+     * drops below the row's tier; today's exact first hit stays first unless a word-level inner hit goes above it (ruling
+     * 2026-11-14: classes interleave, so "nederlandse lezing" goes above the prefix-only "Nederlandse lezingen"), which
+     * keeps the header exact; the inner hits sit in at most three runs (I₁word, I₁rest, I₂);
      * each row's expected answer stays on the page, within its worst rank shifted by the inner hits above it; the E25/E27
      * pins sit at their {@link #PINNED} ranks.
      */
@@ -1487,10 +1672,12 @@ class SearchIndexTest {
         innerOnly.removeAll(offIds);
         List<String> today = onIds.stream().filter(id -> !innerOnly.contains(id)).toList();
         assertEquals(offIds.subList(0, today.size()), today, row + ": today's items keep their order");
-        if ("exact".equals(off.match())) assertEquals(offIds.get(0), onIds.get(0), row + ": an inner hit above today's exact first hit");
+        if ("exact".equals(off.match()) && !offIds.get(0).equals(onIds.get(0))) {
+            assertEquals("exact", on.match(), row + ": a non-exact inner hit above today's exact first hit");
+        }
         long runs = java.util.stream.IntStream.range(0, onIds.size())
                 .filter(i -> innerOnly.contains(onIds.get(i)) && (i == 0 || !innerOnly.contains(onIds.get(i - 1)))).count();
-        assertTrue(runs <= 2, row + ": inner hits outside I₁ and I₂ -> " + onIds);
+        assertTrue(runs <= 3, row + ": inner hits outside I₁word, I₁rest and I₂ -> " + onIds);
         int rank = java.util.Arrays.stream(expected.split(" ")).mapToInt(onIds::indexOf).filter(at -> at >= 0).min().orElse(-1);
         assertTrue(rank >= 0, row + ": the expected answer left the page -> " + onIds);
         long above = onIds.subList(0, rank).stream().filter(innerOnly::contains).count();
@@ -2059,6 +2246,8 @@ class SearchIndexTest {
     void inTabSearchPagesCutOneRankingWhileTheIndexChangesBetweenFetches() throws Exception {
         // Cubic P3 (1.0.4): each page re-ran the ranking on the newest index and cut it at an offset. Any index change
         // moves BM25 statistics; here a non-admitted source's 200 streams leave, and two close items swap places.
+        // "nigh", a prefix of both titles' "Night": "ramadan night" (or "nights", one word since 2026-11-14) is vInTitle's
+        // title phrase, whose boost ends the near tie.
         List<SearchableStream> posted = new ArrayList<>();
         for (int i = 0; i < 200; i++) posted.add(stream("posted-" + i, "Ramadan Reminder " + i, "channel:UCposted"));
         SearchIndex paged = started(newIndex(List.of(), List.of(), List.of(
@@ -2067,16 +2256,16 @@ class SearchIndexTest {
         PublicContentService service = new PublicContentService(channelRepo, playlistRepo, videoRepo,
                 mock(CategoryRepository.class), mock(CategoryContentOrderRepository.class), Runnable::run, paged,
                 mock(LiveCategoryService.class));
-        PublicContentService.SearchPage first = service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night");
+        PublicContentService.SearchPage first = service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan nigh");
         assertEquals(List.of("vInChannel"), pageIds(first)); // the 200 streams are in the statistics
 
         paged.removeSource("channel:UCposted"); // their segment is fully deleted, so it drops out of the statistics
         paged.awaitWrites();
-        assertEquals(List.of("vInTitle"), pageIds(service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night")),
+        assertEquals(List.of("vInTitle"), pageIds(service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan nigh")),
                 "the removal flipped the ranking for a new search");
 
         PublicContentService.SearchPage second = service.searchContent("VIDEOS",
-                first.page().getPageInfo().getNextCursor(), 1, null, null, null, "ramadan night");
+                first.page().getPageInfo().getNextCursor(), 1, null, null, null, "ramadan nigh");
         assertEquals(List.of("vInChannel", "vInTitle"),
                 java.util.stream.Stream.concat(pageIds(first).stream(), pageIds(second).stream()).toList());
     }
