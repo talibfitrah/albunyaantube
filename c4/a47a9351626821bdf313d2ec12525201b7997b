@@ -1,0 +1,29 @@
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_3d9fbda6f3dd89::t_d17d5c09cae465 1109-1110
+backend/src/main/java/com/albunyaan/tube/search/SearchText.java
+  s_3d9fbda6f3dd89::t_43ac7c4df507a0 163-169,174,191-197
+backend/src/test/java/com/albunyaan/tube/search/SearchTextTest.java
+  s_3d9fbda6f3dd89::t_d2cc39c8d17acc 198-211
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceLiveTest.java
+  s_3d9fbda6f3dd89::t_d2cc39c8d17acc 107-134
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_3d9fbda6f3dd89::t_d17d5c09cae465 28,32,48,1047-1050,1052,1054-1077
+docs/architecture/api-specification.yaml
+  s_3d9fbda6f3dd89::t_4960a5130f2fa2 146-150,504-507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c4a47a9351626821bdf313d2ec12525201b7997b",
+  "prompts": {},
+  "sessions": {
+    "s_3d9fbda6f3dd89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d06bd180-3c75-47f1-bb90-6bd50a9377e7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
