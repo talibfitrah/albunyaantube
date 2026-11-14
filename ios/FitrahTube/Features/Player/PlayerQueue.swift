@@ -71,6 +71,10 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
     mutating func markPagingFailed() {
         pagingFailed = true
     }
+
+    mutating func clearPagingFailure() {
+        pagingFailed = false
+    }
 }
 
 /// `PlayerViewModel.kt:1352-1357`, MAX_CONSECUTIVE_SKIPS = 3 (`:1787`): a named, tested constant,
@@ -149,4 +153,22 @@ struct LivePlaylistQueueSource: PlaylistQueueSource {
             return item
         }
     }
+}
+
+/// Owner 2026-11-14: a channel's Videos tab (or Shorts tab) as the queue, `playlistId` being the channel id here. Over the
+/// app's `BrowseSource`, which already drops the channel's exclusions and retitles every page, so `retitle` has nothing
+/// left to do. `channelTitle`: a channel's own tabs carry no byline, so the channel's name stands in (as on its screen).
+struct ChannelQueueSource: PlaylistQueueSource {
+    let browse: any BrowseSource
+    let channelTitle: String?
+    var shorts = false
+
+    func page(playlistId channelId: String, continuation: String?) async throws
+        -> (items: [ContentItem], continuation: String?) {
+        let page = shorts ? try await browse.channelTab(channelId, tab: .shorts, continuation: continuation)
+                          : try await browse.channelVideos(channelId, continuation: continuation)
+        return (page.items.map { ContentItem(video: $0, channelTitle: channelTitle) }, page.nextContinuation)
+    }
+
+    func retitle(_ items: [ContentItem]) async -> [ContentItem] { items }
 }

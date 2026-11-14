@@ -96,6 +96,22 @@ import Testing
         #expect(recovery == .allowed)
     }
 
+    /// Review P2 (2026-11-14): prefetch shares the app-wide global lane, so a burst of Shorts swipes used to spend all
+    /// 10 and the user's own Retry (a forced `.player`) then cooled down for up to 60 s. Prefetch now stops 3 short.
+    @Test func aBurstOfPrefetchesLeavesTheGlobalReserveForTheUsersRetry() async {
+        let limiter = ExtractionRateLimiter()
+        for i in 0..<7 {
+            let decision = await limiter.check("pre\(i)abcde12", kind: .prefetch, now: .zero)
+            #expect(decision == .allowed, "prefetch \(i) should be allowed")
+        }
+        let eighth = await limiter.check("pre7abcde123", kind: .prefetch, now: .zero)
+        #expect(eighth == .blocked(reason: "prefetch global reserve (3 kept for the player)", retryAfter: .seconds(60)))
+        for i in 0..<3 {
+            let retry = await limiter.check("ret\(i)abcde12", kind: .player, now: .zero)
+            #expect(retry == .allowed, "the user's retry \(i) was refused after a prefetch burst")
+        }
+    }
+
     @Test func playerBackoffReaches32SecondsAtFifthConsecutiveAttempt() async {
         let limiter = ExtractionRateLimiter()
         let last = await buildConsecutivePlayerAttempts(5, videoId: "abc123def45", limiter: limiter)

@@ -276,6 +276,41 @@ struct ChannelDetailViewModelTests {
         #expect(vm.playerArgs(for: vm.videos.items[0], tab: .videos).isLive == false)
     }
 
+    /// Owner 2026-11-14: a video opened from a channel lists the channel's videos after it in Up Next, so the tap
+    /// hands the player the loaded rows (the playlist screen's issue-2 shape), keyed by the channel, never `playlistId`.
+    @Test func aVideoTapHandsThePlayerTheChannelsLoadedRowsAsItsQueue() async {
+        let vm = makeVM()
+        await vm.load()
+        let args = vm.playerArgs(for: vm.videos.items[1], tab: .videos)
+        #expect(args.queueChannelId == Self.channelId)
+        #expect(args.targetVideoId == "video-0-1")
+        #expect(args.queueItems?.map(\.id) == vm.videos.items.map(\.id))
+        #expect(args.queueItems?.allSatisfy { $0.channelTitle == "Alafasy" } == true, "Up Next rows had no byline")
+        #expect(args.queueContinuation == "1")
+        #expect(args.playlistId == nil)   // the report's parent stays the channel
+    }
+
+    /// Owner 2026-11-14: a Short opened from the Shorts tab swipes through that tab's Shorts.
+    @Test func aShortsTapHandsTheShortsScreenTheShortsTabAsItsQueue() async {
+        let vm = makeVM()
+        await vm.load()
+        await vm.ensureTabLoaded(.shorts)
+        let args = vm.playerArgs(for: vm.shorts.items[2], tab: .shorts)
+        #expect(args.queueChannelId == Self.channelId)
+        #expect(args.targetVideoId == "shorts-0-2")
+        #expect(args.queueItems?.map(\.id) == vm.shorts.items.map(\.id))
+        #expect(args.queueContinuation == "1")
+    }
+
+    @Test func aLiveTapHasNoChannelQueue() async {
+        let vm = makeVM()
+        await vm.load()
+        await vm.ensureTabLoaded(.live)
+        let args = vm.playerArgs(for: vm.live.items[0], tab: .live)
+        #expect(args.queueChannelId == nil)
+        #expect(args.queueItems == nil)
+    }
+
     @Test func aShortsTapCarriesTheMetadataFastPathIncludingTheAvatar() async {
         // B4 Task 1's Route.shorts(PlayerArgs) integration: id, title, thumbnail, channelId/Name, avatar.
         let vm = makeVM()

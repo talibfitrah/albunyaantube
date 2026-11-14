@@ -34,6 +34,9 @@ public actor ExtractionRateLimiter {
     private static let maxAttemptsPerVideo = 3
     private static let globalWindow = Duration.seconds(60)
     private static let maxGlobalAttempts = 10
+    /// Global slots prefetch never takes (review 2026-11-14): the lane is app-wide, so a burst of Shorts swipes
+    /// prefetching used to spend all 10 and the user's own Retry then cooled down for up to a minute.
+    private static let prefetchGlobalReserve = 3
     private static let proactiveTTLReserved = 2
     private static let maxProactiveGlobalPerMinute = 10
 
@@ -159,11 +162,14 @@ public actor ExtractionRateLimiter {
             )
         case .player, .prefetch:
             globalAttemptTimestamps.removeAll { now - $0 > Self.globalWindow }
-            guard globalAttemptTimestamps.count >= Self.maxGlobalAttempts else { return nil }
-            return .blocked(
-                reason: "global limit (\(Self.maxGlobalAttempts) per minute)",
-                retryAfter: retryAfter(for: globalAttemptTimestamps, window: Self.globalWindow, now: now)
-            )
+            let window = retryAfter(for: globalAttemptTimestamps, window: Self.globalWindow, now: now)
+            if globalAttemptTimestamps.count >= Self.maxGlobalAttempts {
+                return .blocked(reason: "global limit (\(Self.maxGlobalAttempts) per minute)", retryAfter: window)
+            }
+            guard kind == .prefetch,
+                  globalAttemptTimestamps.count >= Self.maxGlobalAttempts - Self.prefetchGlobalReserve else { return nil }
+            return .blocked(reason: "prefetch global reserve (\(Self.prefetchGlobalReserve) kept for the player)",
+                            retryAfter: window)
         }
     }
 

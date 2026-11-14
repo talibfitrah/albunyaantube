@@ -134,6 +134,10 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     /// reload) keeps the one-shot fetch. Consumed at open like `targetVideoId`: `swapArgs` builds fresh args.
     var queueItems: [ContentItem]? = nil
     var queueContinuation: String? = nil
+    /// Owner 2026-11-14: opened from a channel's Videos or Shorts tab, the queue is that channel's list (Up Next, a
+    /// Short's swipe), paged by `ChannelQueueSource`. Its own key, never `playlistId`: the report's parent stays the
+    /// channel (`reportContext`). Rides along in `swapArgs`, as `playlistId` does.
+    var queueChannelId: String? = nil
 }
 
 extension PlayerArgs {

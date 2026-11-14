@@ -173,3 +173,17 @@ private struct SeededGenerator: RandomNumberGenerator {
     #expect(AutoSkipPolicy.decide(consecutive: 2, limit: 3))
     #expect(AutoSkipPolicy.decide(consecutive: 3, limit: 3) == false)
 }
+
+/// Owner 2026-11-14: the channel queue pages the Videos tab, or the Shorts tab, under the channel's name (a channel's
+/// own tabs carry no byline). Exclusions and original titles are `BrowseSource`'s own.
+@Test func aChannelQueueSourcePagesTheVideosOrTheShortsTabUnderTheChannelsName() async throws {
+    let videos = try await ChannelQueueSource(browse: FakeBrowseSource(), channelTitle: "Alafasy")
+        .page(playlistId: "UC1", continuation: nil)
+    #expect(videos.items.first?.id == "video-0-0")
+    #expect(videos.items.allSatisfy { $0.channelTitle == "Alafasy" })
+    #expect(videos.continuation == "1")
+    let shorts = try await ChannelQueueSource(browse: FakeBrowseSource(), channelTitle: "Alafasy", shorts: true)
+        .page(playlistId: "UC1", continuation: "1")
+    #expect(shorts.items.first?.id == "shorts-1-0")
+    #expect(shorts.continuation == nil)
+}

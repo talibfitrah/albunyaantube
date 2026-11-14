@@ -256,6 +256,14 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
                               durationSeconds: item.durationSeconds, viewCount: item.viewCount, channelId: channelId)
         args.isLive = tab == .live
         if tab == .shorts { args.channelAvatarURL = header.avatarURL }
+        // Owner 2026-11-14: Videos and Shorts hand over their loaded rows as the queue (Up Next, the Shorts swipe), as
+        // the playlist screen does (`PlaylistDetailViewModel.args`). Live does not: its rows are broadcasts.
+        if tab == .videos || tab == .shorts, !self[tab].items.isEmpty {
+            args.queueChannelId = channelId
+            args.targetVideoId = item.id
+            args.queueItems = self[tab].items.map { ContentItem(video: $0, channelTitle: header.name) }
+            args.queueContinuation = self[tab].continuation
+        }
         return args
     }
 

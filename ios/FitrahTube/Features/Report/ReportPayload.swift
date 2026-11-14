@@ -24,6 +24,9 @@ nonisolated struct ReportContext: Equatable, Sendable {
     }
 }
 
+/// `.sheet(item:)`: the report sheet holds the context captured when it opened.
+extension ReportContext: Identifiable { var id: String { targetId } }
+
 /// The 11 reasons in the sheet's visual order (`ContentReportBottomSheet.kt:98-113`); the raw
 /// value is the backend's enum name (cross-checked against the generated `ReasonsPayloadPayload`).
 nonisolated enum ReportReason: String, CaseIterable, Sendable {

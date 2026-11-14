@@ -37,7 +37,8 @@ struct PlayerToolbar: View {
     @Environment(\.locale) private var locale
     @State private var isFavorite = false
     @State private var bannerMessage: BannerMessage?
-    @State private var showReport = false
+    /// Captured at the tap, for the reason `saveSheetArgs` is: an advance while the sheet is up replaces `args`.
+    @State private var report: ReportContext?
     /// Task 5 review fold-in 2: the args CAPTURED at tap time, not a `Bool` re-reading `self.args`
     /// — `PlayerViewModel.swapArgs` replaces `args` in place on a queue auto-advance, and an
     /// `isPresented` sheet re-evaluating its content closure mid-selection would silently re-aim
@@ -80,8 +81,8 @@ struct PlayerToolbar: View {
         .padding(.horizontal, Spacing.md(widthClass))
         .padding(.vertical, Spacing.sm)
         .transientBanner($bannerMessage)
-        .sheet(isPresented: $showReport) {
-            ReportSheet(context: args.reportContext) {
+        .sheet(item: $report) { context in
+            ReportSheet(context: context) {
                 bannerMessage = BannerMessage(text: String(localized: "report_success"))
             }
         }
@@ -126,7 +127,7 @@ struct PlayerToolbar: View {
 
     private var reportButton: some View {
         Button {
-            showReport = true
+            report = args.reportContext
         } label: {
             toolbarLabel(systemImage: "flag", title: String(localized: "player_action_report"))
         }

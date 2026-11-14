@@ -903,4 +903,155 @@ struct PlayerViewModelQueueTests {
         #expect(vm.queue.hasMorePages == false)
         #expect(source.pageCalls == 0)
     }
+
+    // MARK: - Owner 2026-11-14: a channel's videos (or Shorts) as the queue
+
+    private func channelArgs(_ id: String, rows: [String]?, continuation: String? = nil) -> PlayerArgs {
+        var args = PlayerArgs(videoId: id, channelName: "Ch", channelId: "UC1")
+        args.queueChannelId = "UC1"
+        args.targetVideoId = id
+        args.queueItems = rows.map(seed)
+        args.queueContinuation = continuation
+        return args
+    }
+
+    @Test func aChannelQueueListsTheVideosAfterTheTappedOne() async {
+        let source = FakeQueueSource(pages: [], failFrom: 0)          // any page call fails
+        let (vm, _) = makeModel(args: channelArgs("b", rows: ["a", "b", "c", "d"]), source: source)
+        await vm.open()
+        #expect(vm.queue.upcoming.map(\.id) == ["c", "d"])
+        #expect(source.pageCalls == 0)
+    }
+
+    /// No producer opens a channel queue without rows (`ChannelDetailViewModel.playerArgs` seeds them); a guard for
+    /// the shared `queueKey` fallback, which then fetches the channel as it does a playlist.
+    @Test func aChannelQueueWithNoRowsFetchesTheChannel() async {
+        let (vm, _) = makeModel(args: channelArgs("a", rows: nil), queue: ["a", "b", "c"])
+        await vm.open()
+        #expect(vm.queue.upcoming.map(\.id) == ["b", "c"])
+    }
+
+    /// The next video keeps the channel: its report's parent, the gate's channel hint, and the queue itself.
+    @Test func aChannelAdvanceKeepsTheChannelForTheNextVideo() async {
+        let (vm, _) = makeModel(args: channelArgs("a", rows: ["a", "b", "c"]))
+        await vm.open()
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "b")
+        #expect(vm.args.queueChannelId == "UC1")
+        #expect(vm.args.channelId == "UC1")
+        #expect(vm.args.reportContext.parentType == .channel)
+        #expect(vm.args.reportContext.parentId == "UC1")
+        #expect(vm.queue.upcoming.map(\.id) == ["c"])
+    }
+
+    @Test func safeModeStopsAChannelQueuesAutoAdvanceAsAPlaylists() async {
+        let (vm, _) = makeModel(args: channelArgs("a", rows: ["a", "b"]), safeMode: true)
+        await vm.open()
+        await vm.playToEnd()
+        #expect(vm.args.videoId == "a")
+    }
+
+    /// Up Next's last rows on screen page the channel now -- the advance alone pages only at <=5 left.
+    @Test func upNextReachingItsLastRowsLoadsTheNextPage() async {
+        let source = FakeQueueSource(pages: [(ids: ["k", "l"], next: nil)])
+        let (vm, _) = makeModel(args: channelArgs("a", rows: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+                                                  continuation: "P2"), source: source)
+        await vm.open()
+        #expect(source.pageCalls == 0)                               // 9 left: above the threshold
+        await vm.loadMoreUpNext()
+        #expect(source.continuations == ["P2"])
+        #expect(vm.queue.upcoming.map(\.id).suffix(2) == ["k", "l"])
+        await vm.loadMoreUpNext()                                    // exhausted: no further call
+        #expect(source.pageCalls == 1)
+    }
+
+    /// The stale-report bug: after a swipe the Shorts kebab must report the Short on screen, with its channel parent.
+    @Test func aShortsReportAfterASwipeTargetsTheShortOnScreen() async {
+        let (vm, _) = makeModel(args: channelArgs("a", rows: ["a", "b", "c"]))
+        await vm.open()
+        await vm.play(at: 1)                                         // a swipe up
+        #expect(vm.args.shortsReportContext == ReportContext(targetType: .video, targetId: "b", parentType: .channel,
+                                                             parentId: "UC1", contentSubType: .short))
+    }
+
+    @Test func aVerticalSwipeMovesOneShortAndNothingElseDoes() {
+        #expect(ShortsSwipe.offset(CGSize(width: 0, height: -120)) == 1)      // up: the next, older Short
+        #expect(ShortsSwipe.offset(CGSize(width: 0, height: 120)) == -1)      // down: the previous one
+        #expect(ShortsSwipe.offset(CGSize(width: 4, height: -20)) == nil)     // a tap's jitter
+        #expect(ShortsSwipe.offset(CGSize(width: -160, height: -100)) == nil) // mostly sideways: the scrubber, Back's edge swipe
+    }
+
+    // MARK: - Review round (2026-11-14): paging and the superseded swipe
+
+    /// P3: a swipe past the loaded end asks for the next page, and a failed page is not the end for good -- the user's
+    /// swipe retries it once.
+    @Test func aSwipePastTheLoadedEndRetriesTheFailedPageAndPlaysTheNextShort() async {
+        let source = FakeQueueSource(pages: [(ids: [], next: nil), (ids: ["d", "e"], next: nil)], failAt: [0])
+        let (vm, _) = makeModel(args: channelArgs("c", rows: ["a", "b", "c"], continuation: "P2"), source: source)
+        await vm.open()                                              // its page fails: latched
+        #expect(source.pageCalls == 1)
+        #expect(vm.queueNeighbour(1) == nil)
+        #expect(ShortsScreen.canSwipe(vm, by: 1))                    // the gesture and VoiceOver's next still offer it
+        await vm.swipe(by: 1)
+        #expect(source.pageCalls == 2)
+        #expect(vm.args.videoId == "d")
+        #expect(!ShortsScreen.canSwipe(vm, by: 2))                   // past "e", with no page left, nothing
+    }
+
+    /// P3: one retry per user action, never a loop -- a source that keeps failing gets exactly one more call.
+    @Test func loadMoreRetriesALatchedPageOnceAndNoMore() async {
+        let source = FakeQueueSource(pages: [], failFrom: 0)
+        let (vm, _) = makeModel(args: channelArgs("c", rows: ["a", "b", "c"], continuation: "P2"), source: source)
+        await vm.open()
+        #expect(source.pageCalls == 1)
+        await vm.loadMoreUpNext()
+        #expect(source.pageCalls == 2)
+        await vm.playToEnd()                                         // an advance never retries a latched page
+        #expect(source.pageCalls == 2)
+    }
+
+    /// P3: `play(at:)` pages before it prefetches, as `open()` does, so the prefetch window reaches the new page.
+    @Test func aPickNearTheEndPagesBeforeItPrefetches() async {
+        let source = FakeQueueSource(pages: [(ids: ["h", "i"], next: nil)])
+        let (vm, resolver) = makeModel(args: channelArgs("a", rows: ["a", "b", "c", "d", "e", "f", "g"], continuation: "P2"),
+                                       source: source)
+        await vm.open()
+        #expect(source.pageCalls == 0)                               // 6 left
+        await vm.play(at: 5)                                         // f: 1 left, so it pages
+        #expect(resolver.calls.contains { $0.videoId == "h" && $0.kind == .prefetch }, "the prefetch ran before the page")
+    }
+
+    /// P3: a pick a newer one superseded neither prefetches nor pages -- the newer pick owns both, after it lands.
+    @Test(.timeLimit(.minutes(1))) func aSupersededPickNeitherPrefetchesNorPages() async {
+        let (vm, resolver) = makeModel(args: channelArgs("a", rows: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"]))
+        await vm.open()                                              // a, then b and c prefetched
+        resolver.hold("f")
+        resolver.hold("b")
+        let first = Task { await vm.play(at: 5) }                    // f, held
+        await resolver.waitUntilCalled(count: 4)
+        let second = Task { await vm.play(at: 1) }                   // b supersedes f, held
+        await resolver.waitUntilCalled(count: 5)
+        await first.value
+        #expect(!resolver.calls.contains { $0.videoId == "d" && $0.kind == .prefetch },
+                "the superseded pick prefetched b's neighbours before b landed")
+        resolver.release(id: "b")
+        await second.value
+        #expect(vm.args.videoId == "b")
+    }
+
+    /// Round 3 P2: a swipe waiting on the next page is dropped when the user picked something else meanwhile -- the
+    /// page landing must not play the forward swipe's neighbour of the newer pick.
+    @Test(.timeLimit(.minutes(1))) func aSwipeWaitingOnAPageYieldsToANewerPick() async {
+        let source = FakeQueueSource(pages: [(ids: [], next: nil), (ids: ["d", "e"], next: nil)], failAt: [0], gateFrom: 1)
+        let (vm, resolver) = makeModel(args: channelArgs("c", rows: ["a", "b", "c"], continuation: "P2"), source: source)
+        await vm.open()                                              // c; its page fails: latched
+        let forward = Task { await vm.swipe(by: 1) }                 // past the end: retries the page, held
+        await source.waitUntilPageCalled(count: 2)
+        let back = Task { await vm.play(at: 1) }                     // the user goes back to b meanwhile
+        await resolver.waitUntilCalled(count: 2)
+        source.release()
+        await forward.value
+        await back.value
+        #expect(vm.args.videoId == "b")
+    }
 }

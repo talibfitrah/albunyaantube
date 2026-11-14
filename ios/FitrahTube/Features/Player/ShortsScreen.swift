@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// The Shorts playback surface (spec §10 "Shorts", plan §6.8; B4 Tasks 2-3). ONE short, ONE
-/// `PlayerViewModel`, ONE `PlayerHostView` in `.shorts` presentation -- no feed, no pager (plan B4
-/// reconciliation 1 / ruling 51). Everything the ladder already does (recovery, Safe Mode, quality
-/// ceiling, audio session) arrives through the shared view model; this file adds the 9:16 stage,
-/// the portrait lock, and -- because the navigation bar is hidden (fork D) -- its own Back and kebab
-/// over every branch. The rest of the chrome is `ShortsOverlay`, on the playable branch only.
+/// The Shorts playback surface (spec §10 "Shorts", plan §6.8; B4 Tasks 2-3). ONE `PlayerViewModel`,
+/// ONE `PlayerHostView` in `.shorts` presentation. Rulings 50/51 ("no feed, no pager", plan B4
+/// reconciliation 1) are REVERSED by the owner's request of 2026-11-14: a Short opened from a channel's
+/// Shorts tab swipes through that tab, up to the next (older) Short and down to the previous, over the
+/// player's own queue (`ChannelQueueSource`, `ShortsSwipe`). Still no global feed, and still one live
+/// player: a swipe is `play(at:)` on the same model, never a second host. Everything the ladder already
+/// does (recovery, Safe Mode, quality ceiling, audio session) arrives through the shared view model;
+/// this file adds the 9:16 stage, the portrait lock, and -- because the navigation bar is hidden
+/// (fork D) -- its own Back and kebab over every branch. The rest of the chrome is `ShortsOverlay`,
+/// on the playable branch only.
 struct ShortsScreen: View {
     let args: PlayerArgs
 
@@ -14,13 +18,26 @@ struct ShortsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: PlayerViewModel?
     @State private var bannerMessage: BannerMessage?
-    @State private var showReport = false
+    /// Captured when the sheet opens: the lock screen's or AirPods' next while it is up moves `model.args` on, and
+    /// the report must stay on the Short the user was looking at (as `PlayerToolbar.saveSheetArgs`).
+    @State private var report: ReportContext?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             PopGestureEnabler()
-            if let model { stage(model.state, model: model) } else { ProgressView().tint(.white) }
+            if let model {
+                stage(model.state, model: model)
+                    // Over both branches: a Short that will not play can be swiped past. The whole area, letterbox
+                    // included (iPad), takes the swipe; a tap still reaches the overlay's play/pause beneath.
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 20).onEnded { value in
+                        guard let offset = ShortsSwipe.offset(value.predictedEndTranslation) else { return }
+                        Self.swipe(model, by: offset)
+                    })
+            } else {
+                ProgressView().tint(.white)
+            }
             VStack {
                 HStack {
                     backButton
@@ -32,12 +49,8 @@ struct ShortsScreen: View {
             .padding(Spacing.md(widthClass))
         }
         .transientBanner($bannerMessage)
-        // B4 CF-B1-9 / Plan C task 3: `contentSubType = SHORT`, `parentType = CHANNEL` when the
-        // short carries its channel id (`ChannelShortsTabFragment.kt:89-101`).
-        .sheet(isPresented: $showReport) {
-            ReportSheet(context: ReportContext(
-                targetType: .video, targetId: args.videoId,
-                parentType: args.channelId.map { _ in .channel }, parentId: args.channelId, contentSubType: .short)) {
+        .sheet(item: $report) { context in
+            ReportSheet(context: context) {
                 bannerMessage = BannerMessage(text: String(localized: "report_success"))
             }
         }
@@ -47,8 +60,11 @@ struct ShortsScreen: View {
         .onDisappear { OrientationLock.release(); model?.stopUpgrade() }
         .task {
             guard model == nil else { return }
+            // The Shorts tab's queue; the VM ignores it without `queueChannelId` (a deep link: one Short, as before).
             let vm = PlayerViewModel(resolver: PlayerScreen.resolver(container: container),
                                      settings: container.settings, args: args,
+                                     queueSource: ChannelQueueSource(browse: container.browse, channelTitle: args.channelName,
+                                                                     shorts: true),
                                      hd: PlayerScreen.hdUpgrade(container: container))
             model = vm
             await vm.open()
@@ -82,17 +98,35 @@ struct ShortsScreen: View {
                         CaptionOverlay(model: model, track: track, userAgent: resolved.userAgent, bottomClearance: 200)
                     }
                 }
-                .overlay { ShortsOverlay(model: model, args: model.args) }   // owner issue 1: the adopted title
+                // owner issue 1: the adopted title. One overlay per Short (owner 2026-11-14 swipe): its state -- the heart's
+                // favorite, the play/pause glyph, the scrub -- is that Short's. A swipe shows `.loading`, which remounts
+                // this branch anyway; the id is for the hops that do not: the lock screen's next (`skip(by:)`, no loading
+                // card) and a resolve that lands before the card's first frame.
+                .overlay { ShortsOverlay(model: model, args: model.args).id(model.args.videoId) }
                 .frame(maxWidth: Size.playerMaxWidth(widthClass))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             // Task 4: on the black surface, with the dark palette's text -- the card used to paint
             // the app's light `Color.background` over the stage.
             PlayerStateView(state: state, isOnline: container.network.isOnline,
-                            thumbnailURL: args.thumbnailURL, background: .black) { PlayerScreen.retryTapped(model) }
+                            thumbnailURL: model.args.thumbnailURL, background: .black) { PlayerScreen.retryTapped(model) }
+                .modifier(ShortsSwipeActions(model: model))
                 .environment(\.colorScheme, .dark)
                 .safeAreaPadding(.top, 44 + Spacing.md(widthClass))
         }
+    }
+
+    /// A swipe or its VoiceOver action: `PlayerViewModel.swipe`, which pages past the loaded end. A user's Play, as
+    /// `PlayerScreen.playUpNext`, only when there is somewhere to go.
+    static func swipe(_ model: PlayerViewModel, by offset: Int) {
+        guard canSwipe(model, by: offset) else { return }
+        BackgroundPlaybackController.userAskedToPlay()
+        model.heldByOpen = false
+        Task { await model.swipe(by: offset) }
+    }
+
+    static func canSwipe(_ model: PlayerViewModel, by offset: Int) -> Bool {
+        model.queueNeighbour(offset) != nil || (offset > 0 && model.queue.cursor != nil)
     }
 
     private var backButton: some View {
@@ -128,7 +162,8 @@ struct ShortsScreen: View {
                 }
             }
             Button {
-                showReport = true
+                // The MODEL's args: after a swipe this screen's own `args` are still the first Short's.
+                report = model.args.shortsReportContext
             } label: {
                 Label(String(localized: "report_content"), systemImage: "flag")
             }
@@ -181,5 +216,41 @@ private struct PopGestureEnabler: UIViewControllerRepresentable {
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             (navigationController?.viewControllers.count ?? 0) > 1
         }
+    }
+}
+
+extension PlayerArgs {
+    /// B4 CF-B1-9 / Plan C task 3: `contentSubType = SHORT`, `parentType = CHANNEL` when the short
+    /// carries its channel id (`ChannelShortsTabFragment.kt:89-101`).
+    var shortsReportContext: ReportContext {
+        ReportContext(targetType: .video, targetId: videoId,
+                      parentType: channelId.map { _ in .channel }, parentId: channelId, contentSubType: .short)
+    }
+}
+
+/// The swipe's VoiceOver path (owner 2026-11-14): a vertical swipe is VoiceOver's own gesture. On the overlay and on
+/// the loading or error card, so a Short that will not play can be passed as with a swipe.
+struct ShortsSwipeActions: ViewModifier {
+    let model: PlayerViewModel
+
+    func body(content: Content) -> some View {
+        content.accessibilityActions {
+            if ShortsScreen.canSwipe(model, by: 1) {
+                Button(String(localized: "player_action_next")) { ShortsScreen.swipe(model, by: 1) }
+            }
+            if ShortsScreen.canSwipe(model, by: -1) {
+                Button(String(localized: "player_action_previous")) { ShortsScreen.swipe(model, by: -1) }
+            }
+        }
+    }
+}
+
+/// Owner 2026-11-14: which way a drag on the Shorts stage moves through the queue. Up is the next (older)
+/// Short, down the previous; mostly sideways is nobody's swipe here (the scrubber's drag, Back's edge swipe).
+enum ShortsSwipe {
+    static func offset(_ translation: CGSize) -> Int? {
+        // 80 pt: past a tap's jitter and a scrub's wobble, well short of a flick.
+        guard abs(translation.height) >= 80, abs(translation.height) > abs(translation.width) else { return nil }
+        return translation.height < 0 ? 1 : -1
     }
 }

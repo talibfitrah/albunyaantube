@@ -330,7 +330,7 @@ extension StreamState {
     private(set) var debugLastRecoveryStatus: Int?
     #endif
 
-    /// Ruling 33 / spec §10. Empty in single-video mode; populated from `args.playlistId`.
+    /// Ruling 33 / spec §10. Empty in single-video mode; populated from `queueKey`.
     private(set) var queue = PlayerQueue.start(items: [], targetVideoId: nil, startIndex: 0,
                                                shuffled: false, cursor: nil)
 
@@ -552,9 +552,12 @@ extension StreamState {
 
     // MARK: - Queue (B5 task 2)
 
+    /// What the queue is a list of: a playlist, or (owner 2026-11-14) the channel the video was opened from.
+    private var queueKey: String? { args.playlistId ?? args.queueChannelId }
+
     /// Owner issue 2: what the playlist screen already loaded. Same guards as `loadQueue`.
     private func seedQueue() {
-        guard args.playlistId != nil, queueSource != nil, let items = args.queueItems, !items.isEmpty else { return }
+        guard queueKey != nil, queueSource != nil, let items = args.queueItems, !items.isEmpty else { return }
         queue = PlayerQueue.start(items: items, targetVideoId: args.targetVideoId, startIndex: args.startIndex,
                                   shuffled: args.shuffled, cursor: args.queueContinuation)
     }
@@ -563,7 +566,7 @@ extension StreamState {
     /// bounds `:1782-1785`: 250 items / 3 s). Any throw leaves the queue empty and the state
     /// untouched -- a failed queue load must never kill a playing video.
     private func loadQueue() async {
-        guard let playlistId = args.playlistId, let queueSource else { return }
+        guard let playlistId = queueKey, let queueSource else { return }
         let deadline = Date().addingTimeInterval(3)
         let target = args.targetVideoId
         var items: [ContentItem] = []
@@ -664,8 +667,11 @@ extension StreamState {
         if landed { isAdvancing = false }
         // The same lecture again further down the list: the host keeps its item and position, so the pick starts over.
         if landed, item.id == playing { await currentPlayer?.seek(to: .zero) }
-        await prefetchUpcoming()
+        // Superseded: the newer pick prefetches and pages for its own position once it lands. Paging first, as `open()`
+        // does, so a pick near the end prefetches the next page's first rows rather than nothing.
+        guard landed else { return false }
         await pageIfNeeded()
+        await prefetchUpcoming()
         return false
     }
 
@@ -698,12 +704,19 @@ extension StreamState {
         return queue.items.indices.contains(index) ? index : nil
     }
 
-    /// The queue context rides along: playlistId/shuffled keep the queue alive across the hop;
-    /// targetVideoId/startIndex are consumed and must NOT be re-applied to the next video.
+    /// The queue context rides along: playlistId/queueChannelId/shuffled keep the queue alive across the hop;
+    /// targetVideoId/startIndex are consumed and must NOT be re-applied to the next video. A channel's queue is all that
+    /// channel's, so the next video keeps its channel id (the report's parent, the gate's hint) and a Short its avatar;
+    /// a playlist's members can come from any channel, so theirs is not carried.
     private func swapArgs(to item: ContentItem) {
         var next = PlayerArgs(item: item)
         next.playlistId = args.playlistId
+        next.queueChannelId = args.queueChannelId
         next.shuffled = args.shuffled
+        if let channel = args.queueChannelId {
+            next.channelId = channel
+            next.channelAvatarURL = args.channelAvatarURL
+        }
         beginStream(next)
     }
 
@@ -767,13 +780,15 @@ extension StreamState {
     /// Playlist paging at <=5 remaining (`PlayerViewModel.kt:1786,1911`); single-flight -- but a
     /// concurrent caller AWAITS the in-flight fetch (Cubic P3, `pagingTask`'s doc comment) and
     /// then proceeds with the refreshed queue. A throw latches `pagingFailed` (`:1946-1978`).
-    /// Browse paging is not rate-limited.
-    private func pageIfNeeded() async {
+    /// Browse paging is not rate-limited. `always`: the user asked for more (`loadMoreUpNext`, `swipe`), so a page
+    /// that failed earlier is tried once more for this ask; the automatic paths keep the latch.
+    private func pageIfNeeded(always: Bool = false) async {
         if let pagingTask {
             await pagingTask.value
             return
         }
-        guard queue.needsPage, let queueSource, let playlistId = args.playlistId else { return }
+        if always { queue.clearPagingFailure() }
+        guard always ? queue.hasMorePages : queue.needsPage, let queueSource, let playlistId = queueKey else { return }
         let task = Task {
             do {
                 let page = try await queueSource.page(playlistId: playlistId, continuation: queue.cursor)
@@ -786,6 +801,20 @@ extension StreamState {
         pagingTask = task
         await task.value
         pagingTask = nil
+    }
+
+    /// Owner 2026-11-14: Up Next's last rows came on screen -- the next page now, not only at <=5 left, so a long
+    /// channel's list keeps going as the user scrolls it. Same single flight; a latched failure is retried once
+    /// (`pageIfNeeded(always:)`).
+    func loadMoreUpNext() async { await pageIfNeeded(always: true) }
+
+    /// A Short's swipe (and its VoiceOver actions): past the loaded end, the next page first. A pick made while that
+    /// page loads wins, as in `skip(by:)`: the swipe's neighbour was of the Short it started on.
+    func swipe(by offset: Int) async {
+        let current = generation
+        if offset > 0, queueNeighbour(offset) == nil { await pageIfNeeded(always: true) }
+        guard current == generation, let index = queueNeighbour(offset) else { return }
+        await play(at: index)
     }
 
     /// CF-B1: `.cooldown` is terminal -- a manual retry while still inside the window must not

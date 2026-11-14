@@ -154,7 +154,7 @@ struct PlayerScreen: View {
             } else {
                 vm = PlayerViewModel(resolver: Self.resolver(container: container),
                                      settings: container.settings, args: args,
-                                     queueSource: Self.queueSource(container: container),
+                                     queueSource: Self.queueSource(container: container, args: args),
                                      cast: container.castController,
                                      hd: Self.hdUpgrade(container: container),
                                      liveLookup: { [catalog = container.catalog, page = container.liveChannelPage] id, notFound in
@@ -471,6 +471,7 @@ struct PlayerScreen: View {
             ForEach(Array(zip(model.queue.upcoming.indices, model.queue.upcoming)), id: \.0) { index, item in
                 VideoRow(item: item, subtitle: item.channelTitle) { Self.playUpNext(model, at: index) }
                     .accessibilityIdentifier("player.upNext.row.\(index).\(item.id)")
+                    .modifier(UpNextEnd(model: model, index: index))
             }
         } else {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: GridRules.cardGap(widthClass)),
@@ -478,6 +479,7 @@ struct PlayerScreen: View {
                 ForEach(Array(zip(model.queue.upcoming.indices, model.queue.upcoming)), id: \.0) { index, item in
                     VideoGridCell(item: item, subtitle: item.channelTitle) { Self.playUpNext(model, at: index) }
                         .accessibilityIdentifier("player.upNext.row.\(index).\(item.id)")
+                        .modifier(UpNextEnd(model: model, index: index))
                 }
             }
             .padding(.horizontal, Spacing.md(widthClass))
@@ -678,8 +680,9 @@ struct PlayerScreen: View {
 
     /// B5: the playlist queue behind Up Next -- same `#if DEBUG` ladder shape as `resolver(container:)`.
     /// `-fitrah-fake-player-queue` serves ~8 fixture items; `-dead` makes three of them unplayable
-    /// under `FixturePlayerResolver`'s dead-id rule (the auto-skip capture).
-    static func queueSource(container: AppContainer) -> any PlaylistQueueSource {
+    /// under `FixturePlayerResolver`'s dead-id rule (the auto-skip capture). Opened from a channel
+    /// (owner 2026-11-14), the channel's Videos tab.
+    static func queueSource(container: AppContainer, args: PlayerArgs) -> any PlaylistQueueSource {
         #if DEBUG
         if LaunchArguments.debug.contains("-fitrah-fake-player-queue-dead") {
             return FixtureQueueSource(deadItems: true)
@@ -688,7 +691,23 @@ struct PlayerScreen: View {
             return FixtureQueueSource(deadItems: false)
         }
         #endif
+        if args.queueChannelId != nil { return ChannelQueueSource(browse: container.browse, channelTitle: args.channelName) }
         return LivePlaylistQueueSource(client: container.innerTube.browse, titles: container.titles, gate: container.browseGate)
+    }
+}
+
+/// Owner 2026-11-14: the last Up Next row scrolled into view pages the queue now (`loadMoreUpNext`). Scroll
+/// visibility, not `.onAppear`: the phone's column is a plain `VStack`, where every row "appears" at once. A page that
+/// still fits on screen brings its new last row into view, so a short list fills itself (the tablet-grid rule).
+private struct UpNextEnd: ViewModifier {
+    let model: PlayerViewModel
+    let index: Int
+
+    func body(content: Content) -> some View {
+        content.onScrollVisibilityChange { visible in
+            guard visible, index == model.queue.items.count - 1 else { return }
+            Task { await model.loadMoreUpNext() }
+        }
     }
 }
 

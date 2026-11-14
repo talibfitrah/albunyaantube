@@ -84,6 +84,7 @@ struct ShortsOverlay: View {
                 .onTapGesture(perform: togglePlayPause)
                 .accessibilityLabel(String(localized: "player_action_play_pause"))
                 .accessibilityAddTraits(.isButton)
+                .modifier(ShortsSwipeActions(model: model))
 
             if let indicator {
                 Image(systemName: indicator == .pause ? "play.fill" : "pause.fill")

@@ -221,6 +221,8 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
     private let lock = NSLock()
     private let pages: [(ids: [String], next: String?)]
     private let failFrom: Int?
+    /// 0-based calls that throw once each (the paging latch's one retry).
+    private let failAt: Set<Int>
     /// Calls with a 0-based index >= this suspend until `release()` -- lets a test observe the
     /// view model mid-page (same 1 ms-poll gate as `RecordingResolver.holdsUntilReleased`).
     private let gateFrom: Int?
@@ -240,9 +242,10 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
     /// Owner issue 2: the token each page call was asked with, in call order.
     var continuations: [String?] { lock.withLock { _continuations } }
 
-    init(pages: [(ids: [String], next: String?)], failFrom: Int? = nil, gateFrom: Int? = nil) {
+    init(pages: [(ids: [String], next: String?)], failFrom: Int? = nil, failAt: Set<Int> = [], gateFrom: Int? = nil) {
         self.pages = pages
         self.failFrom = failFrom
+        self.failAt = failAt
         self.gateFrom = gateFrom
     }
 
@@ -282,6 +285,7 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
             #expect(released || Task.isCancelled, "gated page \(index) was never released")
         }
         if let failFrom, index >= failFrom { throw ExtractionError.transport("fake page failure") }
+        if failAt.contains(index) { throw ExtractionError.transport("fake page failure") }
         guard index < pages.count else { return ([], nil) }
         let page = pages[index]
         return (page.ids.map { ContentItem(video: VideoItem(id: $0, title: "T-\($0)", channelName: "Ch",
