@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_3d9fbda6f3dd89::t_10eda7d705f4f0 8-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5a7e4a470f133449ede564411a68f7022db14458",
+  "prompts": {},
+  "sessions": {
+    "s_3d9fbda6f3dd89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d06bd180-3c75-47f1-bb90-6bd50a9377e7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
