@@ -1,0 +1,52 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt
+  s_3d9fbda6f3dd89::t_7bd3ff474d63a2 124-125
+android/app/src/main/java/com/albunyaan/tube/data/local/FavoritesRepository.kt
+  s_3d9fbda6f3dd89::t_161251c7ff4120 238-240
+android/app/src/main/java/com/albunyaan/tube/data/shorts/ShortsFeedRepository.kt
+  s_3d9fbda6f3dd89::t_161251c7ff4120 55
+android/app/src/test/java/com/albunyaan/tube/data/shorts/ShortsFeedRepositoryTest.kt
+  s_3d9fbda6f3dd89::t_7bd3ff474d63a2 50-62
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/ShortsPlayerFragment.kt
+  s_3d9fbda6f3dd89::t_9cfbf93779f09a 299,472
+  s_3d9fbda6f3dd89::t_161251c7ff4120 298,758-759
+android/app/src/test/java/com/albunyaan/tube/data/local/FavoritesRepositoryImplTest.kt
+  s_3d9fbda6f3dd89::t_7bd3ff474d63a2 144,146
+  s_3d9fbda6f3dd89::t_2f15e8831d03a9 143,147-149
+  s_3d9fbda6f3dd89::t_f2cf26086c5821 142,145
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_3d9fbda6f3dd89::t_f2cf26086c5821 1483
+  s_3d9fbda6f3dd89::t_472331e4a6ddd9 494
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_3d9fbda6f3dd89::t_161251c7ff4120 577
+android/app/src/main/java/com/albunyaan/tube/ui/shorts/ShortsPlayerViewModel.kt
+  s_3d9fbda6f3dd89::t_319690099b34a1 365-368
+  s_3d9fbda6f3dd89::t_161251c7ff4120 198-201,204-209,213-219
+  s_3d9fbda6f3dd89::t_f2cf26086c5821 203,210-211,229,402-408,410
+  s_3d9fbda6f3dd89::t_9cfbf93779f09a 202
+  s_3d9fbda6f3dd89::t_6d470a268efe37 212
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelDownloadPlaybackTest.kt
+  s_3d9fbda6f3dd89::t_2f15e8831d03a9 339-346,348-349
+  s_3d9fbda6f3dd89::t_472331e4a6ddd9 347
+android/app/src/test/java/com/albunyaan/tube/ui/shorts/ShortsPlayerViewModelTest.kt
+  s_3d9fbda6f3dd89::t_2f15e8831d03a9 8,540-561,563-576
+  s_3d9fbda6f3dd89::t_33b642f5a8052b 30
+  s_3d9fbda6f3dd89::t_9cfbf93779f09a 562
+  s_3d9fbda6f3dd89::t_7bd3ff474d63a2 577,579-606
+  s_3d9fbda6f3dd89::t_52e242d709d6d2 578
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1de4c2f6db696d262d2b56e6a9b823eeb7cbd746",
+  "prompts": {},
+  "sessions": {
+    "s_3d9fbda6f3dd89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d06bd180-3c75-47f1-bb90-6bd50a9377e7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
