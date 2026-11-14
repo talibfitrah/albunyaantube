@@ -121,6 +121,8 @@ data class ResolvedStreams(
     val title: String? = null,
     /** The uploader's `UC…` id from StreamInfo's uploader URL, so playback without channel context finds its exclusions. */
     val uploaderChannelId: String? = null,
+    /** StreamInfo.uploaderName: a Short opened with no channel name takes it, so its favourite is never sent blank. */
+    val uploaderName: String? = null,
 ) {
     companion object {
         /**

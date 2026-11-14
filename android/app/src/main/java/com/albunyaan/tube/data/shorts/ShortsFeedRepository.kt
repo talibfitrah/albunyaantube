@@ -52,7 +52,7 @@ class ShortsFeedRepository @Inject constructor(
                 id = v.id,
                 title = v.title,
                 channelId = "",
-                channelName = "",
+                channelName = v.channelName.orEmpty(), // the backend's channelTitle: a favourite needs it
                 channelAvatarUrl = null,
                 thumbnailUrl = v.thumbnailUrl,
                 durationSeconds = v.durationSeconds

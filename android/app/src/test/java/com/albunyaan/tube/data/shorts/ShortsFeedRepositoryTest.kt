@@ -47,6 +47,19 @@ class ShortsFeedRepositoryTest {
         assertEquals(VideoLength.UNDER_FOUR_MIN, filterCaptor.firstValue.videoLength)
     }
 
+    // Round 7: a feed Short's favourite needs its channel name (PutFavoriteRequest @NotBlank); the feed carries it.
+    @Test
+    fun feedMode_carriesEachVideosChannelName() = runBlocking {
+        org.mockito.kotlin.whenever(contentService.fetchContent(any(), anyOrNull(), any(), any())).thenReturn(
+            CursorResponse(listOf(com.albunyaan.tube.data.model.ContentItem.Video(
+                id = "lec1", title = "Lecture", category = "General", durationSeconds = 50, uploadedDaysAgo = null,
+                description = "", channelName = "Lecturer",
+            )), null)
+        )
+
+        assertEquals("Lecturer", repo.loadFeedPage(cursor = null).items.single().channelName)
+    }
+
     @Test
     fun channelMode_fetchesFromChannelDetailRepository() = runBlocking {
         val channelShort = ChannelShort(

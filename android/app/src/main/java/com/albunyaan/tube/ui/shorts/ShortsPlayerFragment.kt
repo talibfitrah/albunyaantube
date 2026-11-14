@@ -295,7 +295,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         val pagerAdapter = ShortsPagerAdapter(
             lifecycleOwner = viewLifecycleOwner,
             callbacks = ShortsPagerAdapter.Callbacks(
-                onLike = { idx -> viewModel.toggleLike(idx) },
+                // Not liked while its title or channel is unknown (its stream is still resolving): say so instead of nothing.
+                onLike = { idx -> if (!viewModel.toggleLike(idx)) showToast(R.string.shorts_download_preparing) },
                 onShare = { idx -> shareShort(idx) },
                 onDownload = { idx -> downloadShort(idx) },
                 onChannelTap = { idx -> openChannel(idx) },
@@ -468,6 +469,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 localBinder.resolvedEvents.collect { (videoId, resolved) ->
+                    viewModel.onStreamResolved(videoId, resolved) // a Short seeded with no title gets its own
                     applyAudioOptions(videoId, resolved)
                     subtitleFlowFor(videoId).value = resolved.subtitleTracks
                     maybeEnumerateDubsForShort(videoId, resolved)
@@ -753,7 +755,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     private fun downloadShort(idx: Int) {
         val item = viewModel.items.value.getOrNull(idx) ?: return
         val resolved = binder?.resolvedStreamsFor(item.id)
-        if (resolved == null) {
+        // No title or channel yet: a download is never saved without them (the resolve fills them in a moment).
+        if (resolved == null || item.title.isBlank() || item.channelName.isBlank()) {
             showToast(R.string.shorts_download_preparing)
             return
         }

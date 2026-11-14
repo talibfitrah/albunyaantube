@@ -336,6 +336,17 @@ class PlayerViewModelDownloadPlaybackTest {
         assertTrue(named.state.value.canFavorite)
     }
 
+    // Round 7: a title nothing filled in (no resolve title, no metadata) is the same 400, so no heart either.
+    @Test fun `a streamed item with no title anywhere offers no favourite`() = runTest {
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "lec22", title = "", channelName = "Lecturer")
+        advanceUntilIdle()
+
+        assertFalse("no title is known", vm.state.value.canFavorite)
+        assertFalse("nor a download", vm.downloadCurrent())
+    }
+
     // Round 4 (review m6): the first open waits for the startup load at most 2 s, then streams.
     @Test fun `a startup load that never ends holds the first open for 2 s at most`() = runTest {
         downloads.startupLoad = kotlinx.coroutines.CompletableDeferred<Unit>() // never completes

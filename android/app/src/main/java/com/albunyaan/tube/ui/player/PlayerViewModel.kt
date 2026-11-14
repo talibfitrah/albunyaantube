@@ -491,6 +491,7 @@ class PlayerViewModel @Inject constructor(
     fun downloadCurrent(targetHeight: Int? = null, audioOnly: Boolean = false): Boolean {
         val state = _state.value
         val item = state.currentItem ?: return false
+        if (item.title.isBlank()) return false // never saved without a title; the resolve normally fills it first
         val request = DownloadRequest(
             id = item.streamId + "_" + System.currentTimeMillis(),
             title = item.title,
@@ -1479,7 +1480,7 @@ class PlayerViewModel @Inject constructor(
                 currentItem = currentItem?.gateChannelName(),
                 // Round 4 (m3): one rule in both modes, from the raw name (a standalone playlist
                 // shows none but keeps its heart, A7); no name anywhere means no heart.
-                canFavorite = currentItem?.channelName?.isNotBlank() == true,
+                canFavorite = currentItem?.let { it.channelName.isNotBlank() && it.title.isNotBlank() } == true,
                 upNext = queue.map { it.gateChannelName() },
                 currentDownload = findDownloadFor(currentItem, latestDownloads),
                 hasNext = queue.isNotEmpty() || hasMorePages,

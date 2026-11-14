@@ -139,6 +139,14 @@ class FavoritesRepositoryImplTest {
         assertTrue("Video should now be favorited", repository.isFavoriteOnce("v1"))
     }
 
+    // Round 7: the server's PutFavoriteRequest requires a title; a blank one is a 400 that sync drops for good.
+    @Test
+    fun `toggleFavorite never adds a favorite with a blank title or channel`() = runTest {
+        assertFalse(repository.toggleFavorite("v1", " ", "Channel", null, 100))
+        assertFalse(repository.toggleFavorite("v1", "Title", "", null, 100))
+        assertFalse(repository.isFavoriteOnce("v1"))
+    }
+
     @Test
     fun `toggleFavorite removes favorite when present and returns false`() = runTest {
         // First add the favorite

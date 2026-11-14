@@ -5,6 +5,7 @@ import com.albunyaan.tube.data.channel.ChannelDetailRepository
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.shorts.ShortsFeedRepository
+import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.shorts.ShortsItem
 import com.albunyaan.tube.data.shorts.ShortsPage
 import com.albunyaan.tube.player.AdaptiveBufferPolicy
@@ -26,6 +27,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -534,6 +536,73 @@ class ShortsPlayerViewModelTest {
 
         assertEquals(listOf("s3"), vm.items.value.map { it.id })
     }
+
+    @Test
+    fun channelMode_aFetchedRowFillsTheBlankSeedInPlace() = runTest(dispatcher) {
+        // The first anchor fetch fails, so the tapped Short plays alone with no title; a later fetch brings its row.
+        whenever(feed.loadChannelShortsPage(eq("UC1"), anyOrNull()))
+            .thenThrow(RuntimeException("network"))
+            .thenReturn(ShortsPage(listOf(sample("s3"), sample("s4")), null))
+
+        val vm = channelVm("s3", initialShortTitle = null)
+        advanceUntilIdle()
+        vm.onPageChanged(0)
+        advanceUntilIdle()
+
+        assertEquals(listOf("s3", "s4"), vm.items.value.map { it.id })
+        assertEquals("title-s3", vm.items.value[0].title)
+        assertEquals(30, vm.items.value[0].durationSeconds)
+    }
+
+    @Test
+    fun aBlankSeededShortTakesItsTitleAndDurationFromTheResolvedStream() = runTest(dispatcher) {
+        val vm = channelVm("s3", initialShortTitle = "", channelQueue = false)
+        advanceUntilIdle()
+
+        vm.onStreamResolved("s3", ResolvedStreams("s3", emptyList(), emptyList(), durationSeconds = 42, title = "Real title"))
+
+        assertEquals("Real title", vm.items.value.single().title)
+        assertEquals(42, vm.items.value.single().durationSeconds)
+    }
+
+    @Test
+    fun aShortWithNoTitleYetIsNotLiked() = runTest(dispatcher) {
+        val vm = channelVm("s3", initialShortTitle = "", channelQueue = false)
+        advanceUntilIdle()
+
+        assertFalse("the fragment says to try again", vm.toggleLike(0))
+        advanceUntilIdle()
+
+        verify(favorites, never()).toggleFavorite(any(), any(), any(), anyOrNull(), any())
+    }
+
+    @Test
+    fun aFeedShortWithNoChannelNameTakesTheUploaderFromTheResolvedStream() = runTest(dispatcher) {
+        whenever(feed.loadFeedPage(eq(null), any())).thenReturn(ShortsPage(listOf(sample("v1")), null))
+        val vm = feedVm()
+        advanceUntilIdle()
+
+        vm.onStreamResolved("v1", ResolvedStreams("v1", emptyList(), emptyList(), durationSeconds = 30, uploaderName = "Lecturer"))
+
+        assertEquals("Lecturer", vm.items.value.single().channelName)
+    }
+
+    @Test
+    fun aShortWithNoChannelNameYetIsNotLiked() = runTest(dispatcher) {
+        whenever(feed.loadFeedPage(eq(null), any())).thenReturn(ShortsPage(listOf(sample("v1")), null))
+        val vm = feedVm()
+        advanceUntilIdle()
+
+        assertFalse(vm.toggleLike(0))
+        advanceUntilIdle()
+        verify(favorites, never()).toggleFavorite(any(), any(), any(), anyOrNull(), any())
+    }
+
+    private fun feedVm() = ShortsPlayerViewModel(
+        context = context, feed = feed, favorites = favorites, channelDetailRepo = channelDetailRepo,
+        bufferPolicy = bufferPolicy, featureFlags = featureFlags, neverFreezeTrackSelectionFactory = neverFreezeFactory,
+        coldStartQualityChooser = coldStartQualityChooser, initialShortId = null, channelId = null,
+    )
 
     @Test
     fun initialShortId_reorderAppliedOnlyOnFirstPage() = runTest(dispatcher) {

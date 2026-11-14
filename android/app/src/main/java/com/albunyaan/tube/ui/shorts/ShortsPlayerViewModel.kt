@@ -195,8 +195,28 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         }
     }
 
-    fun toggleLike(index: Int) {
-        val item = _items.value.getOrNull(index) ?: return
+    /**
+     * A Short with no title, duration or channel name (seeded by id alone, or a feed row without a channel) takes them
+     * from its resolved stream. The resolve carries no thumbnail.
+     */
+    fun onStreamResolved(videoId: String, resolved: com.albunyaan.tube.data.extractor.ResolvedStreams) {
+        _items.value = _items.value.map {
+            if (it.id != videoId) it
+            else it.copy(
+                title = it.title.ifBlank { resolved.title.orEmpty() },
+                durationSeconds = it.durationSeconds.takeIf { d -> d > 0 } ?: resolved.durationSeconds ?: 0,
+                channelName = it.channelName.ifBlank { resolved.uploaderName.orEmpty() },
+            )
+        }
+    }
+
+    /**
+     * False when the Short's title or channel name is not known yet (its stream has not resolved): the server rejects
+     * such a favourite (PutFavoriteRequest @NotBlank).
+     */
+    fun toggleLike(index: Int): Boolean {
+        val item = _items.value.getOrNull(index) ?: return false
+        if (item.title.isBlank() || item.channelName.isBlank()) return false
         viewModelScope.launch {
             favorites.toggleFavorite(
                 item.id,
@@ -206,6 +226,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                 item.durationSeconds
             )
         }
+        return true
     }
 
     fun isLikedFlow(videoId: String): Flow<Boolean> = favorites.isFavorite(videoId)
@@ -341,7 +362,10 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         if (header != null) _items.value = _items.value.map { it.withChannelHeader(header) }
     }
 
-    /** A blank title is only allowed where no page brings the Short: [appendDistinct] keeps the seed over the page's row. */
+    /**
+     * A blank title only where nothing else would show the Short ([playAlone]); a fetched row ([appendDistinct]) or the
+     * resolved stream ([onStreamResolved]) fills it in later.
+     */
     private fun seedInitialShortIfAvailable(allowBlankTitle: Boolean = false) {
         val id = initialShortId?.takeIf { it.isNotBlank() } ?: return
         val title = initialShortTitle?.takeIf { it.isNotBlank() } ?: if (allowBlankTitle) "" else return
@@ -375,8 +399,15 @@ class ShortsPlayerViewModel @AssistedInject constructor(
 
     private fun appendDistinct(current: List<ShortsItem>, incoming: List<ShortsItem>): List<ShortsItem> {
         if (incoming.isEmpty()) return current
+        // A Short seeded by id alone (no title) takes its fetched row's metadata, in place.
+        val fetched = incoming.associateBy { it.id }
+        val filled = current.map { c ->
+            val f = fetched[c.id]?.takeIf { c.title.isBlank() } ?: return@map c
+            c.copy(title = f.title, thumbnailUrl = f.thumbnailUrl ?: c.thumbnailUrl,
+                durationSeconds = f.durationSeconds.takeIf { it > 0 } ?: c.durationSeconds)
+        }
         val seen = current.asSequence().map { it.id }.toMutableSet()
-        return current + incoming.filter { seen.add(it.id) }
+        return filled + incoming.filter { seen.add(it.id) }
     }
 
     sealed interface LoadEvent {
