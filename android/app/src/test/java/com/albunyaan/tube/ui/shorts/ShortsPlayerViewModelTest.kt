@@ -30,6 +30,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -223,7 +224,7 @@ class ShortsPlayerViewModelTest {
 
     @Test
     fun channelMode_usesChannelFeed() = runTest(dispatcher) {
-        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null), any())).thenReturn(
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null))).thenReturn(
             ShortsPage(listOf(sample("v1"), sample("v2")), null)
         )
         whenever(channelDetailRepo.getChannelHeader(eq("UC1"), any())).thenReturn(header())
@@ -244,13 +245,13 @@ class ShortsPlayerViewModelTest {
         advanceUntilIdle()
 
         assertEquals(2, vm.items.value.size)
-        verify(feed).loadChannelShortsPage(eq("UC1"), eq(null), any())
+        verify(feed).loadChannelShortsPage(eq("UC1"), eq(null))
         verify(feed, never()).loadFeedPage(any(), any())
     }
 
     @Test
     fun channelMode_decoratesItemsWithChannelHeader() = runTest(dispatcher) {
-        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null), any())).thenReturn(
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null))).thenReturn(
             ShortsPage(listOf(sample("v1"), sample("v2")), null)
         )
         whenever(channelDetailRepo.getChannelHeader(eq("UC1"), any())).thenReturn(header())
@@ -295,8 +296,8 @@ class ShortsPlayerViewModelTest {
             items = listOf(sample("v3"), sample("v4")),
             nextCursor = null
         )
-        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null), any())).thenReturn(firstPage)
-        whenever(feed.loadChannelShortsPage(eq("UC1"), eq("cursor-2"), any())).thenReturn(secondPage)
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null))).thenReturn(firstPage)
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq("cursor-2"))).thenReturn(secondPage)
         // First call throws, second returns a valid header.
         var headerCall = 0
         whenever(channelDetailRepo.getChannelHeader(eq("UC1"), any())).thenAnswer {
@@ -391,6 +392,118 @@ class ShortsPlayerViewModelTest {
         val event = events[0]
         assertTrue(event is ShortsPlayerViewModel.LoadEvent.SkipCurrent)
         assertEquals("v2", (event as ShortsPlayerViewModel.LoadEvent.SkipCurrent).shortId)
+    }
+
+    private suspend fun channelVm(
+        initialShortId: String,
+        initialShortTitle: String? = "title-$initialShortId",
+        channelQueue: Boolean = true, // opened from the channel's Shorts tab
+    ): ShortsPlayerViewModel {
+        whenever(channelDetailRepo.getChannelHeader(eq("UC1"), any())).thenReturn(header())
+        return ShortsPlayerViewModel(
+        context = context,
+        feed = feed,
+        favorites = favorites,
+        channelDetailRepo = channelDetailRepo,
+        bufferPolicy = bufferPolicy,
+        featureFlags = featureFlags,
+        neverFreezeTrackSelectionFactory = neverFreezeFactory,
+        coldStartQualityChooser = coldStartQualityChooser,
+        initialShortId = initialShortId,
+        channelId = "UC1",
+        initialShortTitle = initialShortTitle,
+        channelQueue = channelQueue,
+        )
+    }
+
+    @Test
+    fun channelMode_theTappedShortIsFollowedByTheOlderOnesNewestFirst() = runTest(dispatcher) {
+        // The channel lists newest first: s1 is the newest. Tapping s3 must lead to s4, s5, never back to s1, s2.
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null))).thenReturn(
+            ShortsPage(listOf("s1", "s2", "s3", "s4", "s5").map { sample(it) }, null)
+        )
+
+        val vm = channelVm("s3")
+        advanceUntilIdle()
+
+        assertEquals(listOf("s3", "s4", "s5"), vm.items.value.map { it.id })
+    }
+
+    @Test
+    fun channelMode_theTappedShortOnALaterPageDropsTheNewerPages() = runTest(dispatcher) {
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null)))
+            .thenReturn(ShortsPage(listOf(sample("s1"), sample("s2")), "c2"))
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq("c2")))
+            .thenReturn(ShortsPage(listOf(sample("s3"), sample("s4")), "c3"))
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq("c3")))
+            .thenReturn(ShortsPage(listOf(sample("s5")), null))
+
+        val vm = channelVm("s3", initialShortTitle = null) // no seed: the page's own s3 leads
+        advanceUntilIdle()
+
+        // Only s4 follows s3 on its page and the pager never selects a page again, so the next page loads by itself.
+        assertEquals(listOf("s3", "s4", "s5"), vm.items.value.map { it.id })
+    }
+
+    @Test
+    fun channelMode_theLastShortOfItsPageLoadsTheNextPageItself() = runTest(dispatcher) {
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null)))
+            .thenReturn(ShortsPage(listOf(sample("s1"), sample("s2"), sample("s3")), "c2"))
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq("c2")))
+            .thenReturn(ShortsPage(listOf(sample("s4"), sample("s5")), null))
+
+        val vm = channelVm("s3")
+        advanceUntilIdle()
+
+        assertEquals(listOf("s3", "s4", "s5"), vm.items.value.map { it.id })
+    }
+
+    @Test
+    fun channelMode_aFailedPageAtTheLastShortIsFetchedAgainOnTheNextAsk() = runTest(dispatcher) {
+        // The fragment asks again (onPageChanged at the last page) when the user drags against the pager's end.
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null)))
+            .thenReturn(ShortsPage(listOf(sample("s1"), sample("s2")), "c2"))
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq("c2")))
+            .thenThrow(RuntimeException("network"))
+            .thenReturn(ShortsPage(listOf(sample("s3")), null))
+
+        val vm = channelVm("s1")
+        advanceUntilIdle()
+        assertEquals(listOf("s1", "s2"), vm.items.value.map { it.id })
+
+        vm.onPageChanged(1)
+        advanceUntilIdle()
+
+        assertEquals(listOf("s1", "s2", "s3"), vm.items.value.map { it.id })
+    }
+
+    @Test
+    fun meHistoryShort_withSwipeOffFetchesNoChannelPagesSoAFailureShowsItsError() = runTest(dispatcher) {
+        whenever(feed.loadChannelShortsPage(eq("UC1"), anyOrNull()))
+            .thenReturn(ShortsPage(listOf("s1", "s2", "s3", "s4").map { sample(it) }, null))
+
+        val vm = channelVm("s3", channelQueue = false)
+        advanceUntilIdle()
+
+        // Alone, a failing s3 makes the fragment show "unavailable" instead of skipping to another channel Short.
+        assertEquals(listOf("s3"), vm.items.value.map { it.id })
+        verify(feed, never()).loadChannelShortsPage(any(), anyOrNull())
+    }
+
+    @Test
+    fun channelMode_aTappedShortNotFoundInFivePagesPlaysAlone() = runTest(dispatcher) {
+        (0 until 8).forEach { i ->
+            whenever(feed.loadChannelShortsPage(eq("UC1"), eq(if (i == 0) null else "c$i")))
+                .thenReturn(ShortsPage(listOf(sample("n$i")), "c${i + 1}"))
+        }
+
+        val vm = channelVm("s3")
+        advanceUntilIdle()
+        vm.onPageChanged(0)
+        advanceUntilIdle()
+
+        assertEquals(listOf("s3"), vm.items.value.map { it.id })
+        verify(feed, times(5)).loadChannelShortsPage(eq("UC1"), anyOrNull())
     }
 
     @Test

@@ -66,6 +66,7 @@ class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
     private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository,
+    private val channelDetailRepository: com.albunyaan.tube.data.channel.ChannelDetailRepository,
     private val rateLimiter: ExtractionRateLimiter,
     private val prefetchService: StreamPrefetchService,
     private val favoritesRepository: FavoritesRepository,
@@ -296,6 +297,9 @@ class PlayerViewModel @Inject constructor(
     // PR6.6: Auto-skip tracking for unplayable items in playlist mode
     private var consecutiveSkips = 0
 
+    /** The current item came from [advanceToNext], not a tap: only such a channel-queue item may be auto-skipped. */
+    private var advancedToCurrent = false
+
     // Quality switching debounce: prevents rapid re-prepares when user quickly changes quality
     private var qualitySwitchJob: Job? = null
 
@@ -411,7 +415,10 @@ class PlayerViewModel @Inject constructor(
             android.util.Log.w("PlayerViewModel", "playItem: id=${item.id} not in queue (upNext/queue desync)")
             return
         }
-        val target = queue.removeAt(queueIndex)
+        // Owner ruling 2026-11-14 (as YouTube): the queue continues from the tapped row, so the rows before it go too.
+        val target = queue[queueIndex]
+        queue.subList(0, queueIndex + 1).clear()
+        advancedToCurrent = false
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
@@ -437,6 +444,20 @@ class PlayerViewModel @Inject constructor(
 
     fun skipToNext(): Boolean = advanceToNext()
 
+    /**
+     * Up next scrolled near its end, or its rows fit the screen: page now, not only when <=5 are left. A failed page
+     * stays failed for automatic paging; one [userScroll] per failure may try it again.
+     */
+    fun loadMoreUpNext(userScroll: Boolean = false) {
+        val paging = playlistPagingState ?: return
+        if (!paging.hasMore) return
+        if (paging.pagingFailed) {
+            if (!userScroll || paging.userRetried) return
+            playlistPagingState = paging.copy(pagingFailed = false, userRetried = true)
+        }
+        triggerBackgroundPageFetch()
+    }
+
     fun skipToPrevious(): Boolean {
         val current = currentItem ?: return false
         if (previousItems.isEmpty()) return false
@@ -449,6 +470,7 @@ class PlayerViewModel @Inject constructor(
         liveRefreshJob?.cancel()
         liveRefreshJob = null
         val previous = previousItems.removeAt(previousItems.lastIndex)
+        advancedToCurrent = false // a user's pick shows its own error; only advanceToNext may auto-skip
         queue.add(0, current)
         currentItem = previous
         applyQueueState()
@@ -831,6 +853,7 @@ class PlayerViewModel @Inject constructor(
         sourceChannelId: String? = null,
         liveChannelId: String? = null,
         liveLink: Boolean = false,
+        channelQueue: Boolean = false,
     ) {
         // 1.0.4 R3, local-first: Home, Search, Favorites, History, Me, channel tabs and deep links all
         // open one video here, so a saved copy plays from its file as it does from Downloads. The
@@ -852,7 +875,7 @@ class PlayerViewModel @Inject constructor(
                 withTimeoutOrNull(STARTUP_LOAD_WAIT_MS) { startupLoad.join() }
                 waitedForStartupLoad = true
                 startupWait = null
-                loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId, liveChannelId, liveLink)
+                loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId, liveChannelId, liveLink, channelQueue)
             }
             return
         }
@@ -874,6 +897,7 @@ class PlayerViewModel @Inject constructor(
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
+        advancedToCurrent = false
         playlistChannelApproved = false
         activePlaylistId = null
         pagingJob?.cancel()
@@ -917,6 +941,77 @@ class PlayerViewModel @Inject constructor(
         resolveStreamFor(item)
         // An exact live link can reach Ready through a prefetch, which returns before the live-channel start: start here.
         if (liveLink) startLiveHeartbeat(item)
+        // Owner request: opened from a channel's Videos tab, Up next is that channel's later videos. Built off the
+        // playback-start path. Never for a live-channel item (§9.1 never advances).
+        if (channelQueue && sourceChannelId != null && liveChannelId == null) loadChannelQueue(sourceChannelId, videoId)
+    }
+
+    /**
+     * The channel queue: searches the channel's Videos tab (newest first, the channel screen's own source) for
+     * [videoId] within its own scan limits, then queues the videos after it, paged like a playlist. Not
+     * found: Up next stays empty, never a different video or order. Runs as [pagingJob], which the next load cancels.
+     */
+    private fun loadChannelQueue(channelId: String, videoId: String) {
+        pagingJob = viewModelScope.launch(dispatcher) {
+            val startTime = System.currentTimeMillis()
+            var scanned = 0
+            // The Videos tab's own sources (ChannelDetailViewModel.loadVideosInitial): the channel tab, or the uploads
+            // playlist's first page when the tab gives nothing; later pages from the same one, as its append does.
+            var viaTab = true
+            var page = channelQueuePage(channelId, null, viaTab = true, PAGE_FETCH_TIMEOUT_MS)?.takeIf { it.items.isNotEmpty() }
+                ?: channelQueuePage(channelId, null, viaTab = false, PAGE_FETCH_TIMEOUT_MS).also { viaTab = false }
+                ?: return@launch
+            while (true) {
+                val index = page.items.indexOfFirst { it.id == videoId }
+                if (index >= 0) {
+                    if (currentItem?.id != videoId) return@launch // it ended or was left meanwhile
+                    queue.addAll(page.items.drop(index + 1))
+                    playlistPagingState = PlaylistPagingState(
+                        playlistId = "", nextPage = page.nextPage, nextItemOffset = 1, hasMore = page.nextPage != null,
+                        pagingFailed = false, lastPageFetchMs = System.currentTimeMillis(), channelId = channelId,
+                        channelViaTab = viaTab,
+                    )
+                    applyQueueState()
+                    return@launch
+                }
+                scanned += page.items.size
+                val remainingBudget = CHANNEL_SCAN_MAX_MS - (System.currentTimeMillis() - startTime)
+                val next = page.nextPage
+                if (next == null || remainingBudget <= 0 || scanned >= CHANNEL_SCAN_MAX_ITEMS) return@launch
+                page = channelQueuePage(channelId, next, viaTab, minOf(PAGE_FETCH_TIMEOUT_MS, remainingBudget)) ?: return@launch
+            }
+        }
+    }
+
+    /**
+     * One channel Videos-tab page as queue items (exclusions and original titles applied), or null on a miss: from the
+     * channel tab, or [viaTab] false from the uploads playlist, the tab's fallback.
+     */
+    private suspend fun channelQueuePage(channelId: String, page: Page?, viaTab: Boolean, timeoutMs: Long): PlaylistPage<UpNextItem>? = try {
+        withTimeoutOrNull(timeoutMs) {
+            if (viaTab) channelDetailRepository.getVideosViaChannelTab(channelId, page) else channelDetailRepository.getVideos(channelId, page)
+        }?.let { p ->
+            PlaylistPage(
+                p.items.map { video ->
+                    UpNextItem(
+                        id = video.id,
+                        title = video.title,
+                        channelName = video.uploaderName ?: "", // what the channel tab passes for a tapped row
+                        durationSeconds = video.durationSeconds ?: 0,
+                        streamId = video.id,
+                        thumbnailUrl = video.thumbnailUrl,
+                        viewCount = video.viewCount,
+                        // Approved through their channel, not one by one: the stream gate needs it.
+                        sourceChannelId = channelId,
+                    )
+                },
+                p.nextPage,
+            )
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     /**
@@ -1551,7 +1646,9 @@ class PlayerViewModel @Inject constructor(
      * @return true if auto-skip was triggered, false if error state should be shown
      */
     private fun handleStreamResolutionFailure(item: UpNextItem): Boolean {
-        if (!isPlaylistMode) return false
+        // A channel queue skips like a playlist (without playlist mode, whose name gate would blank its channel names),
+        // but only a video it advanced to: the one the user tapped shows its error (owner ruling).
+        if (!isPlaylistMode && (playlistPagingState?.channelId == null || !advancedToCurrent)) return false
 
         consecutiveSkips++
         if (consecutiveSkips > MAX_CONSECUTIVE_SKIPS) {
@@ -1651,6 +1748,7 @@ class PlayerViewModel @Inject constructor(
                 val selection = tapPrefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
                     adoptOriginalTitle(tapPrefetched)
+                    consecutiveSkips = 0 // it plays: a run of auto-skips ends only here, never at the advance
                     updateState { it.copy(streamState = StreamState.Ready(tapPrefetched.streamId, selection), retryCount = 0) }
                     maybeEnumerateDubs(selection)
                     return
@@ -1667,6 +1765,7 @@ class PlayerViewModel @Inject constructor(
                 val selection = prefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
                     adoptOriginalTitle(prefetched)
+                    consecutiveSkips = 0 // it plays: a run of auto-skips ends only here, never at the advance
                     updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
                     maybeEnumerateDubs(selection)
                     return
@@ -1765,6 +1864,7 @@ class PlayerViewModel @Inject constructor(
             // PR5: Signal success to reset backoff state (attempt was already recorded in acquire())
             rateLimiter.onExtractionSuccess(item.streamId)
             adoptOriginalTitle(resolved)
+            consecutiveSkips = 0 // it plays: a run of auto-skips ends only here, never at the advance
             updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection), retryCount = 0) }
             maybeEnumerateDubs(selection)
 
@@ -2194,6 +2294,11 @@ class PlayerViewModel @Inject constructor(
         private const val PAGE_FETCH_COOLDOWN_MS = 2000L  // 2s minimum gap between page fetches
         private const val MAX_ITEMS_TO_SCAN = 250         // Max items to scan for deep start
         private const val MAX_SCAN_TIME_MS = 3000L        // Max time for deep start scanning
+        // The channel queue's search runs after playback starts, so it gets more than the playlist start scan.
+        // ponytail: a video deeper than this gets no Up next, and the scan's cost grows with depth (a ~30-item page per
+        // fetch); handing over the channel tab's already-loaded pages would remove both.
+        private const val CHANNEL_SCAN_MAX_ITEMS = 600
+        private const val CHANNEL_SCAN_MAX_MS = 15_000L
         private const val QUEUE_PREFETCH_THRESHOLD = 5    // Trigger background fetch when queue drops below this
         private const val MAX_CONSECUTIVE_SKIPS = 3       // Max auto-skips for unplayable items
 
@@ -2300,7 +2405,7 @@ class PlayerViewModel @Inject constructor(
                 if (loaded && queue.isNotEmpty()) {
                     val next = queue.removeAt(0)
                     currentItem = next
-                    consecutiveSkips = 0
+                    advancedToCurrent = true
                     applyQueueState()
                     resolveStreamFor(next)
                 } else {
@@ -2324,7 +2429,7 @@ class PlayerViewModel @Inject constructor(
         }
 
         return if (next != null) {
-            consecutiveSkips = 0  // Reset on successful advance
+            advancedToCurrent = true
             resolveStreamFor(next)
             true
         } else {
@@ -2341,7 +2446,15 @@ class PlayerViewModel @Inject constructor(
         if (pagingJob?.isActive == true) return  // Already fetching
 
         pagingJob = viewModelScope.launch(dispatcher) {
-            fetchNextPlaylistPage()
+            // A page the exclusions emptied changes no state, so nothing on screen asks again: follow it here, a bounded
+            // number of times, and never to a cursor that leads back to itself.
+            var followed = 0
+            do {
+                val queued = queue.size
+                val cursor = playlistPagingState?.nextPage
+            } while (fetchNextPlaylistPage() && queue.size == queued && playlistPagingState?.hasMore == true &&
+                playlistPagingState?.nextPage.let { it?.url != cursor?.url || it?.id != cursor?.id } &&
+                followed++ < MAX_EMPTIED_PAGES_FOLLOWED)
         }
     }
 
@@ -2399,7 +2512,29 @@ class PlayerViewModel @Inject constructor(
             android.util.Log.d("PlayerViewModel", "fetchNextPlaylistPage: loading more items, offset=${currentState.nextItemOffset}")
 
             val page = try {
-                playlistPage(currentState.playlistId, currentState.nextPage, currentState.nextItemOffset)
+                val channelId = currentState.channelId
+                if (channelId != null) {
+                    channelQueuePage(channelId, currentState.nextPage, currentState.channelViaTab, PAGE_FETCH_TIMEOUT_MS)
+                } else {
+                    playlistPage(currentState.playlistId, currentState.nextPage, currentState.nextItemOffset)?.let { p ->
+                        PlaylistPage(
+                            p.items.map { playlistItem ->
+                                UpNextItem(
+                                    id = playlistItem.videoId,
+                                    title = playlistItem.title,
+                                    // Raw name retained; suppression for unapproved playlists happens at emit (gateChannelName).
+                                    channelName = playlistItem.channelName ?: "",
+                                    durationSeconds = playlistItem.durationSeconds ?: 0,
+                                    streamId = playlistItem.videoId,
+                                    thumbnailUrl = playlistItem.thumbnailUrl,
+                                    viewCount = playlistItem.viewCount
+                                )
+                            },
+                            p.nextPage,
+                            p.nextItemOffset,
+                        )
+                    }
+                }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 android.util.Log.w("PlayerViewModel", "fetchNextPlaylistPage: error ${e.message}")
@@ -2413,28 +2548,16 @@ class PlayerViewModel @Inject constructor(
                 return@withLock false
             }
 
-            val newItems = page.items.map { playlistItem ->
-                UpNextItem(
-                    id = playlistItem.videoId,
-                    title = playlistItem.title,
-                    // Raw name retained; suppression for unapproved playlists happens at emit (gateChannelName).
-                    channelName = playlistItem.channelName ?: "",
-                    durationSeconds = playlistItem.durationSeconds ?: 0,
-                    streamId = playlistItem.videoId,
-                    thumbnailUrl = playlistItem.thumbnailUrl,
-                    viewCount = playlistItem.viewCount
-                )
-            }
-
-            queue.addAll(newItems)
+            queue.addAll(page.items)
             playlistPagingState = currentState.copy(
                 nextPage = page.nextPage,
                 nextItemOffset = page.nextItemOffset,
                 hasMore = page.nextPage != null,
-                lastPageFetchMs = System.currentTimeMillis()
+                lastPageFetchMs = System.currentTimeMillis(),
+                userRetried = false,
             )
 
-            android.util.Log.d("PlayerViewModel", "fetchNextPlaylistPage: added ${newItems.size} items, queue now ${queue.size}, hasMore=${page.nextPage != null}")
+            android.util.Log.d("PlayerViewModel", "fetchNextPlaylistPage: added ${page.items.size} items, queue now ${queue.size}, hasMore=${page.nextPage != null}")
             applyQueueState()
             true
         }
@@ -2576,7 +2699,13 @@ data class PlaylistPagingState(
     val nextItemOffset: Int,
     val hasMore: Boolean,
     val pagingFailed: Boolean,
-    val lastPageFetchMs: Long
+    val lastPageFetchMs: Long,
+    /** Set for a channel queue (owner request): pages come from this channel's Videos tab, not a playlist. */
+    val channelId: String? = null,
+    /** Channel queue: the Videos tab's source, the channel tab (true) or its uploads-playlist fallback (false). */
+    val channelViaTab: Boolean = true,
+    /** A user scroll already retried the current failure ([PlayerViewModel.loadMoreUpNext]). */
+    val userRetried: Boolean = false,
 )
 
 /**

@@ -68,6 +68,8 @@ class ChannelVideosTabFragment : BaseChannelListTabFragment<ChannelVideo>() {
                     putString("thumbnailUrl", video.thumbnailUrl ?: "")
                     putInt("durationSeconds", video.durationSeconds ?: 0)
                     putLong("viewCount", video.viewCount ?: -1L)
+                    // Owner request: Up next lists this channel's videos after this one.
+                    putBoolean("channelQueue", true)
                 }
             )
         }

@@ -93,6 +93,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                     initialThumbnailUrl = arguments?.getString(ARG_INITIAL_THUMBNAIL_URL),
                     initialChannelAvatarUrl = arguments?.getString(ARG_INITIAL_CHANNEL_AVATAR_URL),
                     initialDurationSeconds = arguments?.getInt(ARG_INITIAL_DURATION_SECONDS, 0) ?: 0,
+                    channelQueue = arguments?.getBoolean(ARG_CHANNEL_QUEUE, false) == true,
                 ) as T
             }
         }
@@ -320,20 +321,24 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         adapter = pagerAdapter
         bnd.shortsPager.adapter = pagerAdapter
         bnd.shortsPager.offscreenPageLimit = 1
-        // Disable swipe-to-next: product decision to NOT contribute to
-        // doom-scrolling. Users tap a Short to watch, press back to return
-        // to the source list, then tap another. Removing the vertical
-        // swipe gesture makes this intent explicit. The pager is kept
-        // (instead of being replaced with a single fragment) so that
-        // future programmatic transitions — e.g. play-next-from-channel —
-        // can still use setCurrentItem if we ever opt back in.
-        bnd.shortsPager.isUserInputEnabled = false
+        // Swipe-to-next stays off (510a8761: don't feed doom-scrolling; tap a Short, Back, tap another) except from a
+        // channel's Shorts tab, where the owner's request (2026-11) overrides that decision: swipe up goes to that
+        // channel's next Short, newest to oldest. A tapped Short the channel search can't find plays alone.
+        bnd.shortsPager.isUserInputEnabled = arguments?.getBoolean(ARG_CHANNEL_QUEUE, false) == true
 
         val callback = object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 val item = viewModel.items.value.getOrNull(position) ?: return
                 viewModel.onPageChanged(position)
                 bindPageWhenReady(position, item.id, item.channelId)
+            }
+
+            // A swipe up past the last Short selects no page, so after a failed, empty or all-duplicate page nothing
+            // would ask again: each drag there retries the next page once.
+            override fun onPageScrollStateChanged(state: Int) {
+                if (state != ViewPager2.SCROLL_STATE_DRAGGING) return
+                val last = viewModel.items.value.lastIndex
+                if (last >= 0 && binding?.shortsPager?.currentItem == last) viewModel.onPageChanged(last)
             }
         }
         pageChangeCallback = callback
@@ -1007,6 +1012,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     companion object {
         private const val ARG_INITIAL_SHORT_ID = "initialShortId"
         private const val ARG_CHANNEL_ID = "channelId"
+        private const val ARG_CHANNEL_QUEUE = "channelQueue"
         private const val ARG_INITIAL_SHORT_TITLE = "initialShortTitle"
         private const val ARG_INITIAL_CHANNEL_NAME = "initialChannelName"
         private const val ARG_INITIAL_THUMBNAIL_URL = "initialThumbnailUrl"

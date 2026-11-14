@@ -39,6 +39,7 @@ internal fun playerViewModel(
     repository: PlayerRepository = FakePlayerRepository(),
     downloadRepository: DownloadRepository = FakeDownloadRepository(),
     playlistDetailRepository: PlaylistDetailRepository = FakePlaylistDetailRepository(),
+    channelDetailRepository: com.albunyaan.tube.data.channel.ChannelDetailRepository = FakeChannelVideosRepository(),
     favoritesRepository: FavoritesRepository = FakeFavoritesRepository(),
     extractorClient: ExtractorClient = FakeExtractorClient(),
     contentService: com.albunyaan.tube.data.source.ContentService = com.albunyaan.tube.data.source.FakeContentService(),
@@ -63,6 +64,7 @@ internal fun playerViewModel(
     repository = repository,
     downloadRepository = downloadRepository,
     playlistDetailRepository = playlistDetailRepository,
+    channelDetailRepository = channelDetailRepository,
     rateLimiter = rateLimiter,
     prefetchService = prefetchService,
     favoritesRepository = favoritesRepository,
@@ -217,6 +219,37 @@ internal class FakePlaylistDetailRepository : PlaylistDetailRepository {
     }
 
     override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
+}
+
+/**
+ * The channel Videos tab as [pages], newest first, each page's nextPage leading to page [nextOf] of it; [uploads] is the
+ * uploads playlist's first page (the tab's fallback; its paging is broken). [calls] counts tab fetches, and the
+ * tab fetches numbered in [failingCalls] (1-based) throw, like a page that timed out.
+ */
+internal class FakeChannelVideosRepository(
+    private val pages: List<List<com.albunyaan.tube.data.channel.ChannelVideo>> = emptyList(),
+    private val uploads: List<com.albunyaan.tube.data.channel.ChannelVideo> = emptyList(),
+) : com.albunyaan.tube.data.channel.ChannelDetailRepository {
+    var calls = 0
+    val failingCalls = mutableSetOf<Int>()
+    var nextOf: (Int) -> Int = { it + 1 }
+
+    override suspend fun getVideosViaChannelTab(channelId: String, page: Page?): com.albunyaan.tube.data.channel.ChannelPage<com.albunyaan.tube.data.channel.ChannelVideo> {
+        calls++
+        if (calls in failingCalls) throw java.io.IOException("page timed out")
+        val index = page?.url?.toInt() ?: 0
+        val next = nextOf(index).takeIf { it < pages.size }?.let { Page(it.toString(), null, null, null) }
+        return com.albunyaan.tube.data.channel.ChannelPage(pages.getOrElse(index) { emptyList() }, next)
+    }
+
+    override suspend fun getVideos(channelId: String, page: Page?) =
+        com.albunyaan.tube.data.channel.ChannelPage(if (page == null) uploads else emptyList(), null)
+
+    override suspend fun getChannelHeader(channelId: String, forceRefresh: Boolean) = error("unused")
+    override suspend fun getLiveStreams(channelId: String, page: Page?) = error("unused")
+    override suspend fun getShorts(channelId: String, page: Page?) = error("unused")
+    override suspend fun getPlaylists(channelId: String, page: Page?) = error("unused")
+    override suspend fun getAbout(channelId: String, forceRefresh: Boolean) = error("unused")
 }
 
 /** No prefetch data (cold-start playback), or [prefetched]: a tap prefetch that finished. */

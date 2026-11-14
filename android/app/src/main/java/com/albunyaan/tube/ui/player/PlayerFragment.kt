@@ -447,6 +447,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val sourceChannelId = arguments?.getString("channelId")?.takeIf { it.isNotBlank() }
         val liveChannelId = arguments?.getString("liveChannelId")?.takeIf { it.isNotBlank() }
         val liveLink = arguments?.getBoolean("liveLink", false) ?: false
+        // Set by the channel Videos tab only (the Live tab passes channelId too): Up next is that channel's videos.
+        val channelQueue = arguments?.getBoolean("channelQueue", false) ?: false
 
         val downloadId = arguments?.getString(ARG_DOWNLOAD_ID)
 
@@ -472,6 +474,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     sourceChannelId = sourceChannelId,
                     liveChannelId = liveChannelId,
                     liveLink = liveLink,
+                    channelQueue = channelQueue,
                 )
             }
         }
@@ -951,6 +954,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 addItemDecoration(DividerItemDecoration(requireContext(), LinearLayoutManager.VERTICAL))
             }
         }
+        // The list is wrap_content inside playerScrollView, so it never scrolls itself: page from the outer scroll.
+        binding.playerScrollView.setOnScrollChangeListener(
+            androidx.core.widget.NestedScrollView.OnScrollChangeListener { _, _, _, _, _ -> maybeLoadMoreUpNext(userScroll = true) }
+        )
+    }
+
+    /**
+     * Pages Up next when the scroll view is within a screen of its end, which also covers rows that fit on screen
+     * with no scroll at all (CLAUDE.md large-screen rule: a scroll listener alone never fires there). Only a
+     * [userScroll] may retry a failed page.
+     */
+    private fun maybeLoadMoreUpNext(userScroll: Boolean = false) {
+        val scroll = binding?.playerScrollView?.takeIf { it.isShown } ?: return
+        val content = scroll.getChildAt(0) ?: return
+        if (content.bottom - (scroll.scrollY + scroll.height) <= scroll.height) viewModel.loadMoreUpNext(userScroll)
     }
 
     // Replaces MultiQualityMediaSourceFactory.createMediaSourceWithType. Maps the lean
@@ -1582,7 +1600,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.favoriteButton.isVisible = state.canFavorite
             // Audio does nothing on a local file with no video track, or with no file at all.
             binding.audioButton.isVisible = !state.playingDownload || ready?.selection?.video != null
-            upNextAdapter.submitList(state.upNext)
+            upNextAdapter.submitList(state.upNext) { binding.playerScrollView.post { maybeLoadMoreUpNext() } }
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
             // Update ExoPlayer prev/next buttons based on playlist position
             // Always keep buttons visible but visually indicate disabled state

@@ -68,7 +68,7 @@ class ShortsFeedRepository @Inject constructor(
      *
      * Cursor semantics: a non-null [cursor] is a token previously handed out
      * by this repository for the same channel. Tokens are stored in a
-     * bounded LRU (32 entries) and consumed on first lookup. If a cursor was
+     * bounded LRU (32 entries) and consumed once their page is fetched. If a cursor was
      * evicted (rare — only after >32 distinct channel-pagination sessions
      * without consuming) or comes from a different process lifetime, lookup
      * yields null and we transparently restart from page 1. The caller will
@@ -77,13 +77,10 @@ class ShortsFeedRepository @Inject constructor(
      * to keep the UX recoverable; callers that need strict pagination can
      * detect a missing cursor via [channelPageTokenCountForTest] before the call.
      */
-    suspend fun loadChannelShortsPage(
-        channelId: String,
-        cursor: String?,
-        pageSize: Int = DEFAULT_PAGE_SIZE
-    ): ShortsPage {
+    suspend fun loadChannelShortsPage(channelId: String, cursor: String?): ShortsPage {
+        // Read, not consumed: a failed fetch below keeps the token, so the retry continues instead of restarting.
         val page: Page? = cursor?.let {
-            val resolved = synchronized(channelPageTokens) { channelPageTokens.remove(it) }
+            val resolved = synchronized(channelPageTokens) { channelPageTokens[it] }
             if (resolved == null) {
                 android.util.Log.w(
                     "ShortsFeedRepository",
@@ -99,7 +96,8 @@ class ShortsFeedRepository @Inject constructor(
         while (channelPage.items.isEmpty() && walked++ < MAX_EMPTY_PAGES_WALKED) {
             channelPage = channelDetailRepository.getShorts(channelId, channelPage.nextPage ?: break)
         }
-        val items = channelPage.items.take(pageSize).map { s: ChannelShort ->
+        // Every short of the page: the cursor below moves past all of them, so a cut here would lose them for good.
+        val items = channelPage.items.map { s: ChannelShort ->
             ShortsItem(
                 id = s.id,
                 title = s.title,
@@ -110,6 +108,7 @@ class ShortsFeedRepository @Inject constructor(
                 durationSeconds = s.durationSeconds ?: 0
             )
         }
+        cursor?.let { synchronized(channelPageTokens) { channelPageTokens.remove(it) } }
         val nextCursor = channelPage.nextPage?.let { nextPage ->
             val token = UUID.randomUUID().toString()
             synchronized(channelPageTokens) { channelPageTokens[token] = nextPage }

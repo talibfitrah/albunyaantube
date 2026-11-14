@@ -99,6 +99,8 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
                     // Report action targets the channel's shorts exclusion
                     // bucket instead of the regular videos bucket.
                     putString("contentSubType", "SHORT")
+                    // Owner request: swipe up to this channel's next Short.
+                    putBoolean("channelQueue", true)
                 }
             )
         }

@@ -738,6 +738,22 @@ class PlayerViewModelPlaylistPagingTest {
         )
     }
 
+    // Owner ruling 2026-11-14: a tapped Up next row continues the queue from there (rows before it are dropped).
+    @Test
+    fun `tapping a later up-next row continues the playlist from that row`() = runTest {
+        val items = (1..5).map { createPlaylistItem(it, "video_$it") }
+        fakePlaylistRepository.setPages(listOf(PlaylistPage(items, null)))
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1")
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", startIndexHint = 0)
+        advanceUntilIdle()
+
+        viewModel.playItem(viewModel.state.value.upNext.first { it.id == "video_3" })
+        advanceUntilIdle()
+
+        assertEquals(listOf("video_4", "video_5"), viewModel.state.value.upNext.map { it.id })
+    }
+
     // S7-N5 (1.0.4 A7, owner ruling: favourite with the raw name). The gate blanks the channel on
     // screen only; a blank channelName is a 400 on PUT /favorites, and sync drops the row for good.
     @Test

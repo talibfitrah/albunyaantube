@@ -61,7 +61,7 @@ class ShortsFeedRepositoryTest {
             channelDetailRepository.getShorts(eq("UC1"), anyOrNull())
         ).thenReturn(ChannelPage(items = listOf(channelShort), nextPage = null))
 
-        val result = repo.loadChannelShortsPage(channelId = "UC1", cursor = null, pageSize = 10)
+        val result = repo.loadChannelShortsPage(channelId = "UC1", cursor = null)
 
         verify(channelDetailRepository).getShorts(eq("UC1"), isNull())
         assertEquals(1, result.items.size)
@@ -75,6 +75,22 @@ class ShortsFeedRepositoryTest {
         assertEquals("", item.channelName)
         assertNull(item.channelAvatarUrl)
         assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun channelMode_keepsEveryShortOfThePageItsCursorMovesPast() = runBlocking {
+        // A channel Shorts page holds ~30 items; the cursor moves past all of them, so none may be dropped.
+        val nextPage = Page(url = "https://next", id = null, ids = null, cookies = null, body = null)
+        val shorts = (1..12).map {
+            ChannelShort(id = "short-$it", title = "t$it", thumbnailUrl = null, viewCount = null, durationSeconds = 30, publishedTime = null)
+        }
+        org.mockito.kotlin.whenever(channelDetailRepository.getShorts(eq("UC1"), isNull()))
+            .thenReturn(ChannelPage(items = shorts, nextPage = nextPage))
+
+        val result = repo.loadChannelShortsPage(channelId = "UC1", cursor = null)
+
+        assertEquals(shorts.map { it.id }, result.items.map { it.id })
+        assertNotNull(result.nextCursor)
     }
 
     @Test
@@ -126,6 +142,25 @@ class ShortsFeedRepositoryTest {
         assertNull(second.nextCursor)
         verify(channelDetailRepository).getShorts(eq("UC1"), eq(nextPage))
         Unit
+    }
+
+    @Test
+    fun channelMode_aFailedFetchKeepsItsCursorSoTheRetryContinuesInsteadOfRestarting() = runBlocking {
+        // A restart from page 1 would hand the player the newer Shorts it dropped before the tapped one.
+        val nextPage = Page(url = "https://next", id = null, ids = null, cookies = null, body = null)
+        val first = ChannelShort(id = "short-1", title = "t", thumbnailUrl = null, viewCount = null, durationSeconds = 30, publishedTime = null)
+        val second = ChannelShort(id = "short-2", title = "t", thumbnailUrl = null, viewCount = null, durationSeconds = 30, publishedTime = null)
+        org.mockito.kotlin.whenever(channelDetailRepository.getShorts(eq("UC1"), isNull()))
+            .thenReturn(ChannelPage(items = listOf(first), nextPage = nextPage))
+        org.mockito.kotlin.whenever(channelDetailRepository.getShorts(eq("UC1"), eq(nextPage)))
+            .thenThrow(RuntimeException("network"))
+            .thenReturn(ChannelPage(items = listOf(second), nextPage = null))
+
+        val cursor = repo.loadChannelShortsPage(channelId = "UC1", cursor = null).nextCursor
+        runCatching { repo.loadChannelShortsPage(channelId = "UC1", cursor = cursor) }
+        val retried = repo.loadChannelShortsPage(channelId = "UC1", cursor = cursor)
+
+        assertEquals(listOf("short-2"), retried.items.map { it.id })
     }
 
     @Test

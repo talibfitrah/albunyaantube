@@ -32,10 +32,10 @@ import kotlinx.coroutines.sync.Mutex
  * Holds the list of [ShortsItem]s, exposes the current page index, and delegates
  * like actions to the [FavoritesRepository].
  *
- * When launched from a channel (channelId != null) items come from the
- * channel-scoped feed ([ShortsFeedRepository.loadChannelShortsPage]) and are
- * decorated once with [ChannelDetailRepository.getChannelHeader]. Otherwise the
- * global UNDER_FOUR_MIN feed is used and channel fields stay empty.
+ * From a channel's Shorts tab (channelQueue), the tapped Short and the channel's older ones; from Me/history, the one
+ * Short alone. Channel items come from [ShortsFeedRepository.loadChannelShortsPage] and are decorated once with
+ * [ChannelDetailRepository.getChannelHeader]. Without a channel the global UNDER_FOUR_MIN feed is used and channel
+ * fields stay empty.
  *
  * Transient playback / load failures are emitted via [events] as one-shot
  * [LoadEvent]s (a [SharedFlow]). This avoids the "can't emit same value twice"
@@ -57,6 +57,8 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     @Assisted("initialThumbnailUrl") private val initialThumbnailUrl: String? = null,
     @Assisted("initialChannelAvatarUrl") private val initialChannelAvatarUrl: String? = null,
     @Assisted("initialDurationSeconds") private val initialDurationSeconds: Int = 0,
+    /** Opened from the channel's Shorts tab: the channel's older Shorts follow the tapped one (swipe on). */
+    @Assisted("channelQueue") private val channelQueue: Boolean = false,
 ) : ViewModel() {
 
     /**
@@ -158,6 +160,8 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     )
 
     private var initialShortApplied = false
+    /** Channel mode: the tapped Short was found in the channel's pages, so the pages after it follow it. */
+    private var anchorFound = false
 
     private val _items = MutableStateFlow<List<ShortsItem>>(emptyList())
     val items: StateFlow<List<ShortsItem>> = _items.asStateFlow()
@@ -219,6 +223,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private fun loadNextPage() {
         if (exhausted) return
         viewModelScope.launch {
+            var anchoredNow = false
             // tryLock serializes concurrent callers — the second caller
             // observes a locked mutex and bails out immediately. This replaces
             // the prior `loading` boolean which had a check/set race.
@@ -227,15 +232,40 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                 if (exhausted) return@launch
                 runCatching {
                     val header = ensureChannelHeader()
-                    val page = if (channelId != null) {
+                    // Me/history open one channel Short with swipe off: nothing follows it, so a failed one shows its
+                    // error instead of skipping to another of the channel's Shorts.
+                    if (channelId != null && initialShortId != null && !channelQueue) {
+                        exhausted = true
+                        return@runCatching
+                    }
+                    var page = if (channelId != null) {
                         feed.loadChannelShortsPage(channelId, nextCursor)
                     } else {
                         feed.loadFeedPage(nextCursor)
                     }
+                    var incoming = page.items
+                    // A channel's Shorts run newest to oldest, like its tab: the tapped Short leads, the older ones
+                    // follow, the newer ones before it go. Not found in the first pages: it plays alone, never another.
+                    if (channelQueue && channelId != null && initialShortId != null && !anchorFound) {
+                        var searched = 1
+                        var at = page.items.indexOfFirst { it.id == initialShortId }
+                        while (at < 0 && searched < MAX_ANCHOR_SEARCH_PAGES) {
+                            page = feed.loadChannelShortsPage(channelId, page.nextCursor ?: break)
+                            searched++
+                            at = page.items.indexOfFirst { it.id == initialShortId }
+                        }
+                        if (at < 0) {
+                            exhausted = true
+                            return@runCatching
+                        }
+                        anchorFound = true
+                        anchoredNow = true
+                        incoming = page.items.drop(at)
+                    }
                     val decorated = if (header != null) {
-                        page.items.map { it.withChannelHeader(header) }
+                        incoming.map { it.withChannelHeader(header) }
                     } else {
-                        page.items
+                        incoming
                     }
                     val combined = appendDistinct(_items.value, decorated)
                     val ordered = if (!initialShortApplied && initialShortId != null) {
@@ -263,6 +293,9 @@ class ShortsPlayerViewModel @AssistedInject constructor(
             } finally {
                 loadMutex.unlock()
             }
+            // The pager sits on the tapped Short (index 0) and selects no page again until a swipe: a short tail after
+            // it must load the next page now, or the swipe has nowhere to go.
+            if (anchoredNow) onPageChanged(0)
         }
     }
 
@@ -345,10 +378,12 @@ class ShortsPlayerViewModel @AssistedInject constructor(
             @Assisted("initialThumbnailUrl") initialThumbnailUrl: String?,
             @Assisted("initialChannelAvatarUrl") initialChannelAvatarUrl: String?,
             @Assisted("initialDurationSeconds") initialDurationSeconds: Int,
+            @Assisted("channelQueue") channelQueue: Boolean,
         ): ShortsPlayerViewModel
     }
 
     companion object {
         private const val PREFETCH_THRESHOLD = 3
+        private const val MAX_ANCHOR_SEARCH_PAGES = 5
     }
 }
