@@ -160,13 +160,18 @@ final class SearchText {
     /**
      * Lucene's own Arabic prefix rule (ال وال بال كال فال لل, each only on a word with 2+ letters left), minus its bare و:
      * that is often the root's first letter (وضوء is not و + ضوء), and stripping it would part الوضوء (→ وضوء) from وضوء.
-     * The forms of Allah are one word each, الله or اللهم, never the stopword له (review 2026-11-14).
-     * ponytail: any other word whose own first letters are ال loses them too (إلهام → الهام → هام, "important"); list
-     * such words next to ALLAH if a query ever needs one.
+     * The forms of Allah are one word each, الله or اللهم, never the stopword له (review 2026-11-14). Review 2026-11-14
+     * (Cubic): a strip that would leave a stopword keeps the whole word (إلهي, not هي; الكل, not كل); لل before two
+     * letters is ل + ال + a word whose own first letter is ل, so it loses one ل (للغة → لغه, لليل → ليل); and the
+     * forms of والد (parent) keep their وال (والدين, والديه, like الوالدين → والدين).
+     * ponytail: any other word whose own first letters are ال or وال loses them too (إلهام → الهام → هام, "important");
+     * a longer word of its own ل after لل loses it (للسان → سان); and والدين is always "parents", never و + الدين
+     * ("and the religion", which still meets الدين through the stem). List such words next to ALLAH if a query needs one.
      */
     private static final class ProcliticFilter extends TokenFilter {
         /** الله بالله والله تالله فالله كالله لله ولله فلله, and each + م (اللهم); never له, لهم, وله, كله. */
         private static final Pattern ALLAH = Pattern.compile("[وفبتك]?(?:ال|ل)له(م?)");
+        private static final Pattern WALID = Pattern.compile("والد(?:ين|ان|ه|ي|يه|يك|يها|يهم|يكم|ينا|ك|نا|ها|هم|كم)?");
         private final ArabicStemmer stemmer = new ArabicStemmer();
         private final CharTermAttribute term = addAttribute(CharTermAttribute.class);
 
@@ -183,9 +188,13 @@ final class SearchText {
                 term.setEmpty().append("الله").append(mim);
                 return true;
             }
-            char[] word = Arrays.copyOf(term.buffer(), term.length()); // stemPrefix shifts in place
-            int kept = stemmer.stemPrefix(word, word.length);
-            if (kept < word.length - 1) term.copyBuffer(word, 0, kept); // 2+ letters gone: never the bare و
+            if (WALID.matcher(term).matches()) return true;
+            int length = term.length();
+            int cut = length - stemmer.stemPrefix(Arrays.copyOf(term.buffer(), length), length); // stemPrefix shifts a copy
+            if (cut == 2 && length == 4 && term.charAt(0) == 'ل') cut = 1; // لل + 2 letters: ل + ال + لـ…
+            else if (cut < 2) return true; // never the bare و
+            String rest = term.subSequence(cut, length).toString();
+            if (!isStopword(rest)) term.setEmpty().append(rest);
             return true;
         }
     }

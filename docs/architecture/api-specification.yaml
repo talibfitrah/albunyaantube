@@ -143,9 +143,11 @@ paths:
             X-Search-Match:
               description: |
                 Set only when `q` has 2 or more characters and `type` is CHANNELS,
-                PLAYLISTS or VIDEOS (the request is then a relevance search): the
-                match tier of the first item — exact, approximate, related or none.
-                Otherwise the plain list is returned without this header. Clients
+                PLAYLISTS or VIDEOS (the request is then a relevance search): how the
+                first item matches — exact (every query word is a whole word of its
+                title, keywords or channel, the last one maybe typed in part),
+                approximate (a shared stem, the description or a fuzzy match), related
+                (a related concept) or none. Otherwise the plain list is returned without this header. Clients
                 read a missing or unknown value as exact.
               schema:
                 type: string
@@ -499,8 +501,10 @@ paths:
           headers:
             X-Search-Match:
               description: |
-                The match tier of the first item — exact, approximate, related
-                or none. Clients read a missing or unknown value as exact.
+                How the first item matches — exact (every query word is a whole word
+                of its title, keywords or channel, the last one maybe typed in part),
+                approximate (a shared stem, the description or a fuzzy match), related
+                (a related concept) or none. Clients read a missing or unknown value as exact.
               schema:
                 type: string
           content:

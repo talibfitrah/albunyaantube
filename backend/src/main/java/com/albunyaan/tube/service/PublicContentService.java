@@ -40,7 +40,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -1107,11 +1106,8 @@ public class PublicContentService {
         }
         if ("VIDEO".equals(docType) && category != null && !category.isBlank() && liveCategoryService.isLive(category)) {
             // L3: the VIDEOS list of a LIVE category is its expansion (getContent), whose lives the index may not hold
-            List<ContentItemDto> hits = liveCategoryService.items(category).stream()
-                    .filter(i -> SearchIndex.matches(q,
-                            Objects.toString(i.getTitle(), "") + " " + Objects.toString(i.getChannelTitle(), "")))
-                    .toList();
-            return new SearchPage(pageOf(hits, cursor, limit), hits.isEmpty() ? "none" : "exact");
+            SearchIndex.Hits hits = SearchIndex.tier1(q, liveCategoryService.items(category));
+            return new SearchPage(pageOf(hits.items(), cursor, limit), hits.match());
         }
         searchIndex.awaitReady(); // before the Firestore reads below, not after them (F12)
         List<String> allCategoryIds = (category != null && !category.isBlank()) ? resolveAllCategoryIds(category) : null;

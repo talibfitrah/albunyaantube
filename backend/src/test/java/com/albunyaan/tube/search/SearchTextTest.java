@@ -196,6 +196,20 @@ class SearchTextTest {
     }
 
     @Test
+    void aStripThatWouldLeaveAStopwordKeepsTheWhole() {
+        // Review 2026-11-14 (Cubic): إلهي → هي, الكل → كل, الجميع → جميع, البعض → بعض put every title with that stopword in the exact class.
+        String words = "إلهي الكل الجميع البعض";
+        assertEquals(tokens(SearchText.BASE, words), tokens(SearchText.WORD, words));
+    }
+
+    @Test
+    void aDoubleLamOrWawAlifLamStripsOnlyTheProclitic() {
+        // Review 2026-11-14 (Cubic): والدين → دين though الوالدين → والدين; للغة → غه; لليل → يل.
+        assertEquals(List.of("والدين", "والدين", "والدين", "لغه", "ليل", "ليل", "مسلمين", "صلاه"),
+                tokens(SearchText.WORD, "والدين الوالدين بالوالدين للغة الليل لليل للمسلمين والصلاة"));
+    }
+
+    @Test
     void theWordFieldsEnglishStemmerLeavesArabicWordsAlone() {
         // EnglishMinimalStemFilter only strips Latin endings: خفين keeps its ين, خفية its ة (folded to ه by BASE).
         assertEquals(List.of("خفين", "خفي", "خفيه", "مسلمون", "مسلمين"), tokens(SearchText.WORD, "الخفين خفي الخفية المسلمون بالمسلمين"));

@@ -25,9 +25,11 @@ import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
+import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.NoMergePolicy;
 import org.apache.lucene.index.QueryTimeout;
 import org.apache.lucene.index.QueryTimeoutImpl;
 import org.apache.lucene.index.StoredFields;
@@ -43,6 +45,7 @@ import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.BytesRef;
@@ -1041,24 +1044,38 @@ public class SearchIndex {
     }
 
     /**
-     * Tier-1 words over a text outside the index (a LIVE category's current lives, L3): every query token is a word of
-     * `text` or shares its stem, the last one also as a prefix, through the index's analyzers (case, Arabic and digit
-     * folding, ال stripped). A stopword is optional unless the query is all stopwords, as in tier 1.
-     * ponytail: no fuzzy or concept tiers; run the ladder on a temporary index if those lists grow.
+     * Tier 1 over items outside the index (a LIVE category's current lives, L3): the ladder's tier-1 classes
+     * (SearchText.ranked) on a throwaway index of their titles and channel names, word-level class first, each class in
+     * the items' order, and the ladder's header (classMatch).
+     * ponytail: no fuzzy or concept tiers; run them here too if those lists grow.
      */
-    public static boolean matches(String query, String text) {
-        List<String> words = SearchText.tokens(SearchText.BASE, text);
+    public static Hits tier1(String query, List<ContentItemDto> items) throws IOException {
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
-        boolean onlyStopwords = tokens.stream().allMatch(SearchText::isStopword);
-        for (int i = 0; i < tokens.size(); i++) {
-            String token = tokens.get(i);
-            if (!onlyStopwords && SearchText.isStopword(token)) continue;
-            boolean last = i == tokens.size() - 1;
-            String stem = SearchText.stem(token);
-            if (words.stream().noneMatch(w -> w.equals(token) || SearchText.stem(w).equals(stem)
-                    || last && w.startsWith(token))) return false;
+        if (tokens.size() > SearchText.MAX_TOKENS) tokens = tokens.subList(0, SearchText.MAX_TOKENS);
+        if (tokens.isEmpty() || items.isEmpty()) return Hits.NONE;
+        try (Directory dir = new ByteBuffersDirectory()) {
+            // no merges: document n is items[n]
+            try (IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(SearchText.INDEX).setMergePolicy(NoMergePolicy.INSTANCE))) {
+                for (ContentItemDto item : items) {
+                    Document doc = new Document();
+                    addText(doc, "title", item.getTitle());
+                    addText(doc, "channel", item.getChannelTitle());
+                    writer.addDocument(doc);
+                }
+            }
+            try (DirectoryReader reader = DirectoryReader.open(dir)) {
+                IndexSearcher searcher = new IndexSearcher(reader);
+                List<ContentItemDto> out = new ArrayList<>();
+                String match = "none";
+                List<Query> classes = SearchText.ranked(1, tokens, UnaryOperator.identity());
+                for (int i = 0; i < classes.size(); i++) {
+                    int[] docs = Arrays.stream(searcher.search(classes.get(i), items.size()).scoreDocs).mapToInt(h -> h.doc).sorted().toArray();
+                    if (out.isEmpty() && docs.length > 0) match = classMatch(slot(1, i), searcher, docs[0], tokens, NO_BUDGET);
+                    for (int d : docs) out.add(items.get(d));
+                }
+                return new Hits(out, match);
+            }
         }
-        return !tokens.isEmpty();
     }
 
     /** Admitted source keys ("channel:UC…", "playlist:PL…") and their names, now (inner-search R23, R24). */

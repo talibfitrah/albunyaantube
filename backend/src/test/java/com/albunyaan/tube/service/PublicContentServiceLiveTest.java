@@ -104,6 +104,34 @@ class PublicContentServiceLiveTest {
         assertThat(liveSearch("the")).isEmpty();                     // all stopwords: each one is needed
     }
 
+    /** Review 2026-11-14 (Cubic): the in-index word-level rule, its class order and its honest header. */
+    @Test
+    void aLiveSearchPutsWholeWordsFirstAndSaysApproximateForAStemOnlyFirstHit() throws Exception {
+        when(liveCategories.items(CAT)).thenReturn(List.of(
+                ContentItemDto.video("khafilive01", "عمل خفي", null, 0, null, null, null, null, "Zad TV", null),
+                ContentItemDto.video("khuffain001", "المسح على الخفين", null, 0, null, null, null, null, "Zad TV", null),
+                ContentItemDto.video("wudulive001", "أحكام الوضوء", null, 0, null, null, null, null, "Zad TV", null),
+                ContentItemDto.video("friday00001", "Friday lecture", null, 0, null, null, null, null, "Huda TV", null)));
+
+        PublicContentService.SearchPage khuffain = service.searchContent("VIDEOS", null, 20, CAT, null, null, "خفين");
+        assertThat(khuffain.page().getData()).extracting(ContentItemDto::getId).containsExactly("khuffain001", "khafilive01");
+        assertThat(khuffain.match()).isEqualTo("exact");
+        PublicContentService.SearchPage wudu = service.searchContent("VIDEOS", null, 20, CAT, null, null, "وضوء");
+        assertThat(wudu.page().getData()).extracting(ContentItemDto::getId).containsExactly("wudulive001");
+        assertThat(wudu.match()).isEqualTo("exact");
+        assertThat(service.searchContent("VIDEOS", null, 20, CAT, null, null, "friday lectu").match()).isEqualTo("exact");
+    }
+
+    @Test
+    void aLiveSearchWhoseOnlyHitSharesAStemIsApproximate() throws Exception {
+        when(liveCategories.items(CAT)).thenReturn(List.of(
+                ContentItemDto.video("khafilive01", "عمل خفي", null, 0, null, null, null, null, "Zad TV", null)));
+
+        PublicContentService.SearchPage khuffain = service.searchContent("VIDEOS", null, 20, CAT, null, null, "خفين");
+        assertThat(khuffain.page().getData()).extracting(ContentItemDto::getId).containsExactly("khafilive01");
+        assertThat(khuffain.match()).isEqualTo("approximate");
+    }
+
     private List<String> liveSearch(String q) throws Exception {
         return service.searchContent("VIDEOS", null, 20, CAT, null, null, q).page().getData().stream()
                 .map(ContentItemDto::getId).toList();
