@@ -235,9 +235,6 @@ class FavoritesRepositoryImpl @Inject constructor(
         durationSeconds: Int
     ): Boolean {
         val uid = accountRepository.currentUid()
-        // The server rejects a blank title or channel name (PutFavoriteRequest @NotBlank) and sync drops that row for
-        // good: never add one. Removing an existing favourite needs neither.
-        if ((title.isBlank() || channelName.isBlank()) && !favoriteVideoDao.isFavoriteOnce(uid, videoId)) return false
         val video = FavoriteVideo(
             videoId = videoId,
             title = title,

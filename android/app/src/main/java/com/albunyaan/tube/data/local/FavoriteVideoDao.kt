@@ -111,6 +111,9 @@ interface FavoriteVideoDao {
             softDelete(video.user_id, video.videoId)
             return false
         } else {
+            // The server rejects a blank title or channel name (PutFavoriteRequest @NotBlank) and sync drops that row
+            // for good: never add one. Checked inside this transaction so a rapid second tap can't re-add it.
+            if (video.title.isBlank() || video.channelName.isBlank()) return false
             // Fresh add OR re-add of a previously soft-deleted row.
             clearSoftDelete(video.user_id, video.videoId)
             upsertFavorite(video)

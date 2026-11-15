@@ -59,9 +59,7 @@ class ShortsPageViewHolder(
                 ctx.getString(R.string.shorts_channel_handle, item.channelName)
         }
 
-        binding.shortLikeBtn.setImageResource(
-            if (isLiked) R.drawable.ic_shorts_like_filled else R.drawable.ic_shorts_like
-        )
+        setLiked(isLiked)
 
         // Load avatar via Coil with circle crop and a safe placeholder.
         val placeholder = R.drawable.home_channel_avatar_bg
@@ -95,6 +93,13 @@ class ShortsPageViewHolder(
 
         binding.shortSubtitleBtn.visibility = if (hasSubtitles) View.VISIBLE else View.GONE
         binding.shortSubtitleBtn.setOnClickListener { onSubtitleTap() }
+    }
+
+    /** Update only the Like icon, leaving the language and subtitle buttons as the count flows set them. */
+    fun setLiked(isLiked: Boolean) {
+        binding.shortLikeBtn.setImageResource(
+            if (isLiked) R.drawable.ic_shorts_like_filled else R.drawable.ic_shorts_like
+        )
     }
 
     /**

@@ -101,9 +101,9 @@ class ShortsPagerAdapter(
                         if (currentPos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) {
                             return@collect
                         }
-                        // Re-bind keeping the current audio-track button state — the
-                        // counter flow below drives its visibility independently.
-                        holder.bindItem(item, liked, hasMultipleAudioTracks = false)
+                        // Only the heart: a full rebind would hide the language and subtitle
+                        // buttons the count flows below already showed.
+                        holder.setLiked(liked)
                     }
                 }
                 launch {

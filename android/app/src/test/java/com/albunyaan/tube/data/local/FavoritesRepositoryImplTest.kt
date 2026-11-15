@@ -2,6 +2,7 @@ package com.albunyaan.tube.data.local
 
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
+import com.albunyaan.tube.auth.currentUid
 import com.albunyaan.tube.data.sync.SyncManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -147,6 +148,20 @@ class FavoritesRepositoryImplTest {
         assertFalse(repository.isFavoriteOnce("v1"))
     }
 
+    // The blank check and the add/remove decision share the DAO transaction: a second rapid tap on a favorite the
+    // first tap just removed must not bring it back with blank metadata.
+    @Test
+    fun `dao toggle never re-adds a removed favorite with blank metadata`() = runTest {
+        repository.addFavorite("v1", "Title", "Channel", null, 100)
+        val blank = FavoriteVideo(
+            videoId = "v1", title = "", channelName = " ", thumbnailUrl = null, durationSeconds = 0,
+            user_id = FakeAccountRepository().currentUid(), dirty = true,
+        )
+        assertFalse(fakeDao.toggleFavorite(blank))
+        assertFalse(fakeDao.toggleFavorite(blank))
+        assertFalse(repository.isFavoriteOnce("v1"))
+    }
+
     @Test
     fun `toggleFavorite removes favorite when present and returns false`() = runTest {
         // First add the favorite
@@ -271,16 +286,6 @@ class FavoritesRepositoryImplTest {
             val index = current.indexOfFirst { it.videoId == videoId && it.user_id == uid }
             if (index >= 0) current[index] = current[index].copy(deleted = true, dirty = true)
             favoritesFlow.value = current
-        }
-
-        override suspend fun toggleFavorite(video: FavoriteVideo): Boolean {
-            val isFav = isFavoriteOnce(video.user_id, video.videoId)
-            if (isFav) {
-                softDelete(video.user_id, video.videoId)
-            } else {
-                addFavorite(video)
-            }
-            return !isFav
         }
 
         override fun getFavoriteCount(uid: String): Flow<Int> =
