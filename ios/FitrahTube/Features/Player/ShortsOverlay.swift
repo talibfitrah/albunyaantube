@@ -70,9 +70,10 @@ struct ShortsOverlay: View {
     private enum Indicator { case play, pause }
 
     /// Android `ShortsPageViewHolder.kt:44-60`: no channel row for a blank/nil channel -- an "@"
-    /// with nothing after it is worse than no row.
-    static func showsChannelRow(channelName: String?) -> Bool {
-        !(channelName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// with nothing after it is worse than no row. Nor without a channel to open (codex 10.2): the id-only deep link
+    /// learns its uploader's name from the resolve, for its favourite, but its row is a button (`openChannel`).
+    static func showsChannelRow(channelName: String?, channelId: String?) -> Bool {
+        !(channelName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !(channelId ?? "").isEmpty
     }
 
     var body: some View {
@@ -102,7 +103,7 @@ struct ShortsOverlay: View {
                 HStack(alignment: .bottom, spacing: Spacing.md(widthClass)) {
                     // Task 4 live check 2: the id-only deep link has neither, and an empty scrim
                     // is a grey bar over the video.
-                    if Self.showsChannelRow(channelName: args.channelName) || args.title != nil {
+                    if Self.showsChannelRow(channelName: args.channelName, channelId: args.channelId) || args.title != nil {
                         channelAndTitle
                     }
                     Spacer(minLength: 0)
@@ -160,7 +161,7 @@ struct ShortsOverlay: View {
     @ViewBuilder
     private var channelAndTitle: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            if Self.showsChannelRow(channelName: args.channelName), let channelName = args.channelName {
+            if Self.showsChannelRow(channelName: args.channelName, channelId: args.channelId), let channelName = args.channelName {
                 Button(action: openChannel) {
                     HStack(spacing: Spacing.sm) {
                         RemoteImage(url: args.channelAvatarURL)
@@ -254,8 +255,10 @@ struct ShortsOverlay: View {
             let seconds = ShortsScrub.time(progress: progress, duration: duration)
             // The completion runs on AVFoundation's queue, not main -- hop, never assume. Paused,
             // the observer will not tick again, so the landed time is published here or the
-            // spoken value stays stale until play.
-            player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) { [weak player] _ in
+            // spoken value stays stale until play. Exact (round 6): the default tolerance lands on a keyframe,
+            // and the landed time written back moved the thumb off where it was dropped -- to 0 on a one-keyframe clip.
+            player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600),
+                        toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] _ in
                 let landed = player?.currentTime().seconds ?? seconds
                 Task { @MainActor in
                     editing = false

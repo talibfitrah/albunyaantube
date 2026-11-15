@@ -1871,6 +1871,12 @@ extension StreamState {
         // Replace-only: a titleless resolve (offline, TV) keeps what the row gave. Live items too (I-P1, Android e632edbb):
         // D12's title match reads `args.liveTitle`, the backend's own title, which this never touches.
         if let title = result.resolved?.title, !title.isEmpty { args.title = title }
+        // Round 7: fill-only. A video opened without a channel name (a link, a Short by id) takes the uploader's, so its
+        // favourite is never sent blank (`PutFavoriteRequest` @NotBlank); one that came with a name keeps it.
+        if (args.channelName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let author = result.resolved?.author, !author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            args.channelName = author
+        }
         // Spec §4.9: the kept 360p goes only when a resolve replaces the stream on screen. A silent refresh that never
         // lands (it failed, or is still out) keeps it, so the HD stream still drops back and never reaches `decide`,
         // whose step-down would demote `.tvSamsung`.

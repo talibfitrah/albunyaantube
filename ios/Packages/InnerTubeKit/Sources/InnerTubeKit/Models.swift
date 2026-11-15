@@ -78,6 +78,8 @@ public struct Resolved: Sendable {
     /// The uploader's channel (`videoDetails.channelId`), whose exclusions playback asks. nil when the answer carries
     /// none (offline, a fixture).
     public var channelId: String?
+    /// The uploader's channel name (`videoDetails.author`). nil when the answer carries none (TVHTML5, offline).
+    public var author: String?
     /// Stage 6 I-M2: the app's identity of the network this stream was minted on (googlevideo URLs are IP-bound, `ip=` in
     /// `sparams`). Set by the app on an HD upgrade; InnerTubeKit never reads it.
     public var mintNetwork: String?

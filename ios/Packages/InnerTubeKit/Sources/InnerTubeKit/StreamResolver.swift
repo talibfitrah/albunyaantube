@@ -530,6 +530,7 @@ public actor StreamResolver {
                     stream: .hls(url: hls, isLive: streaming.isLive, audioOnlyURL: streaming.itag140URL, captionTracks: streaming.captionTracks),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
                     isLiveNow: streaming.isLiveNow, title: streaming.title, channelId: streaming.channelId)
+                resolved.author = streaming.author
                 resolved.audioOnly = TVAdaptive.audioOnly(streaming.itag140URL, in: (try? responseParser.adaptiveFormats(body)) ?? [])
                 return .resolved(resolved)
             }
@@ -538,6 +539,7 @@ public actor StreamResolver {
                     stream: .progressive(url: itag18, label: "360p"),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
                     title: streaming.title, channelId: streaming.channelId)
+                resolved.author = streaming.author
                 resolved.videoSizes = Self.avc1Sizes((try? responseParser.adaptiveFormats(body)) ?? [])
                 return .resolved(resolved)
             }

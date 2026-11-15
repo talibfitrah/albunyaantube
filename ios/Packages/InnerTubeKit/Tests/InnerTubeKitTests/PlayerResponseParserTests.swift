@@ -398,6 +398,8 @@ import Testing
             Issue.record("expected .ok"); return
         }
         #expect(streaming.title == "جزء عم المعلم مشاري راشد العفاسي")
+        // Round 7: the uploader's name, so a video opened without one (a link, a Short by id) can still be favourited.
+        #expect(streaming.author == "Alafasy")
     }
 
     /// Stage 9 I-C9c (Cubic P3): the title is display-only, so one that is not a string reads as no title instead of failing

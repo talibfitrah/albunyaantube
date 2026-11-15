@@ -9,6 +9,8 @@ stable release.
 - Channel Up next (Android, iOS): a video opened from a channel lists that channel's later videos (newest first) under Up next, loads more on scroll and plays on. Tapping a row continues from that row.
 - Channel Shorts (Android, iOS): a Short opened from a channel's Shorts tab swipes up to that channel's next older Short and down to the previous one. Android no longer skips Shorts past the 10th of each page. iOS reports the Short on screen and keeps 3 extraction slots for Retry.
 - Android players: the 3-skip limit for unplayable videos now holds, and the video you tapped shows its error instead of being skipped.
+- Shorts (Android, iOS): on iOS the Short slides with your finger to the next or previous one, as on YouTube, and the scrubber lands where you let go; a remote Next/Previous during the slide wins. On Android a Short keeps its picture when its title fills in, and liking a Short no longer hides its audio-language and subtitle buttons.
+- Favorites (Android, iOS): a favorite is added only once its title and channel are known (tapping before then says it is still preparing), so it always syncs; removing one always works.
 
 - Android 1.0.7 playback: some videos stopped after about 50 s; the app now uses streams that keep playing, and recovers to a compatible stream if one fails mid-play.
 - Android 1.0.7: a minimum-version check. The server-side floor sends Play users to the store and sideload users to the in-app updater, and it fails open when the config can't be read.

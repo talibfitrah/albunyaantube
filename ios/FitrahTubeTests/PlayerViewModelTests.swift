@@ -100,6 +100,29 @@ struct PlayerViewModelTests {
         #expect(vm.args.title == Self.originalTitle)
     }
 
+    /// Round 7: a video opened with no channel name (a link, a Short by id) takes the uploader's from its resolve, so
+    /// its favourite is never sent blank (`PutFavoriteRequest` @NotBlank). One that came with a name keeps it.
+    @Test func aResolvedChannelNameFillsInOnlyWhereThereWasNone() async {
+        var resolved = Self.hls
+        resolved.title = Self.originalTitle
+        resolved.author = "Alafasy"
+        resolved.channelId = "UCmMcOjsVehVlEOteyrhjI2Q"
+        let bare = makeViewModel(resolver: FakeResolver(outcomes: [.success(resolved)]),
+                                 args: PlayerArgs(videoId: "abcdefghijk", channelName: " "))
+        await bare.open()
+        #expect(bare.args.title == Self.originalTitle)
+        #expect(bare.args.channelName == "Alafasy")
+        #expect(bare.args.contentItem.channelTitle == "Alafasy")
+        // Round 11: never the uploader's id. `args.channelId` is the source channel the availability gate checks
+        // instead of the video (`BackendAvailabilityGate.verify`), so filling it would let a blocked video pass.
+        #expect(bare.args.channelId == nil)
+
+        let named = makeViewModel(resolver: FakeResolver(outcomes: [.success(resolved)]),
+                                  args: PlayerArgs(videoId: "abcdefghijk", channelName: "The list's channel"))
+        await named.open()
+        #expect(named.args.channelName == "The list's channel")
+    }
+
     @Test func aTitlelessResolveKeepsTheListTitle() async {
         let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.hls)]), args: listTitledArgs())
         await vm.open()

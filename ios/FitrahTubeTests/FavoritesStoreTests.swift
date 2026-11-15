@@ -49,6 +49,31 @@ struct FavoritesStoreTests {
         #expect(store.items.isEmpty)
     }
 
+    /// Round 7: the server's `PutFavoriteRequest` requires a title and a channel name (`@NotBlank`); a blank one is a
+    /// 400 that sync drops for good, so such a favourite is never added -- not new, not revived from a tombstone.
+    @Test func aFavoriteWithABlankTitleOrChannelIsNeverAdded() throws {
+        let store = makeStore()
+        #expect(throws: FavoritesError.missingMetadata) { try store.toggle(makeItem(channel: " ")) }
+        #expect(throws: FavoritesError.missingMetadata) { try store.toggle(makeItem(title: "\n")) }
+        #expect(store.isFavorite("v1") == false)
+
+        try store.toggle(makeItem())
+        try store.toggle(makeItem())        // a tombstone now
+        #expect(throws: FavoritesError.missingMetadata) { try store.toggle(makeItem(channel: "")) }
+        #expect(store.isFavorite("v1") == false)
+        #expect(store.items.isEmpty)
+    }
+
+    /// Removing needs neither: the DELETE carries no body.
+    @Test func removingAFavoriteNeverNeedsItsTitleOrChannel() throws {
+        let store = makeStore()
+        try store.toggle(makeItem())
+
+        try store.toggle(makeItem(title: "", channel: ""))
+
+        #expect(store.isFavorite("v1") == false)
+    }
+
     @Test func toggleInsertsThenSoftDeletes() throws {
         let store = makeStore()
 

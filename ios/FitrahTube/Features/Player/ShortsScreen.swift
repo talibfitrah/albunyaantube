@@ -5,7 +5,9 @@ import SwiftUI
 /// reconciliation 1) are REVERSED by the owner's request of 2026-11-14: a Short opened from a channel's
 /// Shorts tab swipes through that tab, up to the next (older) Short and down to the previous, over the
 /// player's own queue (`ChannelQueueSource`, `ShortsSwipe`). Still no global feed, and still one live
-/// player: a swipe is `play(at:)` on the same model, never a second host. Everything the ladder already
+/// player: a swipe is `play(at:)` on the same model, never a second host. The stage slides with the finger
+/// (owner, round 5): the pages beside it are the loading card it shows a frame after the swap, never a player.
+/// Everything the ladder already
 /// does (recovery, Safe Mode, quality ceiling, audio session) arrives through the shared view model;
 /// this file adds the 9:16 stage, the portrait lock, and -- because the navigation bar is hidden
 /// (fork D) -- its own Back and kebab over every branch. The rest of the chrome is `ShortsOverlay`,
@@ -21,20 +23,30 @@ struct ShortsScreen: View {
     /// Captured when the sheet opens: the lock screen's or AirPods' next while it is up moves `model.args` on, and
     /// the report must stay on the Short the user was looking at (as `PlayerToolbar.saveSheetArgs`).
     @State private var report: ReportContext?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The slide (owner, round 5): `dragY` follows the finger and, on a commit, runs to a whole page; under Reduce
+    /// Motion `fading` cross-fades the incoming page in instead. Both reset when the next Short is on the stage.
+    @State private var dragY: CGFloat = 0
+    @State private var fading: Int?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             PopGestureEnabler()
             if let model {
-                stage(model.state, model: model)
+                GeometryReader { geo in
+                    ZStack {
+                        stage(model.state, model: model).offset(y: dragY)
+                        neighbourPage(model, -1, height: geo.size.height)
+                        neighbourPage(model, 1, height: geo.size.height)
+                    }
                     // Over both branches: a Short that will not play can be swiped past. The whole area, letterbox
                     // included (iPad), takes the swipe; a tap still reaches the overlay's play/pause beneath.
                     .contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 20).onEnded { value in
-                        guard let offset = ShortsSwipe.offset(value.predictedEndTranslation) else { return }
-                        Self.swipe(model, by: offset)
-                    })
+                    .gesture(slide(model, height: geo.size.height))
+                }
+                .clipped()
+                .onChange(of: model.args.videoId) { dragY = 0; fading = nil }
             } else {
                 ProgressView().tint(.white)
             }
@@ -106,23 +118,76 @@ struct ShortsScreen: View {
                 .frame(maxWidth: Size.playerMaxWidth(widthClass))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // Task 4: on the black surface, with the dark palette's text -- the card used to paint
-            // the app's light `Color.background` over the stage.
-            PlayerStateView(state: state, isOnline: container.network.isOnline,
-                            thumbnailURL: model.args.thumbnailURL, background: .black) { PlayerScreen.retryTapped(model) }
+            statusCard(state, thumbnailURL: model.args.thumbnailURL, model: model)
                 .modifier(ShortsSwipeActions(model: model))
-                .environment(\.colorScheme, .dark)
-                .safeAreaPadding(.top, 44 + Spacing.md(widthClass))
         }
+    }
+
+    /// Task 4: on the black surface, with the dark palette's text -- the card used to paint
+    /// the app's light `Color.background` over the stage.
+    private func statusCard(_ state: StreamState, thumbnailURL: URL?, model: PlayerViewModel) -> some View {
+        PlayerStateView(state: state, isOnline: container.network.isOnline,
+                        thumbnailURL: thumbnailURL, background: .black) { PlayerScreen.retryTapped(model) }
+            .environment(\.colorScheme, .dark)
+            .safeAreaPadding(.top, 44 + Spacing.md(widthClass))
+    }
+
+    /// The Short `offset` away, as the stage will show it a frame after the swap: its loading card with its
+    /// thumbnail (known from the queue's rows), so the handoff is seamless and the one player stays the only one.
+    @ViewBuilder
+    private func neighbourPage(_ model: PlayerViewModel, _ offset: Int, height: CGFloat) -> some View {
+        if let index = model.queueNeighbour(offset) {
+            statusCard(.loading, thumbnailURL: model.queue.items[index].thumbnailURL, model: model)
+                .offset(y: reduceMotion ? 0 : dragY + CGFloat(offset) * height)
+                .opacity(reduceMotion && fading != offset ? 0 : 1)
+                .accessibilityHidden(true)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// The finger drags the stage (`ShortsSwipe.follow`); a release past the threshold or a flick
+    /// (`ShortsSwipe.offset`) slides it off and the neighbour on, anything else springs back.
+    private func slide(_ model: PlayerViewModel, height: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                guard !reduceMotion, fading == nil else { return }
+                dragY = ShortsSwipe.follow(value.translation) { Self.canSwipe(model, by: $0) }
+            }
+            .onEnded { value in
+                guard let offset = ShortsSwipe.offset(value.predictedEndTranslation),
+                      Self.canSwipe(model, by: offset) else {
+                    withAnimation(.spring(duration: 0.3)) { dragY = 0 }
+                    return
+                }
+                let from = model.args.videoId
+                withAnimation(.easeOut(duration: 0.25)) {
+                    if reduceMotion { fading = offset } else { dragY = -CGFloat(offset) * height }
+                } completion: {
+                    Self.swipe(model, by: offset, from: from) {
+                        // Nothing moved (a page that failed, a newer pick won): back to the Short still on the stage.
+                        guard model.args.videoId == from else { return }
+                        withAnimation(.spring(duration: 0.3)) { dragY = 0; fading = nil }
+                    }
+                }
+            }
     }
 
     /// A swipe or its VoiceOver action: `PlayerViewModel.swipe`, which pages past the loaded end. A user's Play, as
     /// `PlayerScreen.playUpNext`, only when there is somewhere to go.
-    static func swipe(_ model: PlayerViewModel, by offset: Int) {
-        guard canSwipe(model, by: offset) else { return }
-        BackgroundPlaybackController.userAskedToPlay()
-        model.heldByOpen = false
-        Task { await model.swipe(by: offset) }
+    /// `done`: after the swipe settles, whether it moved or not (the slide's spring-back). `from`: the Short the slide
+    /// started on. A newer pick before the task runs (a remote's Next or Previous in the slide's 250 ms, even one queued
+    /// ahead of it) owns the stage and its pause hold, so the slide neither touches them nor moves (codex P2, rounds 8-10).
+    /// Check, side effects and move run on the main actor with no suspension between them, `model.swipe` included up to
+    /// its first await.
+    static func swipe(_ model: PlayerViewModel, by offset: Int, from: String? = nil, done: @escaping () -> Void = {}) {
+        guard canSwipe(model, by: offset) else { return done() }
+        Task {
+            guard from.map({ $0 == model.args.videoId }) ?? true else { return done() }
+            BackgroundPlaybackController.userAskedToPlay()
+            model.heldByOpen = false
+            await model.swipe(by: offset)
+            done()
+        }
     }
 
     static func canSwipe(_ model: PlayerViewModel, by offset: Int) -> Bool {
@@ -248,6 +313,13 @@ struct ShortsSwipeActions: ViewModifier {
 /// Owner 2026-11-14: which way a drag on the Shorts stage moves through the queue. Up is the next (older)
 /// Short, down the previous; mostly sideways is nobody's swipe here (the scrubber's drag, Back's edge swipe).
 enum ShortsSwipe {
+    /// Where a drag puts the stage: with the finger toward a Short there is (`canMove(offset)`), a quarter of the way
+    /// toward none (the ends' rubber band), not at all for a mostly sideways drag (the scrubber, Back's edge swipe).
+    static func follow(_ translation: CGSize, canMove: (Int) -> Bool) -> CGFloat {
+        guard abs(translation.height) > abs(translation.width) else { return 0 }
+        return canMove(translation.height < 0 ? 1 : -1) ? translation.height : translation.height / 4
+    }
+
     static func offset(_ translation: CGSize) -> Int? {
         // 80 pt: past a tap's jitter and a scrub's wobble, well short of a flick.
         guard abs(translation.height) >= 80, abs(translation.height) > abs(translation.width) else { return nil }

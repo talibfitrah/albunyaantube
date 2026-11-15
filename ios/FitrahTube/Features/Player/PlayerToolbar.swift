@@ -284,7 +284,8 @@ extension PlayerArgs {
 
     /// The favorites-store shape of this video, for `FavoriteToggle.perform`.
     var contentItem: ContentItem {
-        ContentItem(id: videoId, type: .video, title: title ?? videoId, category: nil,
+        // No id fallback: a titleless video is refused by the store until its resolve brings the title (round 7).
+        ContentItem(id: videoId, type: .video, title: title ?? "", category: nil,
                     description: description, thumbnailURL: thumbnailURL,
                     durationSeconds: durationSeconds, uploadedDaysAgo: nil, viewCount: viewCount,
                     channelTitle: channelName, subscribers: nil, videoCount: nil, itemCount: nil)
@@ -328,6 +329,9 @@ enum FavoriteToggle {
             let now = store.isFavorite(item.id)
             return Result(isFavorite: now, banner: BannerMessage(
                 text: String(localized: now ? "player_added_to_favorites" : "player_removed_from_favorites")))
+        } catch FavoritesError.missingMetadata {
+            // Its title or channel is not known yet (the stream is still resolving): not a failure, a wait.
+            return Result(isFavorite: wasFavorite, banner: BannerMessage(text: String(localized: "shorts_download_preparing")))
         } catch {
             return Result(isFavorite: wasFavorite, banner: BannerMessage(text: String(localized: "player_favorite_toggle_error")))
         }

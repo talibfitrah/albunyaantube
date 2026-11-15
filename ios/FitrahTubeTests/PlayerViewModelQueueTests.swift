@@ -981,6 +981,14 @@ struct PlayerViewModelQueueTests {
         #expect(ShortsSwipe.offset(CGSize(width: -160, height: -100)) == nil) // mostly sideways: the scrubber, Back's edge swipe
     }
 
+    /// Round 5 (owner: slide like YouTube): the stage follows the finger, damped where there is nothing to slide to.
+    @Test func theStageFollowsTheFingerAndRubberBandsAtTheEnds() {
+        #expect(ShortsSwipe.follow(CGSize(width: 0, height: -120)) { _ in true } == -120)     // up, a next Short: 1:1
+        #expect(ShortsSwipe.follow(CGSize(width: 0, height: 120)) { $0 == 1 } == 30)          // down at the first: damped
+        #expect(ShortsSwipe.follow(CGSize(width: 0, height: -120)) { $0 == -1 } == -30)       // up at the last: damped
+        #expect(ShortsSwipe.follow(CGSize(width: -160, height: -100)) { _ in true } == 0)     // sideways never moves it
+    }
+
     // MARK: - Review round (2026-11-14): paging and the superseded swipe
 
     /// P3: a swipe past the loaded end asks for the next page, and a failed page is not the end for good -- the user's
@@ -996,6 +1004,24 @@ struct PlayerViewModelQueueTests {
         #expect(source.pageCalls == 2)
         #expect(vm.args.videoId == "d")
         #expect(!ShortsScreen.canSwipe(vm, by: 2))                   // past "e", with no page left, nothing
+    }
+
+    /// Codex P2 (rounds 8 to 10): a remote Next/Previous (AirPods, lock screen) during the slide's 250 ms picks another
+    /// Short first -- even after the slide's own task was queued -- and may pause it while it resolves. The slide's
+    /// swipe is from the Short it started on, so it then does nothing: no second move from the newer pick's position,
+    /// no clearing that Short's pause hold (it would start playing despite the Pause), and `done` still runs (the
+    /// stage's spring-back).
+    @Test(.timeLimit(.minutes(1))) func aSlideAfterANewerPickNeverMovesAgain() async {
+        let (vm, _) = makeModel(args: channelArgs("b", rows: ["a", "b", "c"]))
+        await vm.open()
+        await vm.swipe(by: -1)                                       // the remote's Previous: b -> a
+        #expect(vm.args.videoId == "a")
+        vm.heldByOpen = true                                         // and its Pause, while a resolves
+
+        await withCheckedContinuation { done in ShortsScreen.swipe(vm, by: 1, from: "b") { done.resume() } }
+
+        #expect(vm.args.videoId == "a")
+        #expect(vm.heldByOpen)
     }
 
     /// P3: one retry per user action, never a loop -- a source that keeps failing gets exactly one more call.
@@ -1053,5 +1079,25 @@ struct PlayerViewModelQueueTests {
         await forward.value
         await back.value
         #expect(vm.args.videoId == "b")
+    }
+
+    /// Round 5 (Cubic P2): swiping through Shorts at a human pace never shows a cooldown. 11 swipes in 55 s through the
+    /// app's real limiter, prefetch included: prefetch stops at its reserve, the swipe's own resolve is never gated.
+    @Test func elevenSwipesInAMinuteNeverCoolDown() async {
+        let clock = FixedMonotonicClock(now: .seconds(0))
+        let inner = RecordingResolver(.hls)
+        let ids = (0..<15).map { "s\($0)" }
+        let vm = PlayerViewModel(resolver: RateLimitedResolver(wrapping: inner, rateLimiter: ExtractionRateLimiter(),
+                                                               clock: clock),
+                                 settings: makeSettings(safeMode: false), args: channelArgs("s0", rows: ids),
+                                 queueSource: FakeQueueSource(pages: []))
+        await vm.open()
+        for swipe in 1...11 {
+            clock.now = .seconds(swipe * 5)
+            await vm.swipe(by: 1)
+            #expect(vm.args.videoId == "s\(swipe)")
+            #expect(vm.state.isPlayable, "swipe \(swipe): \(vm.state)")
+        }
+        #expect(inner.calls.filter { $0.kind == .prefetch }.count == 7)   // the limiter still capped the speculation
     }
 }

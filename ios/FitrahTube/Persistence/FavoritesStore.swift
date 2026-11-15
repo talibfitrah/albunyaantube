@@ -11,6 +11,9 @@ import SwiftData
 nonisolated enum FavoritesError: Error, Equatable {
     /// Eleven URL-safe characters (`SwiftDataFavoritesStore.isValid`), refused at the import door.
     case invalidVideoId
+    /// A blank title or channel name: the server's `PutFavoriteRequest` refuses it (`@NotBlank`), a 400 that sync drops
+    /// for good, so it is never added. The player knows both once the stream resolves.
+    case missingMetadata
 }
 
 @MainActor protocol FavoritesStore: AnyObject, Observable, UserScoped {
@@ -89,7 +92,14 @@ nonisolated enum FavoritesError: Error, Equatable {
         let descriptor = FetchDescriptor<FavoriteVideo>(
             predicate: #Predicate { $0.videoId == videoId && $0.userId == uid }
         )
-        if let existing = try context.fetch(descriptor).first {
+        let existing = try context.fetch(descriptor).first
+        // An add, new or revived, needs both (`FavoritesError.missingMetadata`); a removal is a DELETE and needs neither.
+        if existing.map({ $0.isRemoved }) ?? true,
+           item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || (item.channelTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw FavoritesError.missingMetadata
+        }
+        if let existing {
             // `dirty` only -- never `updatedAt` (gate wave-2 W12). `updatedAt` is the *server*
             // timestamp and phase 4's monotonicity guard (`AND updated_at < :ts`,
             // favorites-settings-about.md:20-33,60); Android's DAO leaves it alone on every local

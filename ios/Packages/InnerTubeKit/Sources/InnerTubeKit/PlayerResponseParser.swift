@@ -25,6 +25,8 @@ public struct StreamingData: Sendable, Equatable {
     public var title: String?
     /// `videoDetails.channelId`: the uploader, whose exclusions playback asks. Read leniently, as `title` is.
     public var channelId: String?
+    /// `videoDetails.author`: the uploader's channel name, for a video opened without one. Read leniently, as `title` is.
+    public var author: String?
 
     public init(
         hlsManifestURL: URL? = nil,
@@ -35,7 +37,8 @@ public struct StreamingData: Sendable, Equatable {
         isLiveNow: Bool = false,
         captionTracks: [CaptionTrack] = [],
         title: String? = nil,
-        channelId: String? = nil
+        channelId: String? = nil,
+        author: String? = nil
     ) {
         self.hlsManifestURL = hlsManifestURL
         self.itag18URL = itag18URL
@@ -46,6 +49,7 @@ public struct StreamingData: Sendable, Equatable {
         self.captionTracks = captionTracks
         self.title = title
         self.channelId = channelId
+        self.author = author
     }
 }
 
@@ -119,7 +123,8 @@ public struct PlayerResponseParser: Sendable {
             isLiveNow: wire.videoDetails?.isLive == true,
             captionTracks: captionTracks(from: wire.captions),
             title: wire.videoDetails?.title,
-            channelId: wire.videoDetails?.channelId
+            channelId: wire.videoDetails?.channelId,
+            author: wire.videoDetails?.author
         )
     }
 
@@ -230,8 +235,9 @@ public struct PlayerResponseParser: Sendable {
             /// title, never a failed decode of the response every resolve needs.
             var title: String?
             var channelId: String?
+            var author: String?
 
-            private enum CodingKeys: String, CodingKey { case isLive, isLiveContent, title, channelId }
+            private enum CodingKeys: String, CodingKey { case isLive, isLiveContent, title, channelId, author }
 
             init(from decoder: Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -239,6 +245,7 @@ public struct PlayerResponseParser: Sendable {
                 isLiveContent = try container.decodeIfPresent(Bool.self, forKey: .isLiveContent)
                 title = try? container.decodeIfPresent(String.self, forKey: .title)
                 channelId = InnerTubeKit.channelId(try? container.decodeIfPresent(String.self, forKey: .channelId))
+                author = try? container.decodeIfPresent(String.self, forKey: .author)
             }
         }
         struct ResponseContext: Decodable {

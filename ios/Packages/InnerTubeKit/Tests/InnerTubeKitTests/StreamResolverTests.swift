@@ -231,14 +231,16 @@ import Testing
         _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         let cached = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         #expect(cached.channelId == "UCmMcOjsVehVlEOteyrhjI2Q")
+        #expect(cached.author == "Alafasy")
         #expect(transport.callCount == 1)
 
         let android = HTTPResponse(status: 200, headers: [:], body: Data("""
-        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"channelId":"UCandroidUploader0000000"}}
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"channelId":"UCandroidUploader0000000","author":"Android Uploader"}}
         """.utf8))
         let (fallback, _) = makeResolver(transport: RecordingTransport([try fixtureResponse("player-unplayable-kids"), android]))
         let progressive = try await fallback.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         #expect(progressive.channelId == "UCandroidUploader0000000")
+        #expect(progressive.author == "Android Uploader")
     }
 
     /// The uploader goes into backend paths and onto saved rows, so anything that is not a channel id is no uploader.

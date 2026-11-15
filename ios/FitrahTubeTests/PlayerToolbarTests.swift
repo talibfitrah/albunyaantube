@@ -229,6 +229,23 @@ struct PlayerToolbarTests {
         #expect(result.banner.text == String(localized: "player_favorite_toggle_error"))
     }
 
+    /// Round 7: a favourite whose title or channel is not known yet (its stream still resolving) is refused by the
+    /// store; the heart says so ("Preparing, tap again in a moment") rather than that saving failed.
+    @Test func aFavoriteNotKnownYetSaysPreparing() {
+        let store = FakeFavoritesStore()
+        store.errorToThrow = FavoritesError.missingMetadata
+
+        let result = FavoriteToggle.perform(item: makeItem(), wasFavorite: false, store: store)
+
+        #expect(result.isFavorite == false)
+        #expect(result.banner.text == String(localized: "shorts_download_preparing"))
+    }
+
+    /// A video with no title yet stays titleless for the store (which refuses it) instead of being saved under its id.
+    @Test func aTitlelessVideoIsNeverFavouritedUnderItsId() {
+        #expect(PlayerArgs(videoId: "xc7keR2piUM", channelName: "Channel").contentItem.title == "")
+    }
+
     @Test func aThrowingStoreOnRemoveAlsoRevertsToFavorited() {
         let store = FakeFavoritesStore()
         store.errorToThrow = FakeFavoritesStore.Failure.saveFailed

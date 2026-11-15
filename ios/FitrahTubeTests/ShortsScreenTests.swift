@@ -63,9 +63,13 @@ struct ShortsScreenTests {
     @Test func theChannelRowHidesItselfWhenTheShortCarriesNoChannel() {
         // ShortsPageViewHolder.kt:44-60 -- feed/deep-link mode "often lacks channelName", and an "@"
         // with nothing after it is worse than no row. Blank, not just nil: Android checks isBlank.
-        #expect(ShortsOverlay.showsChannelRow(channelName: "Ustadh Example"))
-        #expect(ShortsOverlay.showsChannelRow(channelName: nil) == false)
-        #expect(ShortsOverlay.showsChannelRow(channelName: "   ") == false)
+        #expect(ShortsOverlay.showsChannelRow(channelName: "Ustadh Example", channelId: "UCsample"))
+        #expect(ShortsOverlay.showsChannelRow(channelName: nil, channelId: "UCsample") == false)
+        #expect(ShortsOverlay.showsChannelRow(channelName: "   ", channelId: "UCsample") == false)
+        // Codex 10.2 (round 11): the id-only deep link learns its uploader's name from the resolve (round 7, for its
+        // favourite) but no channel to open, so the row stays hidden -- never a button that goes nowhere.
+        #expect(ShortsOverlay.showsChannelRow(channelName: "Alafasy", channelId: nil) == false)
+        #expect(ShortsOverlay.showsChannelRow(channelName: "Alafasy", channelId: "") == false)
     }
 
     @Test func captionsMenuIsTheOneCopyBothScreensUse() {
