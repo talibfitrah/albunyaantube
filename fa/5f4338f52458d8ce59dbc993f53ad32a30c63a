@@ -1,0 +1,54 @@
+ios/FitrahTubeUITests/UpNextFooterChecks.swift
+  s_3d9fbda6f3dd89::t_9e948b2622edcc 1-20,41-47,53-75
+  s_3d9fbda6f3dd89::t_f3820514a4fac0 21-40,48-52
+ios/FitrahTube/DesignSystem/Tokens.swift
+  s_3d9fbda6f3dd89::t_f1a7318c1c5881 193-194
+ios/FitrahTubeUITests/ShortsGestureChecks.swift
+  s_3d9fbda6f3dd89::t_4982547c856627 52-57,107-115,117-118,120-123,125-134
+  s_3d9fbda6f3dd89::t_73644d59372bd1 38-49,150-155
+  s_3d9fbda6f3dd89::t_8902c22a2755a3 124
+  s_3d9fbda6f3dd89::t_86618b01cbee96 3-6,18-22,26-37,84-85,90-97,104-106,135-140
+  s_3d9fbda6f3dd89::t_e20192a667b573 116,119
+ios/FitrahTube/Features/Shell/OfflineBanner.swift
+  s_3d9fbda6f3dd89::t_4982547c856627 16
+ios/FitrahTube/Features/Shell/MainShellView.swift
+  s_3d9fbda6f3dd89::t_0d745718a3feaf 120-121,123,145,158-162,164-170
+  s_3d9fbda6f3dd89::t_1c76fa0658fc23 32-54,70-71,113
+  s_3d9fbda6f3dd89::t_c0613ae37f939e 114-116,124,171,276-307
+  s_3d9fbda6f3dd89::t_8902c22a2755a3 163
+  s_3d9fbda6f3dd89::t_b08ed57a01a6c0 117
+  s_3d9fbda6f3dd89::t_279b8789323ab8 172
+ios/FitrahTube/Features/Shell/NavigationRailView.swift
+  s_3d9fbda6f3dd89::t_f1a7318c1c5881 12,38-41,44,67-74
+  s_3d9fbda6f3dd89::t_277f5022d1eb87 75-77
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_3d9fbda6f3dd89::t_34c15d8b78b4cc 709
+  s_3d9fbda6f3dd89::t_f3820514a4fac0 419,704-707
+  s_3d9fbda6f3dd89::t_e4e87f45e59bff 44-45,489-497,696-703,708
+  s_3d9fbda6f3dd89::t_a9328a60dd37c9 710-712
+  s_3d9fbda6f3dd89::t_c496ceb11c636f 416
+ios/FitrahTubeTests/PlayerViewModelQueueTests.swift
+  s_3d9fbda6f3dd89::t_53831dd79dc4e8 1067-1069
+  s_3d9fbda6f3dd89::t_34c15d8b78b4cc 1027-1044,1060-1065,1070-1071
+  s_3d9fbda6f3dd89::t_4982547c856627 1045-1059,1066
+ios/FitrahTube/App/AppContainer.swift
+  s_3d9fbda6f3dd89::t_0d745718a3feaf 178-189
+CHANGELOG.md
+  s_3d9fbda6f3dd89::t_ce8c7abd45cb4a 14-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa5f4338f52458d8ce59dbc993f53ad32a30c63a",
+  "prompts": {},
+  "sessions": {
+    "s_3d9fbda6f3dd89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d06bd180-3c75-47f1-bb90-6bd50a9377e7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
