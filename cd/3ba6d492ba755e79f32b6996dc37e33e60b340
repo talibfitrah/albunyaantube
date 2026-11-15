@@ -1,0 +1,28 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelChannelQueueTest.kt
+  s_3d9fbda6f3dd89::t_37fd2cef32c1d4 338,364,368
+  s_3d9fbda6f3dd89::t_f1d82fb395cf10 322-337,339-363,365-367,369-374
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_3d9fbda6f3dd89::t_73321e2254b780 123,125-127,957-962,1629-1630,1634-1636
+  s_3d9fbda6f3dd89::t_4d0f1d33422be3 50,124,966,1631-1633
+  s_3d9fbda6f3dd89::t_e30585d464cdcc 89
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_3d9fbda6f3dd89::t_165097176192f4 456,466
+  s_3d9fbda6f3dd89::t_cf82c7086bd23d 298-299,457-460,462,464-465,470,472-473,1501-1503,2459-2471,2642-2645
+  s_3d9fbda6f3dd89::t_090352c41e49ca 461,463
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd3ba6d492ba755e79f32b6996dc37e33e60b340",
+  "prompts": {},
+  "sessions": {
+    "s_3d9fbda6f3dd89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d06bd180-3c75-47f1-bb90-6bd50a9377e7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
