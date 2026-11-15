@@ -320,6 +320,59 @@ class PlayerViewModelChannelQueueTest {
     }
 
     @Test
+    fun `the footer Retry retries a failed page at once, inside the scroll cooldown`() = runTest {
+        val channel = FakeChannelVideosRepository(listOf(page("v1", "v2"), page("v3")))
+        channel.failingCalls += 2
+        fakePlayerRepository.resolvedStreams = streams("v1")
+        var now = 1_000_000L
+        val vm = playerViewModel(repository = fakePlayerRepository, channelDetailRepository = channel)
+            .also { it.setClockForTesting { now } }
+
+        open(vm, "v1")
+        advanceUntilIdle()
+        vm.loadMoreUpNext()       // call 2 fails
+        advanceUntilIdle()
+        assertTrue(vm.state.value.upNextPageFailed)
+        assertFalse(vm.state.value.upNextRetrying)
+
+        vm.retryUpNextPage()      // the same instant as the failure: a tap is never held back
+        assertTrue(vm.state.value.upNextRetrying)
+        assertFalse(vm.state.value.upNextPageFailed)
+        advanceUntilIdle()
+
+        assertEquals(2 + 1, channel.calls)
+        assertEquals(listOf("v2", "v3"), vm.state.value.upNext.map { it.id })
+        assertFalse(vm.state.value.upNextRetrying)
+        assertFalse(vm.state.value.upNextPageFailed)
+    }
+
+    @Test
+    fun `a double tap on the footer Retry fetches the page once`() = runTest {
+        val channel = FakeChannelVideosRepository(listOf(page("v1", "v2"), page("v3")))
+        channel.failingCalls += listOf(2, 3)
+        fakePlayerRepository.resolvedStreams = streams("v1")
+        var now = 1_000_000L
+        val vm = playerViewModel(repository = fakePlayerRepository, channelDetailRepository = channel)
+            .also { it.setClockForTesting { now } }
+
+        open(vm, "v1")
+        advanceUntilIdle()
+        vm.loadMoreUpNext()       // call 2 fails
+        advanceUntilIdle()
+        vm.retryUpNextPage()      // call 3, in flight
+        vm.retryUpNextPage()      // the second tap of the double tap: the fetch is in flight
+        advanceUntilIdle()        // call 3 fails
+        assertEquals(3, channel.calls)
+        assertTrue(vm.state.value.upNextPageFailed)
+
+        vm.retryUpNextPage()      // a new tap on the Retry that came back
+        advanceUntilIdle()
+
+        assertEquals(4, channel.calls)
+        assertEquals(listOf("v2", "v3"), vm.state.value.upNext.map { it.id })
+    }
+
+    @Test
     fun `a run of emptied pages is followed a bounded number of times`() = runTest {
         val channel = FakeChannelVideosRepository(listOf(page("v1", "v2"), page(), page(), page(), page(), page(), page("v3")))
         fakePlayerRepository.resolvedStreams = streams("v1")

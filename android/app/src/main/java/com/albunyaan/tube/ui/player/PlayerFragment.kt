@@ -47,6 +47,7 @@ import androidx.media3.ui.PlayerView
 import kotlin.math.abs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -85,6 +86,7 @@ import com.albunyaan.tube.player.applyCaptionStyle
 import com.albunyaan.tube.player.normalizeSubtitleCue
 import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.ui.MainActivity
+import com.albunyaan.tube.ui.detail.adapters.ListFooterAdapter
 import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import javax.inject.Inject
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -118,6 +120,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var trackSelector: QualityTrackSelector? = null
     private val viewModel: PlayerViewModel by viewModels()
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
+    /** Up next's last row while a page failed: Retry, then the loading row while the retry is in flight. */
+    private val upNextFooter = ListFooterAdapter(
+        onLoadMoreClick = {}, // never shown here: Up next pages itself
+        onRetryClick = { viewModel.retryUpNextPage() },
+    )
     /** Up next shows the queue's first rows only: its wrap_content list in the scroll view binds every row it holds. */
     private var upNextShown = UP_NEXT_WINDOW
     private var upNextAll: List<UpNextItem> = emptyList()
@@ -947,11 +954,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Phone: 1 column (list), Tablet: 2 columns
             val isTablet = requireContext().isTablet()
             layoutManager = if (isTablet) {
-                GridLayoutManager(requireContext(), 2)
+                GridLayoutManager(requireContext(), 2).apply {
+                    // The footer spans the row, as in the channel Shorts grid.
+                    spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                        override fun getSpanSize(position: Int) = if (position >= upNextAdapter.itemCount) spanCount else 1
+                    }
+                }
             } else {
                 LinearLayoutManager(requireContext())
             }
-            adapter = upNextAdapter
+            adapter = ConcatAdapter(upNextAdapter, upNextFooter)
             // Only add dividers for linear layout (list mode)
             if (!isTablet) {
                 addItemDecoration(DividerItemDecoration(requireContext(), LinearLayoutManager.VERTICAL))
@@ -1614,7 +1626,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             upNextShown = upNextWindowFor(upNextShown, upNextAll, state.upNext)
             upNextAll = state.upNext
             upNextAdapter.submitList(state.upNext.take(upNextShown)) { binding.playerScrollView.post { maybeLoadMoreUpNext() } }
-            binding.upNextList.isVisible = state.upNext.isNotEmpty()
+            upNextFooter.setState(
+                when {
+                    state.upNextPageFailed -> ListFooterAdapter.FooterState.Error()
+                    state.upNextRetrying -> ListFooterAdapter.FooterState.Loading
+                    else -> ListFooterAdapter.FooterState.Hidden
+                }
+            )
+            binding.upNextList.isVisible = state.upNext.isNotEmpty() || upNextFooter.itemCount > 0
             // Update ExoPlayer prev/next buttons based on playlist position
             // Always keep buttons visible but visually indicate disabled state
             updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)

@@ -295,6 +295,8 @@ class PlayerViewModel @Inject constructor(
     private var playlistPagingState: PlaylistPagingState? = null
     private val pagingMutex = Mutex()
     private var pagingJob: Job? = null
+    /** A retry of a failed Up next page is in flight: the footer shows the loading row. */
+    private var upNextRetrying = false
 
     // PR6.6: Auto-skip tracking for unplayable items in playlist mode
     private var consecutiveSkips = 0
@@ -451,12 +453,24 @@ class PlayerViewModel @Inject constructor(
      * stays failed for automatic paging; a [userScroll] may try it again once [USER_RETRY_COOLDOWN_MS] has passed since
      * the failure, so one fling's many scroll events spend a single retry and a later scroll can still try.
      */
-    fun loadMoreUpNext(userScroll: Boolean = false) {
+    fun loadMoreUpNext(userScroll: Boolean = false) = pageUpNext(if (userScroll) USER_RETRY_COOLDOWN_MS else null)
+
+    /**
+     * Up next's footer Retry: a tap is one deliberate event, so it retries the failed page now, inside the scroll
+     * cooldown (that cooldown only folds a fling's many scroll events into one retry). A double tap fetches once: its
+     * second tap finds the page in flight.
+     */
+    fun retryUpNextPage() = pageUpNext(retryAfterMs = 0L)
+
+    /** A failed page is retried only by a caller with a [retryAfterMs], that long after the failure. */
+    private fun pageUpNext(retryAfterMs: Long?) {
         val paging = playlistPagingState ?: return
         if (!paging.hasMore) return
         if (paging.pagingFailed) {
-            if (!userScroll || clock() - paging.failedAtMs < USER_RETRY_COOLDOWN_MS) return
+            if (retryAfterMs == null || clock() - paging.failedAtMs < retryAfterMs) return
             playlistPagingState = paging.copy(pagingFailed = false)
+            upNextRetrying = true
+            applyQueueState()
         }
         triggerBackgroundPageFetch()
     }
@@ -1484,7 +1498,9 @@ class PlayerViewModel @Inject constructor(
                 upNext = queue.map { it.gateChannelName() },
                 currentDownload = findDownloadFor(currentItem, latestDownloads),
                 hasNext = queue.isNotEmpty() || hasMorePages,
-                hasPrevious = previousItems.isNotEmpty()
+                hasPrevious = previousItems.isNotEmpty(),
+                upNextPageFailed = pagingState?.hasMore == true && pagingState.pagingFailed,
+                upNextRetrying = upNextRetrying,
             )
         }
     }
@@ -2440,12 +2456,19 @@ class PlayerViewModel @Inject constructor(
             // A page the exclusions emptied changes no state, so nothing on screen asks again: follow it here, a bounded
             // number of times, and never to a cursor that leads back to itself.
             var followed = 0
-            do {
-                val queued = queue.size
-                val cursor = playlistPagingState?.nextPage
-            } while (fetchNextPlaylistPage() && queue.size == queued && playlistPagingState?.hasMore == true &&
-                playlistPagingState?.nextPage.let { it?.url != cursor?.url || it?.id != cursor?.id } &&
-                followed++ < MAX_EMPTIED_PAGES_FOLLOWED)
+            try {
+                do {
+                    val queued = queue.size
+                    val cursor = playlistPagingState?.nextPage
+                } while (fetchNextPlaylistPage() && queue.size == queued && playlistPagingState?.hasMore == true &&
+                    playlistPagingState?.nextPage.let { it?.url != cursor?.url || it?.id != cursor?.id } &&
+                    followed++ < MAX_EMPTIED_PAGES_FOLLOWED)
+            } finally {
+                if (upNextRetrying) {
+                    upNextRetrying = false
+                    applyQueueState()
+                }
+            }
         }
     }
 
@@ -2616,6 +2639,10 @@ data class PlayerState(
     val canFavorite: Boolean = false,
     /** This live-channel item reached live or had an incident: a later load (a Retry, a switch) is a reconnect. */
     val liveStarted: Boolean = false,
+    /** Up next's last page failed and more pages exist: the footer offers Retry. */
+    val upNextPageFailed: Boolean = false,
+    /** A retry of that page is in flight: the footer shows the loading row. */
+    val upNextRetrying: Boolean = false,
 ) {
     /**
      * §9.1 step 4 on screen: this Loading is a live channel's reconnect (step 4's waits, a switch, a Retry), so the
