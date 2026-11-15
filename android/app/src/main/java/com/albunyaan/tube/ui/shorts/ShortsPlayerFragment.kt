@@ -295,8 +295,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         val pagerAdapter = ShortsPagerAdapter(
             lifecycleOwner = viewLifecycleOwner,
             callbacks = ShortsPagerAdapter.Callbacks(
-                // Not liked while its title or channel is unknown (its stream is still resolving): say so instead of nothing.
-                onLike = { idx -> if (!viewModel.toggleLike(idx)) showToast(R.string.shorts_download_preparing) },
+                onLike = { idx -> viewModel.toggleLike(idx) },
                 onShare = { idx -> shareShort(idx) },
                 onDownload = { idx -> downloadShort(idx) },
                 onChannelTap = { idx -> openChannel(idx) },
@@ -321,6 +320,11 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         )
         adapter = pagerAdapter
         bnd.shortsPager.adapter = pagerAdapter
+        // A metadata-only change (the channel header or the resolved title filling in) must rebind the SAME page holder.
+        // With change animations on, RecyclerView animates a change by swapping in a second holder, while the player
+        // stays attached to the first one's PlayerView: a black picture with the audio still playing.
+        ((bnd.shortsPager.getChildAt(0) as? RecyclerView)?.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)
+            ?.supportsChangeAnimations = false
         bnd.shortsPager.offscreenPageLimit = 1
         // Swipe-to-next stays off (510a8761: don't feed doom-scrolling; tap a Short, Back, tap another) except from a
         // channel's Shorts tab, where the owner's request (2026-11) overrides that decision: swipe up goes to that
@@ -445,6 +449,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                         is ShortsPlayerViewModel.LoadEvent.LoadError -> {
                             showToast(R.string.shorts_error_feed_empty)
                         }
+                        // A Like not saved while the Short's title or channel is unknown (its stream still resolving).
+                        ShortsPlayerViewModel.LoadEvent.NotReady -> showToast(R.string.shorts_download_preparing)
                     }
                 }
             }
@@ -755,8 +761,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     private fun downloadShort(idx: Int) {
         val item = viewModel.items.value.getOrNull(idx) ?: return
         val resolved = binder?.resolvedStreamsFor(item.id)
-        // No title or channel yet: a download is never saved without them (the resolve fills them in a moment).
-        if (resolved == null || item.title.isBlank() || item.channelName.isBlank()) {
+        // No title yet: a download is never saved without one (the resolve fills it in a moment).
+        if (resolved == null || item.title.isBlank()) {
             showToast(R.string.shorts_download_preparing)
             return
         }

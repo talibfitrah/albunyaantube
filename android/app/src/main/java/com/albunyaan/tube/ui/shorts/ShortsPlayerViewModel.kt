@@ -211,13 +211,17 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     }
 
     /**
-     * False when the Short's title or channel name is not known yet (its stream has not resolved): the server rejects
-     * such a favourite (PutFavoriteRequest @NotBlank).
+     * Likes or unlikes the Short. Adding one whose title or channel name is not known yet (its stream has not resolved)
+     * is refused with [LoadEvent.NotReady]: the server rejects such a favourite (PutFavoriteRequest @NotBlank).
+     * Removing one always goes through.
      */
-    fun toggleLike(index: Int): Boolean {
-        val item = _items.value.getOrNull(index) ?: return false
-        if (item.title.isBlank() || item.channelName.isBlank()) return false
+    fun toggleLike(index: Int) {
+        val item = _items.value.getOrNull(index) ?: return
         viewModelScope.launch {
+            if ((item.title.isBlank() || item.channelName.isBlank()) && !favorites.isFavoriteOnce(item.id)) {
+                _events.tryEmit(LoadEvent.NotReady)
+                return@launch
+            }
             favorites.toggleFavorite(
                 item.id,
                 item.title,
@@ -226,7 +230,6 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                 item.durationSeconds
             )
         }
-        return true
     }
 
     fun isLikedFlow(videoId: String): Flow<Boolean> = favorites.isFavorite(videoId)
@@ -413,6 +416,8 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     sealed interface LoadEvent {
         data class SkipCurrent(val shortId: String) : LoadEvent
         data class LoadError(val message: String) : LoadEvent
+        /** A Like refused until the Short's title and channel are known. */
+        data object NotReady : LoadEvent
     }
 
     @AssistedFactory

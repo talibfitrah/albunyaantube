@@ -25,9 +25,10 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.flow.toList
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -567,13 +568,29 @@ class ShortsPlayerViewModelTest {
 
     @Test
     fun aShortWithNoTitleYetIsNotLiked() = runTest(dispatcher) {
+        whenever(favorites.isFavoriteOnce("s3")).thenReturn(false)
         val vm = channelVm("s3", initialShortTitle = "", channelQueue = false)
         advanceUntilIdle()
+        val events = mutableListOf<ShortsPlayerViewModel.LoadEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.events.toList(events) }
 
-        assertFalse("the fragment says to try again", vm.toggleLike(0))
+        vm.toggleLike(0)
         advanceUntilIdle()
 
         verify(favorites, never()).toggleFavorite(any(), any(), any(), anyOrNull(), any())
+        assertEquals("the fragment says to try again", listOf(ShortsPlayerViewModel.LoadEvent.NotReady), events)
+    }
+
+    @Test
+    fun aFavoriteWithBlankMetadataCanStillBeRemoved() = runTest(dispatcher) {
+        whenever(favorites.isFavoriteOnce("s3")).thenReturn(true)
+        val vm = channelVm("s3", initialShortTitle = "", channelQueue = false)
+        advanceUntilIdle()
+
+        vm.toggleLike(0)
+        advanceUntilIdle()
+
+        verify(favorites).toggleFavorite(eq("s3"), eq(""), any(), anyOrNull(), any())
     }
 
     @Test
@@ -593,7 +610,8 @@ class ShortsPlayerViewModelTest {
         val vm = feedVm()
         advanceUntilIdle()
 
-        assertFalse(vm.toggleLike(0))
+        whenever(favorites.isFavoriteOnce("v1")).thenReturn(false)
+        vm.toggleLike(0)
         advanceUntilIdle()
         verify(favorites, never()).toggleFavorite(any(), any(), any(), anyOrNull(), any())
     }
