@@ -41,6 +41,8 @@ struct PlayerScreen: View {
     /// The remote kill-switch (`RemoteConfig.isDownloadsEnabled`), read per open. False until that
     /// read lands, like `saveGate` above and for the same fail-closed reason.
     @State private var saveEnabled = false
+    /// The Up next footer's Retry is in flight (`upNextFooter`).
+    @State private var retryingUpNext = false
 
     var body: some View {
         let fullscreen = model.map(isFullscreen) ?? false
@@ -411,10 +413,10 @@ struct PlayerScreen: View {
                         PlayerMetadataView(args: model.args)
                     }
                     // Ruling 33: the whole section, header included, is absent when there is nothing
-                    // queued. Android renders the header over nothing (`fragment_player.xml:608-625`,
+                    // queued and nothing to retry (`showsUpNext`). Android renders the header over nothing (`fragment_player.xml:608-625`,
                     // defect-adjacent). Below the toolbar, outside the metadata guard, so the
                     // non-fullscreen landscape column keeps it.
-                    if !model.queue.upcoming.isEmpty {
+                    if Self.showsUpNext(model.queue, retrying: retryingUpNext) {
                         Text(String(localized: "player_up_next_header"))
                             .font(TypeScale.sectionTitle).fontWeight(.bold)
                             .foregroundStyle(Color.textPrimary)
@@ -483,6 +485,15 @@ struct PlayerScreen: View {
                 }
             }
             .padding(.horizontal, Spacing.md(widthClass))
+        }
+        if let footer = Self.upNextFooter(model.queue, retrying: retryingUpNext) {
+            ListFooter(state: footer, loadMore: {}) {
+                retryingUpNext = true
+                Task {
+                    await model.loadMoreUpNext()
+                    retryingUpNext = false
+                }
+            }
         }
     }
 
@@ -682,6 +693,23 @@ struct PlayerScreen: View {
     /// `-fitrah-fake-player-queue` serves ~8 fixture items; `-dead` makes three of them unplayable
     /// under `FixturePlayerResolver`'s dead-id rule (the auto-skip capture). Opened from a channel
     /// (owner 2026-11-14), the channel's Videos tab.
+    /// Owner 2026-11-15: the Up next footer is the lists' (`ListFooter`): a failed page with more to come offers Retry,
+    /// the retry shows the spinner, anything else shows nothing. The last row scrolled into view still retries on its
+    /// own (`UpNextEnd`); this is for a user whose last row is already on screen.
+    static func upNextFooter(_ queue: PlayerQueue, retrying: Bool) -> TabState<ContentItem>? {
+        guard queue.cursor != nil, !queue.items.isEmpty else { return nil }
+        if retrying { return .loaded(items: queue.items, continuation: queue.cursor, isAppending: true, showsLoadMore: false) }
+        guard queue.pagingFailed else { return nil }
+        return .errorAppend(messageKey: "load_more_error", items: queue.items, continuation: queue.cursor, showsLoadMore: false)
+    }
+
+    /// Up next shows, its header included, for rows or a footer: on the last loaded video a failed page leaves nothing
+    /// upcoming, and Retry is then the only way to page again (Android's list shows on rows OR footer). The header
+    /// stays so the failed message says what failed to load.
+    static func showsUpNext(_ queue: PlayerQueue, retrying: Bool) -> Bool {
+        !queue.upcoming.isEmpty || upNextFooter(queue, retrying: retrying) != nil
+    }
+
     static func queueSource(container: AppContainer, args: PlayerArgs) -> any PlaylistQueueSource {
         #if DEBUG
         if LaunchArguments.debug.contains("-fitrah-fake-player-queue-dead") {

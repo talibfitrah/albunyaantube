@@ -29,15 +29,29 @@ struct MainShellView: View {
     private var shellLayout: ShellLayout { ShellLayout(widthClass) }
 
     var body: some View {
-        layoutBody
-            .tint(.brand) // shell-home.md:A2 — selected tab/rail item is tint-only, brand green, no pill indicator.
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: container.network.isOnline)
-            // Task 11: the category-filter-applied banner is set by CategoriesView/SubcategoriesView
-            // right before they pop themselves away, so it has to live above the NavigationStacks --
-            // on the shell itself, like Android's Toast (a system overlay that survives the
-            // `navigateUp()` in the same gesture) -- not on a screen that's about to disappear.
-            .transientBanner(bannerBinding)
-            .task { router.shellDidAppear() }
+        // The rail lies over the tabs' stacks, which reach the screen's leading edge under it (owner 2026-11-15):
+        // UIKit's edge swipe Back is the navigation controller's own recognizer, which only sees touches inside its
+        // view, and side by side (an `HStack`) the rail held that edge, so no pushed screen on iPad popped by edge
+        // swipe. Everything the shell shows is then kept clear of the rail in ONE place, its leading safe area, so
+        // whatever is added here later is too: the offline banner, the transient banner, each stack's cast strip.
+        // The stacks' UIKit navigation controllers do not read SwiftUI's horizontal safe area, so `RailInset` gives
+        // them the same inset; the rail leaves its edge strip to the edge swipe (`NavigationRailView`).
+        ZStack(alignment: .leading) {
+            layoutBody
+                .overlay(alignment: .top) { offlineBannerOverlay }
+                // Task 11: the category-filter-applied banner is set by CategoriesView/SubcategoriesView
+                // right before they pop themselves away, so it has to live above the NavigationStacks --
+                // on the shell itself, like Android's Toast (a system overlay that survives the
+                // `navigateUp()` in the same gesture) -- not on a screen that's about to disappear.
+                .transientBanner(bannerBinding)
+                .safeAreaPadding(.leading, railInset)
+            if railInset > 0 {
+                NavigationRailView(selectedTab: router.selectedTab, onSelect: router.select)
+            }
+        }
+        .tint(.brand) // shell-home.md:A2 — selected tab/rail item is tint-only, brand green, no pill indicator.
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: container.network.isOnline)
+        .task { router.shellDidAppear() }
     }
 
     /// Gate wave-4 V12, accepted: crossing 600 pt mid-session (iPad Split View / Stage Manager
@@ -53,17 +67,8 @@ struct MainShellView: View {
     @ViewBuilder
     private var layoutBody: some View {
         switch shellLayout {
-        case .bottomBar:
-            tabView
-                .overlay(alignment: .top) { offlineBannerOverlay }
-        case .rail:
-            HStack(spacing: 0) {
-                if !router.isFullscreen {
-                    NavigationRailView(selectedTab: router.selectedTab, onSelect: router.select)
-                }
-                railStacks
-                    .overlay(alignment: .top) { offlineBannerOverlay }
-            }
+        case .bottomBar: tabView
+        case .rail: railStacks
         }
     }
 
@@ -105,10 +110,18 @@ struct MainShellView: View {
         .onChange(of: router.selectedTab) { _, newValue in mountedTabs.insert(newValue) }
     }
 
+    /// The rail's width, which everything under it is inset by (`body`); none without a rail, or in fullscreen.
+    private var railInset: CGFloat {
+        shellLayout == .rail && !router.isFullscreen ? NavigationRailMetrics.width(widthClass) : 0
+    }
+
     private func navigationStack(for tab: Tab) -> some View {
         NavigationStack(path: pathBinding(for: tab)) {
+            // Every screen, not only the root: a stack can open straight onto a pushed screen (a deep link, a route),
+            // and only a screen that appears can reach its navigation controller.
             rootView(for: tab)
-                .navigationDestination(for: Route.self) { destination(for: $0) }
+                .navigationDestination(for: Route.self) { destination(for: $0).background(RailInset(leading: railInset)) }
+                .background(RailInset(leading: railInset))
         }
         // Task 8 (spec §10): the mini controller pinned above the tab bar while a session is
         // active. `safeAreaInset` INSIDE the tab's stack, not an overlay on the shell: the stack's
@@ -129,7 +142,7 @@ struct MainShellView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if container.castController.isSessionActive, tab == router.selectedTab,
                !router.isFullscreen {
-                CastMiniControls(controller: container.castController)
+                castStrip
                     .frame(height: container.castController.miniControlsActive ? nil : 0)
                     // Needed, and not because of the shared instance —
                     // `CastMiniControls.sizeThatFits` reports the SDK's own `minHeight` whatever
@@ -140,6 +153,21 @@ struct MainShellView: View {
                     .accessibilityHidden(!container.castController.miniControlsActive)
             }
         }
+    }
+
+    @ViewBuilder
+    private var castStrip: some View {
+        #if DEBUG
+        if LaunchArguments.debug.contains("-fitrah-fake-cast") {
+            Text(verbatim: "Fixture TV").frame(maxWidth: .infinity, minHeight: 64)
+                .foregroundStyle(Color.onBrand).background(Color.brand, ignoresSafeAreaEdges: [])
+                .accessibilityIdentifier("cast.miniControls")
+        } else {
+            CastMiniControls(controller: container.castController)
+        }
+        #else
+        CastMiniControls(controller: container.castController)
+        #endif
     }
 
     @ViewBuilder
@@ -245,3 +273,35 @@ extension EnvironmentValues {
         .environment(\.container, .sharedFake)
 }
 #endif
+
+/// The rail lies over the tab's navigation stack (`MainShellView.layoutBody`), so the stack's controller is inset by
+/// it: its bar and every screen pushed on it, the way UIKit insets them for a notch. SwiftUI's own safe-area modifiers
+/// on the stack do not reach a UIKit-hosted navigation controller horizontally (measured 2026-11-15: content and the
+/// back button lay under the rail with both `.safeAreaPadding` and `.safeAreaInset`).
+private struct RailInset: UIViewControllerRepresentable {
+    let leading: CGFloat
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.leading = leading
+        controller.apply()
+    }
+
+    final class Controller: UIViewController {
+        var leading: CGFloat = 0
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            apply()
+        }
+
+        /// Leading is the right in Arabic, and `additionalSafeAreaInsets` is left/right.
+        func apply() {
+            guard let navigation = navigationController else { return }
+            let rtl = navigation.view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+            navigation.additionalSafeAreaInsets.left = rtl ? 0 : leading
+            navigation.additionalSafeAreaInsets.right = rtl ? leading : 0
+        }
+    }
+}

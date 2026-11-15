@@ -190,6 +190,8 @@ nonisolated enum ShellLayout: Equatable {
 /// the regular value harmlessly.
 nonisolated enum NavigationRailMetrics {
     static func width(_ w: WidthClass) -> CGFloat { w.pick(80, 80, 96) }
+    /// The strip along the screen edge the rail leaves to the edge swipe Back (`MainShellView`): about a fingertip.
+    static let edgeSwipeStrip: CGFloat = 20
     static func iconSize(_ w: WidthClass) -> CGFloat { w.pick(28, 28, 32) }
     /// No system Dynamic Type style sits at exactly 14pt, so 14sp maps to the nearest built-in
     /// style above `.caption` (12pt, used for the 12sp/unset case) -- `.footnote` (13pt) -- same

@@ -9,6 +9,7 @@ import SwiftUI
 /// (`android:elevation="@dimen/elevation_lg"`).
 struct NavigationRailView: View {
     @Environment(\.widthClass) private var widthClass
+    @Environment(\.layoutDirection) private var layoutDirection
     let selectedTab: Tab
     let onSelect: (Tab) -> Void
 
@@ -34,8 +35,13 @@ struct NavigationRailView: View {
         // and RTL without direction-aware offset math -- Android's `elevation` shadow is likewise
         // a soft ambient cue, not a hard one-sided edge.
         .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 2)
+        // The screen edge's strip is the edge swipe Back's: a touch there falls through to the tab's navigation stack
+        // beneath (`MainShellView`), so the rail's buttons and scroll start just inside it.
+        .contentShape(EdgeStripExcluded(strip: NavigationRailMetrics.edgeSwipeStrip,
+                                        edgeIsLeft: layoutDirection == .leftToRight))
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isTabBar)
+        .accessibilityIdentifier("navigationRail")
     }
 
     private func railItem(_ tab: Tab) -> some View {
@@ -55,6 +61,17 @@ struct NavigationRailView: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityLabel(tab.title)
+    }
+}
+
+/// The rail's rectangle minus the strip along the screen's leading edge (the right one in Arabic).
+private struct EdgeStripExcluded: Shape {
+    let strip: CGFloat
+    let edgeIsLeft: Bool
+
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(x: edgeIsLeft ? rect.minX + strip : rect.minX, y: rect.minY,
+                    width: max(rect.width - strip, 0), height: rect.height))
     }
 }
 

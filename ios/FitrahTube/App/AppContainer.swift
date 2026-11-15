@@ -175,7 +175,18 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// the `current` seam) is what actually creates the `GCKCastContext`. A container whose
     /// `setUp()` never ran reports `castAvailable == false`, which hides every cast affordance —
     /// spec §10's "not loaded at all" clause, and the fixture containers' default.
-    private(set) lazy var castController = CastController()
+    private(set) lazy var castController: CastController = {
+        let cast = CastController()
+        #if DEBUG
+        // `-fitrah-fake-cast`: a connected session with media on it, so the shell mounts its mini controller strip
+        // (a stand-in, `MainShellView.castStrip`: a fixture has no `GCKCastContext`) for the rail layout check.
+        if isFixture, LaunchArguments.debug.contains("-fitrah-fake-cast") {
+            cast.sessionDidBegin(deviceName: "Fixture TV")
+            cast.miniMediaControlsViewControllerDidChangeActive(true)
+        }
+        #endif
+        return cast
+    }()
 
     /// Phase 4 Task 4: the app's ONE auth seam, and the ONE token source `AuthorizedTransport`
     /// (Task 7) is handed (ruling F12 — `AuthClient` refines `AuthTokenProviding`, so no adapter

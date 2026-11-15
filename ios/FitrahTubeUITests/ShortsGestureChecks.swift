@@ -1,8 +1,9 @@
 import XCTest
 
-/// The Shorts screen's gestures, driven by XCTest's own touch synthesis: axe's synthetic touches never begin UIKit's
-/// interactive pop on the iOS 26 simulator, not even on a screen with its navigation bar showing (round 6, 2026-11-14),
-/// so the edge swipe Back can only be checked here. Fixture container, player and browse pages: no network. Opt-in:
+/// The Shorts screen's gestures and the edge swipe Back on any pushed screen, driven by XCTest's own touch synthesis:
+/// axe's synthetic touches never begin UIKit's interactive pop on the iOS 26 simulator, not even on a screen with its
+/// navigation bar showing (round 6, 2026-11-14), so the edge swipe can only be checked here. iPhone and iPad (whose rail
+/// sits on that edge), English and Arabic. Fixture container, player and browse pages: no network. Opt-in:
 ///
 ///     TEST_RUNNER_FITRAH_SHORTS_CHECKS=1 xcodebuild test -project FitrahTube.xcodeproj -scheme FitrahTube \
 ///       -testPlan FitrahTubeUITests -only-testing:FitrahTubeUITests/ShortsGestureChecks \
@@ -14,16 +15,45 @@ final class ShortsGestureChecks: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testEdgeSwipePopsTheShortsScreen() throws {
-        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPad: the tab rail holds the leading edge")
-        edgeSwipePops(language: "en", locale: "en_US")
+    func testEdgeSwipePopsTheShortsScreen() {
+        let app = openShort(language: "en", locale: "en_US")
+        edgeSwipe(app, rtl: false)
+        XCTAssertTrue(app.buttons["shorts.back"].waitForNonExistence(timeout: 5), "the edge swipe did not pop the Short")
+        XCTAssertTrue(app.descendants(matching: .any)["channel.tab.shorts"].waitForExistence(timeout: 5))
     }
 
     /// The pop edge is the leading one, so the right in Arabic: UIKit mirrors the navigation stack.
-    func testEdgeSwipePopsTheShortsScreenInArabic() throws {
-        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPad: the tab rail holds the leading edge")
-        edgeSwipePops(language: "ar", locale: "ar")
+    func testEdgeSwipePopsTheShortsScreenInArabic() {
+        let app = openShort(language: "ar", locale: "ar")
+        edgeSwipe(app, rtl: true)
+        XCTAssertTrue(app.buttons["shorts.back"].waitForNonExistence(timeout: 5), "the edge swipe did not pop the Short")
+        XCTAssertTrue(app.descendants(matching: .any)["channel.tab.shorts"].waitForExistence(timeout: 5))
     }
+
+    /// Any pushed screen, its navigation bar showing: the channel screen, pushed on Home.
+    func testEdgeSwipePopsAPushedScreen() { edgeSwipePopsTheChannel(language: "en", locale: "en_US") }
+
+    func testEdgeSwipePopsAPushedScreenInArabic() { edgeSwipePopsTheChannel(language: "ar", locale: "ar") }
+
+    /// iPad: the rail lies over the stacks now (the edge strip is the edge swipe's), and its items still switch tabs.
+    func testTheRailStillSwitchesTabs() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "the rail is the iPad's")
+        let app = XCUIApplication()
+        app.launchArguments = ["-fitrah-fake-container", "-fitrah-fake-auth", "active", "-onboarding_completed", "YES",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-fitrah-fake-browse-pages", "3", "6"]
+        app.launch()
+        let channels = app.buttons["Channels"]
+        XCTAssertTrue(channels.waitForExistence(timeout: 30))
+        XCTAssertFalse(channels.isSelected)
+        channels.tap()
+        XCTAssertTrue(channels.waitFor(selected: true), "the rail's Channels item did not take the tap")
+    }
+
+    /// iPad: what the shell itself shows outside the tabs' stacks (the cast strip, the offline banner, the transient
+    /// banner) stays clear of the rail that lies over them, on the right in Arabic. `FITRAH_SHOT_DIR` saves a screenshot.
+    func testTheShellsOwnViewsClearTheRail() throws { try shellViewsClearTheRail(language: "en", locale: "en_US") }
+
+    func testTheShellsOwnViewsClearTheRailInArabic() throws { try shellViewsClearTheRail(language: "ar", locale: "ar") }
 
     func testAVerticalDragSlidesToTheNextShort() {
         let app = openShort(language: "en", locale: "en_US")
@@ -51,28 +81,63 @@ final class ShortsGestureChecks: XCTestCase {
     }
 
     /// From the screen's very edge: the system flags only a touch that starts there as an edge touch (one 4 pt in does
-    /// not begin the pop, measured). iPad is skipped: its tab rail holds the leading screen edge, so no pushed screen in
-    /// the app pops by edge swipe there, the channel screen with its navigation bar included (measured 2026-11-14).
-    private func edgeSwipePops(language: String, locale: String) {
-        let app = openShort(language: language, locale: locale)
-        let rtl = language == "ar"
+    /// not begin the pop, measured 2026-11-14). On iPad that edge is the rail's.
+    private func edgeSwipe(_ app: XCUIApplication, rtl: Bool) {
         app.coordinate(withNormalizedOffset: CGVector(dx: rtl ? 0.995 : 0.005, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: rtl ? 0.1 : 0.9, dy: 0.5)))
-        XCTAssertTrue(app.buttons["shorts.back"].waitForNonExistence(timeout: 5), "the edge swipe did not pop the Short")
-        XCTAssertTrue(app.descendants(matching: .any)["channel.tab.shorts"].waitForExistence(timeout: 5))
     }
 
-    /// The fixture channel's Shorts tab, its second Short open.
-    private func openShort(language: String, locale: String) -> XCUIApplication {
+    private func edgeSwipePopsTheChannel(language: String, locale: String) {
+        let app = openChannel(language: language, locale: locale)
+        let shortsTab = app.descendants(matching: .any)["channel.tab.shorts"]
+        edgeSwipe(app, rtl: language == "ar")
+        XCTAssertTrue(shortsTab.waitForNonExistence(timeout: 5), "the edge swipe did not pop the channel screen")
+    }
+
+    private func openChannel(language: String, locale: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-fitrah-fake-container", "-fitrah-fake-auth", "active", "-onboarding_completed", "YES",
                                "-AppleLanguages", "(\(language))", "-AppleLocale", locale,
                                "-fitrah-fake-player", "-fitrah-fake-browse-pages", "3", "6",
                                "-fitrah-route", "channel", "UCfixturechannel", "Fixture Channel"]
         app.launch()
-        let tab = app.descendants(matching: .any)["channel.tab.shorts"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 30), "the channel never showed its Shorts tab")
-        tab.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["channel.tab.shorts"].waitForExistence(timeout: 30),
+                      "the channel never showed its Shorts tab")
+        return app
+    }
+
+    private func shellViewsClearTheRail(language: String, locale: String) throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "the rail is the iPad's")
+        let app = XCUIApplication()
+        app.launchArguments = ["-fitrah-fake-container", "-fitrah-fake-auth", "active", "-onboarding_completed", "YES",
+                               "-AppleLanguages", "(\(language))", "-AppleLocale", locale, "-fitrah-fake-browse-pages", "3", "6",
+                               "-fitrah-fake-cast", "-fitrah-offline", "-fitrah-banner", "Fixture banner"]
+        app.launch()
+        let rail = app.descendants(matching: .any)["navigationRail"]
+        XCTAssertTrue(rail.waitForExistence(timeout: 30))
+        let rtl = language == "ar"
+        continueAfterFailure = true                                  // every view's verdict, not only the first
+        func clear(_ element: XCUIElement) -> Bool {
+            rtl ? element.frame.maxX <= rail.frame.minX + 0.5 : element.frame.minX >= rail.frame.maxX - 0.5
+        }
+        // The transient banner leaves after 2.5 s (`TransientBanner`), so it is read first, and only while it is up.
+        let banner = app.staticTexts["transientBanner.text"].firstMatch
+        if banner.exists { XCTAssertTrue(clear(banner), "the banner \(banner.frame) lies under the rail \(rail.frame)") }
+        for id in ["cast.miniControls", "offlineBanner.text"] {
+            let element = app.descendants(matching: .any)[id]
+            XCTAssertTrue(element.waitForExistence(timeout: 10), "\(id) never showed")
+            XCTAssertTrue(clear(element), "\(id) \(element.frame) lies under the rail \(rail.frame)")
+        }
+        if let dir = ProcessInfo.processInfo.environment["FITRAH_SHOT_DIR"] {
+            try? XCUIScreen.main.screenshot().pngRepresentation
+                .write(to: URL(fileURLWithPath: "\(dir)/shell-chrome-ipad-\(language).png"))
+        }
+    }
+
+    /// The fixture channel's Shorts tab, its second Short open.
+    private func openShort(language: String, locale: String) -> XCUIApplication {
+        let app = openChannel(language: language, locale: locale)
+        app.descendants(matching: .any)["channel.tab.shorts"].tap()
         let cell = app.descendants(matching: .any)["channel.shorts.cell.shorts-0-1"]
         XCTAssertTrue(cell.waitForExistence(timeout: 20), "the Shorts tab never listed its second Short")
         cell.tap()
@@ -82,6 +147,12 @@ final class ShortsGestureChecks: XCTestCase {
 }
 
 private extension XCUIElement {
+    func waitFor(selected: Bool, timeout: TimeInterval = 10) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == %@", NSNumber(value: selected)),
+                                                    object: self)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
     func waitFor(label: String, timeout: TimeInterval = 10) -> Bool {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: self)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed

@@ -1024,6 +1024,51 @@ struct PlayerViewModelQueueTests {
         #expect(vm.heldByOpen)
     }
 
+    /// Owner 2026-11-15: a failed Up next page with more to come shows the lists' Retry footer (`ListFooter`), its
+    /// spinner while the retry runs; the retry pages and the footer goes.
+    @Test func aFailedUpNextPageOffersRetryUntilItPages() async {
+        let source = FakeQueueSource(pages: [(ids: [], next: nil), (ids: ["d", "e"], next: nil)], failAt: [0])
+        let (vm, _) = makeModel(args: channelArgs("a", rows: ["a", "b", "c"], continuation: "P2"), source: source)
+        await vm.open()                                              // its page fails
+        #expect(source.pageCalls == 1)
+        guard case .errorAppend(let key, _, _, _)? = PlayerScreen.upNextFooter(vm.queue, retrying: false) else {
+            Issue.record("no Retry footer after a failed page"); return
+        }
+        #expect(key == "load_more_error")
+        #expect(PlayerScreen.upNextFooter(vm.queue, retrying: true)?.isAppending == true)
+
+        await vm.loadMoreUpNext()                                    // Retry
+        #expect(vm.queue.upcoming.map(\.id) == ["b", "c", "d", "e"])
+        #expect(PlayerScreen.upNextFooter(vm.queue, retrying: false) == nil)
+    }
+
+    /// On the last loaded video a failed page leaves nothing upcoming, and the section still shows (its header and the
+    /// Retry footer): nothing else can page again.
+    @Test func aFailedPageAfterTheLastVideoStillOffersRetry() async {
+        let source = FakeQueueSource(pages: [(ids: [], next: nil), (ids: ["d"], next: nil)], failAt: [0])
+        let (vm, _) = makeModel(args: channelArgs("c", rows: ["a", "b", "c"], continuation: "P2"), source: source)
+        await vm.open()                                              // its page fails
+        #expect(vm.queue.upcoming.isEmpty)
+        #expect(PlayerScreen.showsUpNext(vm.queue, retrying: false))
+        guard case .errorAppend? = PlayerScreen.upNextFooter(vm.queue, retrying: false) else {
+            Issue.record("no Retry footer after a failed page on the last video"); return
+        }
+        await vm.loadMoreUpNext()                                    // Retry
+        #expect(vm.queue.upcoming.map(\.id) == ["d"])
+    }
+
+    /// No next page, no footer: not for a failure, not for a retry.
+    @Test func upNextHasNoFooterWithoutAnotherPage() async {
+        let (vm, _) = makeModel(args: channelArgs("a", rows: ["a", "b", "c"]))
+        await vm.open()
+        #expect(PlayerScreen.upNextFooter(vm.queue, retrying: false) == nil)
+        #expect(PlayerScreen.upNextFooter(vm.queue, retrying: true) == nil)
+        #expect(PlayerScreen.showsUpNext(vm.queue, retrying: false))
+        let (last, _) = makeModel(args: channelArgs("c", rows: ["a", "b", "c"]))
+        await last.open()                                            // nothing upcoming, nothing to page: no section
+        #expect(!PlayerScreen.showsUpNext(last.queue, retrying: false))
+    }
+
     /// P3: one retry per user action, never a loop -- a source that keeps failing gets exactly one more call.
     @Test func loadMoreRetriesALatchedPageOnceAndNoMore() async {
         let source = FakeQueueSource(pages: [], failFrom: 0)

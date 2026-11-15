@@ -13,6 +13,7 @@ struct OfflineBanner: View {
                 .accessibilityHidden(true)
             Text(String(localized: "connectivity_offline_banner"))
                 .font(TypeScale.itemTitle)
+                .accessibilityIdentifier("offlineBanner.text")
         }
         .foregroundStyle(Color.errorText)
         .padding(.horizontal, Spacing.md(widthClass))

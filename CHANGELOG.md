@@ -11,6 +11,8 @@ stable release.
 - Android players: the 3-skip limit for unplayable videos now holds, and the video you tapped shows its error instead of being skipped.
 - Shorts (Android, iOS): on iOS the Short slides with your finger to the next or previous one, as on YouTube, and the scrubber lands where you let go; a remote Next/Previous during the slide wins. On Android a Short keeps its picture when its title fills in, and liking a Short no longer hides its audio-language and subtitle buttons.
 - Favorites (Android, iOS): a favorite is added only once its title and channel are known (tapping before then says it is still preparing), so it always syncs; removing one always works.
+- Up next (Android, iOS): when loading more videos fails, a Retry button shows at the bottom of Up next (also after the last loaded video); scrolling still retries on its own.
+- iPad: swiping in from the screen edge goes Back on every screen (left edge in English, right edge in Arabic); the side tab bar no longer covers the Cast controls or banners.
 
 - Android 1.0.7 playback: some videos stopped after about 50 s; the app now uses streams that keep playing, and recovers to a compatible stream if one fails mid-play.
 - Android 1.0.7: a minimum-version check. The server-side floor sends Play users to the store and sideload users to the in-app updater, and it fails open when the config can't be read.
