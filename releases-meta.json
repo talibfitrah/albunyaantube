@@ -1,4 +1,9 @@
 {
+  "1.0.8": {
+    "en": "Search puts exact matches first; a channel's videos continue in Up next; channel Shorts swipe one to the next.",
+    "ar": "البحث يعرض المطابقة التامة أولاً، ومقاطع القناة تتواصل في «التالي»، وشورتس القناة تُسحب واحدًا تلو الآخر.",
+    "nl": "Zoeken toont exacte treffers eerst; video's van een kanaal lopen door in Volgende; Shorts van een kanaal swipen."
+  },
   "1.0.7": {
     "en": "Videos no longer stop after a minute; search finds videos inside channels and playlists; tabs follow the curated order.",
     "ar": "لا تتوقف المقاطع بعد دقيقة على بعض الهواتف، والبحث يجد المقاطع داخل القنوات والقوائم، والتبويبات تتبع الترتيب المنتقى.",
